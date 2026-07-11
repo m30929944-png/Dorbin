@@ -28,70 +28,20 @@ app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
 // ============================================
-// 📁 ایجاد پوشه‌ها
+// 📁 پوشه‌ها
 // ============================================
 const dirs = [
     './uploads', './uploads/posts', './uploads/stories',
-    './uploads/avatars', './public', './logs', './uploads/thumbnails'
+    './uploads/avatars', './public', './logs'
 ];
 dirs.forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
 // ============================================
-// 📊 سیستم لاگینگ
+// 🔐 رمزنگاری
 // ============================================
-function log(message, type = 'INFO') {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] [${type}] ${message}\n`;
-    try {
-        fs.appendFileSync('./logs/app.log', logEntry);
-    } catch (e) {}
-    console.log(logEntry.trim());
-}
-
-// ============================================
-// 🔐 رمزنگاری فوق‌حرفه‌ای (AES-256-GCM)
-// ============================================
-const SECRET_KEY = process.env.SECRET_KEY || crypto.randomBytes(32).toString('hex');
-const MASTER_KEY = crypto.createHash('sha256').update(SECRET_KEY).digest();
-
-function generateUserKey(userId) {
-    return crypto.createHash('sha256').update(MASTER_KEY + userId).digest();
-}
-
-function encryptMessage(message, userId) {
-    try {
-        const key = generateUserKey(userId);
-        const iv = crypto.randomBytes(16);
-        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-        let encrypted = cipher.update(message, 'utf8', 'hex');
-        encrypted += cipher.final('hex');
-        const authTag = cipher.getAuthTag().toString('hex');
-        return iv.toString('hex') + ':' + authTag + ':' + encrypted;
-    } catch (error) {
-        log('Encryption error: ' + error.message, 'ERROR');
-        return message;
-    }
-}
-
-function decryptMessage(encrypted, userId) {
-    try {
-        const key = generateUserKey(userId);
-        const parts = encrypted.split(':');
-        if (parts.length !== 3) return '[پیام رمزنگاری شده]';
-        const iv = Buffer.from(parts[0], 'hex');
-        const authTag = Buffer.from(parts[1], 'hex');
-        const encryptedText = parts[2];
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(authTag);
-        let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        return decrypted;
-    } catch (error) {
-        return '[پیام رمزنگاری شده]';
-    }
-}
+const SECRET_KEY = crypto.randomBytes(32).toString('hex');
 
 function hashPassword(password) {
     return crypto.createHash('sha512').update(password + SECRET_KEY).digest('hex');
@@ -101,660 +51,63 @@ function generateToken() {
     return crypto.randomBytes(64).toString('hex');
 }
 
-// ============================================
-// 📊 دیتابیس شارد شده (10 Shard)
-// ============================================
-class ShardedDatabase {
-    constructor() {
-        this.shards = {};
-        this.shardCount = 10;
-        this.currentId = 1;
-        this.storyId = 1;
-        this.messageId = 1;
-        this.notificationId = 1;
-        this.reportId = 1;
-        
-        for (let i = 0; i < this.shardCount; i++) {
-            this.shards[i] = {
-                users: {},
-                posts: [],
-                stories: [],
-                messages: {},
-                likes: {},
-                comments: {},
-                reports: [],
-                notifications: [],
-                followers: {},
-                following: {},
-                bookmarks: {},
-                hashtags: {},
-                trends: [],
-                analytics: {}
-            };
-        }
-    }
-
-    getShard(key) {
-        const hash = crypto.createHash('md5').update(key).digest('hex');
-        const shardIndex = parseInt(hash.substring(0, 2), 16) % this.shardCount;
-        return shardIndex;
-    }
-
-    getShardById(id) {
-        if (!id) return 0;
-        const hash = crypto.createHash('md5').update(id).digest('hex');
-        return parseInt(hash.substring(0, 2), 16) % this.shardCount;
-    }
-
-    // ===== Users =====
-    saveUser(user) {
-        const shardIndex = this.getShard(user.userId);
-        this.shards[shardIndex].users[user.userId] = user;
-        log(`User ${user.username} saved in shard ${shardIndex}`);
-        return user;
-    }
-
-    getUser(userId) {
-        const shardIndex = this.getShardById(userId);
-        return this.shards[shardIndex].users[userId] || null;
-    }
-
-    getUserByEmail(email) {
-        for (let i = 0; i < this.shardCount; i++) {
-            for (const [key, user] of Object.entries(this.shards[i].users)) {
-                if (user.email === email) return user;
-            }
-        }
-        return null;
-    }
-
-    getAllUsers() {
-        let allUsers = [];
-        for (let i = 0; i < this.shardCount; i++) {
-            allUsers = allUsers.concat(Object.values(this.shards[i].users));
-        }
-        return allUsers;
-    }
-
-    updateUser(userId, data) {
-        const shardIndex = this.getShardById(userId);
-        if (this.shards[shardIndex].users[userId]) {
-            this.shards[shardIndex].users[userId] = { ...this.shards[shardIndex].users[userId], ...data };
-            return this.shards[shardIndex].users[userId];
-        }
-        return null;
-    }
-
-    deleteUser(userId) {
-        const shardIndex = this.getShardById(userId);
-        if (this.shards[shardIndex].users[userId]) {
-            delete this.shards[shardIndex].users[userId];
-            return true;
-        }
-        return false;
-    }
-
-    searchUsers(query) {
-        const results = [];
-        const q = query.toLowerCase();
-        for (let i = 0; i < this.shardCount; i++) {
-            for (const [key, user] of Object.entries(this.shards[i].users)) {
-                if (user.username.toLowerCase().includes(q) || user.email.toLowerCase().includes(q)) {
-                    results.push(user);
-                }
-            }
-        }
-        return results;
-    }
-
-    // ===== Follow System =====
-    followUser(userId, targetId) {
-        const userShard = this.getShardById(userId);
-        const targetShard = this.getShardById(targetId);
-        
-        if (!this.shards[userShard].users[userId] || !this.shards[targetShard].users[targetId]) {
-            return false;
-        }
-        
-        if (!this.shards[userShard].following[userId]) {
-            this.shards[userShard].following[userId] = [];
-        }
-        if (!this.shards[targetShard].followers[targetId]) {
-            this.shards[targetShard].followers[targetId] = [];
-        }
-        
-        if (this.shards[userShard].following[userId].includes(targetId)) {
-            return false;
-        }
-        
-        this.shards[userShard].following[userId].push(targetId);
-        this.shards[targetShard].followers[targetId].push(userId);
-        
-        const user = this.shards[userShard].users[userId];
-        const target = this.shards[targetShard].users[targetId];
-        user.following = (user.following || 0) + 1;
-        target.followers = (target.followers || 0) + 1;
-        
-        return true;
-    }
-
-    unfollowUser(userId, targetId) {
-        const userShard = this.getShardById(userId);
-        const targetShard = this.getShardById(targetId);
-        
-        if (!this.shards[userShard].following[userId]) return false;
-        
-        const idx = this.shards[userShard].following[userId].indexOf(targetId);
-        if (idx === -1) return false;
-        
-        this.shards[userShard].following[userId].splice(idx, 1);
-        const tIdx = this.shards[targetShard].followers[targetId].indexOf(userId);
-        if (tIdx !== -1) {
-            this.shards[targetShard].followers[targetId].splice(tIdx, 1);
-        }
-        
-        const user = this.shards[userShard].users[userId];
-        const target = this.shards[targetShard].users[targetId];
-        user.following = (user.following || 0) - 1;
-        target.followers = (target.followers || 0) - 1;
-        
-        return true;
-    }
-
-    getFollowers(userId) {
-        const shardIndex = this.getShardById(userId);
-        const followers = this.shards[shardIndex].followers[userId] || [];
-        const result = [];
-        for (const id of followers) {
-            const user = this.getUser(id);
-            if (user) result.push(user);
-        }
-        return result;
-    }
-
-    getFollowing(userId) {
-        const shardIndex = this.getShardById(userId);
-        const following = this.shards[shardIndex].following[userId] || [];
-        const result = [];
-        for (const id of following) {
-            const user = this.getUser(id);
-            if (user) result.push(user);
-        }
-        return result;
-    }
-
-    // ===== Posts =====
-    savePost(post) {
-        const shardIndex = this.getShardById(post.postId);
-        this.shards[shardIndex].posts.unshift(post);
-        
-        // Update hashtags
-        if (post.hashtags && post.hashtags.length > 0) {
-            for (const tag of post.hashtags) {
-                if (!this.shards[shardIndex].hashtags[tag]) {
-                    this.shards[shardIndex].hashtags[tag] = [];
-                }
-                this.shards[shardIndex].hashtags[tag].push(post.postId);
-            }
-        }
-        
-        log(`Post ${post.postId} saved in shard ${shardIndex}`);
-        return post;
-    }
-
-    getPosts(page = 1, limit = 20, hashtag = null, userId = null) {
-        let allPosts = [];
-        for (let i = 0; i < this.shardCount; i++) {
-            allPosts = allPosts.concat(this.shards[i].posts);
-        }
-        
-        if (hashtag) {
-            allPosts = allPosts.filter(p => p.hashtags && p.hashtags.some(h => h.toLowerCase() === hashtag.toLowerCase()));
-        }
-        
-        if (userId) {
-            allPosts = allPosts.filter(p => p.userId === userId);
-        }
-        
-        allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        const start = (page - 1) * limit;
-        return {
-            posts: allPosts.slice(start, start + limit),
-            total: allPosts.length,
-            page: page,
-            totalPages: Math.ceil(allPosts.length / limit)
-        };
-    }
-
-    getPost(postId) {
-        const shardIndex = this.getShardById(postId);
-        return this.shards[shardIndex].posts.find(p => p.postId === postId) || null;
-    }
-
-    deletePost(postId) {
-        const shardIndex = this.getShardById(postId);
-        const index = this.shards[shardIndex].posts.findIndex(p => p.postId === postId);
-        if (index !== -1) {
-            const post = this.shards[shardIndex].posts[index];
-            // Remove from hashtags
-            if (post.hashtags) {
-                for (const tag of post.hashtags) {
-                    const tagList = this.shards[shardIndex].hashtags[tag];
-                    if (tagList) {
-                        const idx = tagList.indexOf(postId);
-                        if (idx !== -1) tagList.splice(idx, 1);
-                    }
-                }
-            }
-            this.shards[shardIndex].posts.splice(index, 1);
-            return true;
-        }
-        return false;
-    }
-
-    likePost(postId, userId) {
-        const shardIndex = this.getShardById(postId);
-        const post = this.shards[shardIndex].posts.find(p => p.postId === postId);
-        if (!post) return { liked: false, likes: 0 };
-        const likeKey = `${postId}_${userId}`;
-        if (this.shards[shardIndex].likes[likeKey]) {
-            delete this.shards[shardIndex].likes[likeKey];
-            post.likes = (post.likes || 0) - 1;
-            return { liked: false, likes: post.likes };
-        } else {
-            this.shards[shardIndex].likes[likeKey] = true;
-            post.likes = (post.likes || 0) + 1;
-            return { liked: true, likes: post.likes };
-        }
-    }
-
-    addComment(postId, comment) {
-        const shardIndex = this.getShardById(postId);
-        const post = this.shards[shardIndex].posts.find(p => p.postId === postId);
-        if (!post) return false;
-        if (!post.comments) post.comments = [];
-        post.comments.push(comment);
-        return true;
-    }
-
-    getComments(postId) {
-        const shardIndex = this.getShardById(postId);
-        const post = this.shards[shardIndex].posts.find(p => p.postId === postId);
-        if (!post) return [];
-        return post.comments || [];
-    }
-
-    bookmarkPost(postId, userId) {
-        const shardIndex = this.getShardById(userId);
-        if (!this.shards[shardIndex].bookmarks[userId]) {
-            this.shards[shardIndex].bookmarks[userId] = [];
-        }
-        const bookmarks = this.shards[shardIndex].bookmarks[userId];
-        const idx = bookmarks.indexOf(postId);
-        if (idx !== -1) {
-            bookmarks.splice(idx, 1);
-            return { bookmarked: false };
-        } else {
-            bookmarks.push(postId);
-            return { bookmarked: true };
-        }
-    }
-
-    getBookmarks(userId) {
-        const shardIndex = this.getShardById(userId);
-        const bookmarks = this.shards[shardIndex].bookmarks[userId] || [];
-        const result = [];
-        for (const id of bookmarks) {
-            const post = this.getPost(id);
-            if (post) result.push(post);
-        }
-        return result;
-    }
-
-    getTrendingHashtags(limit = 10) {
-        const allHashtags = {};
-        for (let i = 0; i < this.shardCount; i++) {
-            for (const [tag, posts] of Object.entries(this.shards[i].hashtags)) {
-                if (!allHashtags[tag]) allHashtags[tag] = 0;
-                allHashtags[tag] += posts.length;
-            }
-        }
-        const sorted = Object.entries(allHashtags).sort((a, b) => b[1] - a[1]);
-        return sorted.slice(0, limit).map(([tag, count]) => ({ tag, count }));
-    }
-
-    // ===== Stories =====
-    saveStory(story) {
-        const shardIndex = this.getShardById(story.storyId);
-        this.shards[shardIndex].stories.push(story);
-        return story;
-    }
-
-    getStories() {
-        let allStories = [];
-        const now = Date.now();
-        for (let i = 0; i < this.shardCount; i++) {
-            allStories = allStories.concat(
-                this.shards[i].stories.filter(s => {
-                    const age = now - new Date(s.createdAt).getTime();
-                    return age < 24 * 60 * 60 * 1000;
-                })
-            );
-        }
-        return allStories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    }
-
-    viewStory(storyId, userId) {
-        const shardIndex = this.getShardById(storyId);
-        const story = this.shards[shardIndex].stories.find(s => s.storyId === storyId);
-        if (story && !story.viewers) {
-            story.viewers = [];
-        }
-        if (story && !story.viewers.includes(userId)) {
-            story.views = (story.views || 0) + 1;
-            story.viewers.push(userId);
-            return true;
-        }
-        return false;
-    }
-
-    // ===== Messages =====
-    saveMessage(roomId, message) {
-        const shardIndex = this.getShardById(roomId);
-        if (!this.shards[shardIndex].messages[roomId]) {
-            this.shards[shardIndex].messages[roomId] = [];
-        }
-        this.shards[shardIndex].messages[roomId].push(message);
-        return message;
-    }
-
-    getMessages(roomId, limit = 50) {
-        const shardIndex = this.getShardById(roomId);
-        if (!this.shards[shardIndex].messages[roomId]) return [];
-        return this.shards[shardIndex].messages[roomId].slice(-limit);
-    }
-
-    // ===== Reports =====
-    addReport(report) {
-        const shardIndex = this.getShardById(report.reportId);
-        this.shards[shardIndex].reports.push(report);
-        return report;
-    }
-
-    getReports() {
-        let allReports = [];
-        for (let i = 0; i < this.shardCount; i++) {
-            allReports = allReports.concat(this.shards[i].reports);
-        }
-        return allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    }
-
-    // ===== Analytics =====
-    trackAnalytics(userId, event, data) {
-        const shardIndex = this.getShardById(userId);
-        if (!this.shards[shardIndex].analytics[userId]) {
-            this.shards[shardIndex].analytics[userId] = [];
-        }
-        this.shards[shardIndex].analytics[userId].push({
-            event,
-            data,
-            timestamp: new Date().toISOString()
-        });
-    }
-
-    getAnalytics(userId) {
-        const shardIndex = this.getShardById(userId);
-        return this.shards[shardIndex].analytics[userId] || [];
-    }
-
-    // ===== Stats =====
-    getStats() {
-        let totalUsers = 0;
-        let totalPosts = 0;
-        let totalStories = 0;
-        let totalMessages = 0;
-        let totalLikes = 0;
-        let totalComments = 0;
-
-        for (let i = 0; i < this.shardCount; i++) {
-            totalUsers += Object.keys(this.shards[i].users).length;
-            totalPosts += this.shards[i].posts.length;
-            totalStories += this.shards[i].stories.length;
-            totalLikes += Object.keys(this.shards[i].likes).length;
-            for (const post of this.shards[i].posts) {
-                totalComments += (post.comments || []).length;
-            }
-            for (const room of Object.values(this.shards[i].messages)) {
-                totalMessages += room.length;
-            }
-        }
-
-        return {
-            totalUsers,
-            totalPosts,
-            totalStories,
-            totalMessages,
-            totalLikes,
-            totalComments,
-            shardCount: this.shardCount,
-            onlineUsers: Object.keys(onlineUsers).length || 0
-        };
-    }
+function log(msg) {
+    console.log('[' + new Date().toISOString() + '] ' + msg);
 }
 
-const db = new ShardedDatabase();
-const onlineUsers = {};
-const userSessions = new Map();
+// ============================================
+// 📊 دیتابیس
+// ============================================
+let users = {};
+let posts = [];
+let stories = [];
+let chatMessages = {};
+let likes = {};
+let userSessions = {};
+let onlineUsers = {};
+let currentId = 1;
+let storyId = 1;
+
 const ADMIN_EMAIL = 'milad.yari1377m@gmail.com';
-const ADMIN_PASSWORD = hashPassword('M09145978426m');
+const ADMIN_PASSWORD = 'M09145978426m';
+
+// ایجاد ادمین در شروع
+users[ADMIN_EMAIL] = {
+    userId: 'user_admin',
+    username: 'مدیر',
+    email: ADMIN_EMAIL,
+    password: hashPassword(ADMIN_PASSWORD),
+    bio: 'مدیر سیستم | توسعه‌دهنده',
+    avatar: '',
+    followers: 0,
+    following: 0,
+    postsCount: 0,
+    language: 'fa',
+    theme: 'light',
+    isOnline: false,
+    isAdmin: true,
+    isBanned: false,
+    createdAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString()
+};
+
+log('Admin created: ' + ADMIN_EMAIL);
 
 // ============================================
-// 🎯 سیستم کش (In-Memory)
-// ============================================
-class CacheSystem {
-    constructor() {
-        this.cache = new Map();
-        this.ttl = new Map();
-    }
-
-    set(key, value, ttl = 300) {
-        this.cache.set(key, value);
-        this.ttl.set(key, Date.now() + ttl * 1000);
-        log(`Cache set: ${key} (TTL: ${ttl}s)`);
-    }
-
-    get(key) {
-        if (!this.cache.has(key)) return null;
-        if (Date.now() > this.ttl.get(key)) {
-            this.cache.delete(key);
-            this.ttl.delete(key);
-            return null;
-        }
-        return this.cache.get(key);
-    }
-
-    delete(key) {
-        this.cache.delete(key);
-        this.ttl.delete(key);
-    }
-
-    clear() {
-        this.cache.clear();
-        this.ttl.clear();
-        log('Cache cleared');
-    }
-
-    getStats() {
-        return {
-            size: this.cache.size,
-            keys: Array.from(this.cache.keys())
-        };
-    }
-}
-
-const cache = new CacheSystem();
-
-// ============================================
-// 🎯 سیستم Queue
-// ============================================
-class QueueSystem {
-    constructor() {
-        this.queues = new Map();
-        this.processing = new Map();
-    }
-
-    add(queueName, data) {
-        if (!this.queues.has(queueName)) {
-            this.queues.set(queueName, []);
-        }
-        this.queues.get(queueName).push(data);
-        this.process(queueName);
-    }
-
-    async process(queueName) {
-        if (this.processing.get(queueName)) return;
-        this.processing.set(queueName, true);
-
-        while (this.queues.has(queueName) && this.queues.get(queueName).length > 0) {
-            const data = this.queues.get(queueName).shift();
-            try {
-                await this.handleQueue(queueName, data);
-            } catch (error) {
-                log(`Queue error ${queueName}: ${error.message}`, 'ERROR');
-            }
-        }
-
-        this.processing.set(queueName, false);
-    }
-
-    async handleQueue(queueName, data) {
-        switch (queueName) {
-            case 'post-processing':
-                log(`Processing post: ${data.postId}`, 'QUEUE');
-                break;
-            case 'notification':
-                log(`Notification for: ${data.userId}`, 'QUEUE');
-                break;
-            case 'analytics':
-                log(`Analytics event: ${data.event}`, 'QUEUE');
-                break;
-            case 'email':
-                log(`Email to: ${data.email}`, 'QUEUE');
-                break;
-            default:
-                log(`Unknown queue: ${queueName}`, 'QUEUE');
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
-
-    getStats() {
-        const stats = {};
-        for (const [name, queue] of this.queues) {
-            stats[name] = queue.length;
-        }
-        return stats;
-    }
-}
-
-const queue = new QueueSystem();
-
-// ============================================
-// 📡 API
+// 📡 API - فقط ورود (بدون ثبت نام)
 // ============================================
 
-// ===== احراز هویت =====
-app.post('/api/auth/register', (req, res) => {
-    const { username, email, password } = req.body;
-    
-    if (!username || !email || !password) {
-        return res.status(400).json({ error: 'همه فیلدها الزامی هستند' });
-    }
-
-    if (db.getUserByEmail(email)) {
-        return res.status(400).json({ error: 'این ایمیل قبلاً ثبت شده است' });
-    }
-
-    if (username.length < 3 || username.length > 30) {
-        return res.status(400).json({ error: 'نام کاربری باید بین 3 تا 30 کاراکتر باشد' });
-    }
-
-    if (password.length < 6) {
-        return res.status(400).json({ error: 'رمز عبور باید حداقل 6 کاراکتر باشد' });
-    }
-
-    const userId = 'user_' + uuidv4();
-    const isAdmin = email === ADMIN_EMAIL;
-
-    const user = {
-        userId: userId,
-        username: username,
-        email: email,
-        password: hashPassword(password),
-        bio: '',
-        avatar: '',
-        followers: 0,
-        following: 0,
-        postsCount: 0,
-        language: 'fa',
-        theme: 'light',
-        isOnline: false,
-        isAdmin: isAdmin,
-        isBanned: false,
-        isVerified: false,
-        createdAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString(),
-        notificationPreferences: {
-            likes: true,
-            comments: true,
-            follows: true,
-            messages: true
-        }
-    };
-
-    db.saveUser(user);
-    const token = generateToken();
-    userSessions.set(token, userId);
-    onlineUsers[userId] = { socketId: null, username: username };
-
-    log(`User registered: ${username} (${email}) - Admin: ${isAdmin}`);
-
-    // Send welcome email (queue)
-    queue.add('email', {
-        email: email,
-        subject: 'خوش آمدید به سوشال مدیا',
-        template: 'welcome',
-        username: username
-    });
-
-    res.json({
-        success: true,
-        token: token,
-        user: {
-            userId: userId,
-            username: username,
-            email: email,
-            bio: '',
-            avatar: '',
-            followers: 0,
-            following: 0,
-            postsCount: 0,
-            isAdmin: isAdmin,
-            isBanned: false,
-            isVerified: false,
-            language: 'fa',
-            theme: 'light'
-        }
-    });
-});
-
+// ===== ورود =====
 app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
+    
+    log('Login attempt: ' + email);
 
     if (!email || !password) {
         return res.status(400).json({ error: 'ایمیل و رمز عبور الزامی است' });
     }
 
-    const user = db.getUserByEmail(email);
+    const user = users[email];
     if (!user || user.password !== hashPassword(password)) {
         return res.status(401).json({ error: 'ایمیل یا رمز عبور اشتباه است' });
     }
@@ -764,20 +117,12 @@ app.post('/api/auth/login', (req, res) => {
     }
 
     const token = generateToken();
-    userSessions.set(token, user.userId);
+    userSessions[token] = user.userId;
     onlineUsers[user.userId] = { socketId: null, username: user.username };
     user.isOnline = true;
     user.lastSeen = new Date().toISOString();
-    db.updateUser(user.userId, { isOnline: true, lastSeen: user.lastSeen });
 
-    log(`User logged in: ${user.username}`);
-
-    // Track login analytics
-    queue.add('analytics', {
-        userId: user.userId,
-        event: 'login',
-        data: { timestamp: new Date().toISOString() }
-    });
+    log('User logged in: ' + user.username);
 
     res.json({
         success: true,
@@ -793,38 +138,47 @@ app.post('/api/auth/login', (req, res) => {
             postsCount: user.postsCount || 0,
             isAdmin: user.isAdmin || false,
             isBanned: user.isBanned || false,
-            isVerified: user.isVerified || false,
             language: user.language || 'fa',
             theme: user.theme || 'light'
         }
     });
 });
 
+// ===== خروج =====
 app.post('/api/auth/logout', (req, res) => {
     const { token } = req.body;
-    if (token) {
-        const userId = userSessions.get(token);
-        if (userId) {
-            db.updateUser(userId, { isOnline: false, lastSeen: new Date().toISOString() });
-            delete onlineUsers[userId];
+    if (token && userSessions[token]) {
+        const userId = userSessions[token];
+        delete userSessions[token];
+        delete onlineUsers[userId];
+        if (users[userId]) {
+            users[userId].isOnline = false;
+            users[userId].lastSeen = new Date().toISOString();
         }
-        userSessions.delete(token);
     }
     res.json({ success: true });
 });
 
+// ===== اطلاعات کاربر =====
 app.get('/api/auth/me', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const userId = userSessions.get(token);
+    const userId = userSessions[token];
     if (!userId) {
         return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const user = db.getUser(userId);
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
+    }
+
     if (!user) {
         return res.status(404).json({ error: 'User not found' });
     }
@@ -844,259 +198,266 @@ app.get('/api/auth/me', (req, res) => {
         postsCount: user.postsCount || 0,
         isAdmin: user.isAdmin || false,
         isBanned: user.isBanned || false,
-        isVerified: user.isVerified || false,
         language: user.language || 'fa',
-        theme: user.theme || 'light',
-        notificationPreferences: user.notificationPreferences || {}
+        theme: user.theme || 'light'
     });
+});
+
+// ===== بروزرسانی نام کاربری =====
+app.put('/api/users/:userId/username', (req, res) => {
+    const { userId } = req.params;
+    const { username } = req.body;
+
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
+    }
+
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    // بررسی تکراری نبودن نام کاربری
+    for (const key in users) {
+        if (users[key].username === username && users[key].userId !== userId) {
+            return res.status(400).json({ error: 'این نام کاربری قبلاً گرفته شده است' });
+        }
+    }
+
+    if (username.length < 3 || username.length > 30) {
+        return res.status(400).json({ error: 'نام کاربری باید بین 3 تا 30 کاراکتر باشد' });
+    }
+
+    user.username = username;
+    res.json({ success: true, username: username });
 });
 
 // ===== ادمین =====
 app.post('/api/admin/verify', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-        return res.status(401).json({ error: 'Unauthorized' });
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    const userId = userSessions[token];
+    if (!userId) return res.status(401).json({ error: 'Invalid token' });
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
     }
-
-    const userId = userSessions.get(token);
-    if (!userId) {
-        return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    const user = db.getUser(userId);
-    if (!user || !user.isAdmin) {
-        return res.status(403).json({ error: 'Admin access required' });
-    }
-
+    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     res.json({ success: true, isAdmin: true });
 });
 
 app.get('/api/admin/users', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const userId = userSessions.get(token);
+    const userId = userSessions[token];
     if (!userId) return res.status(401).json({ error: 'Invalid token' });
-    const user = db.getUser(userId);
-    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            admin = users[key];
+            break;
+        }
+    }
+    if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
-    const users = db.getAllUsers().map(u => ({
-        userId: u.userId,
-        username: u.username,
-        email: u.email,
-        bio: u.bio || '',
-        avatar: u.avatar || '',
-        followers: u.followers || 0,
-        following: u.following || 0,
-        postsCount: u.postsCount || 0,
-        isAdmin: u.isAdmin || false,
-        isBanned: u.isBanned || false,
-        isVerified: u.isVerified || false,
-        isOnline: u.isOnline || false,
-        createdAt: u.createdAt,
-        lastSeen: u.lastSeen
-    }));
-
-    res.json(users);
+    const list = [];
+    for (const key in users) {
+        const u = users[key];
+        list.push({
+            userId: u.userId,
+            username: u.username,
+            email: u.email,
+            bio: u.bio || '',
+            avatar: u.avatar || '',
+            followers: u.followers || 0,
+            following: u.following || 0,
+            postsCount: u.postsCount || 0,
+            isAdmin: u.isAdmin || false,
+            isBanned: u.isBanned || false,
+            isOnline: u.isOnline || false,
+            createdAt: u.createdAt,
+            lastSeen: u.lastSeen
+        });
+    }
+    res.json(list);
 });
 
 app.put('/api/admin/users/:userId/ban', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const adminId = userSessions.get(token);
+    const adminId = userSessions[token];
     if (!adminId) return res.status(401).json({ error: 'Invalid token' });
-    const admin = db.getUser(adminId);
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === adminId) {
+            admin = users[key];
+            break;
+        }
+    }
     if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
     const { userId } = req.params;
-    const { banned, reason } = req.body;
-    const user = db.getUser(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    if (user.isAdmin) return res.status(403).json({ error: 'Cannot ban admin' });
+    const { banned } = req.body;
+    let target = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            target = users[key];
+            break;
+        }
+    }
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.isAdmin) return res.status(403).json({ error: 'Cannot ban admin' });
 
-    db.updateUser(userId, { 
-        isBanned: banned, 
-        banReason: reason || '',
-        banDate: banned ? new Date().toISOString() : null
-    });
-    
+    target.isBanned = banned;
     if (banned) {
         delete onlineUsers[userId];
     }
-    
-    log(`User ${user.username} ${banned ? 'banned' : 'unbanned'} by admin ${admin.username}`);
     res.json({ success: true, isBanned: banned });
 });
 
 app.get('/api/admin/posts', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const userId = userSessions.get(token);
+    const userId = userSessions[token];
     if (!userId) return res.status(401).json({ error: 'Invalid token' });
-    const user = db.getUser(userId);
-    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
-
-    const result = db.getPosts(1, 1000);
-    res.json(result.posts);
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            admin = users[key];
+            break;
+        }
+    }
+    if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    res.json(posts);
 });
 
 app.delete('/api/admin/posts/:postId', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const adminId = userSessions.get(token);
+    const adminId = userSessions[token];
     if (!adminId) return res.status(401).json({ error: 'Invalid token' });
-    const admin = db.getUser(adminId);
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === adminId) {
+            admin = users[key];
+            break;
+        }
+    }
     if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
     const { postId } = req.params;
-    const deleted = db.deletePost(postId);
-    if (deleted) {
-        log(`Post ${postId} deleted by admin ${admin.username}`);
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Post not found' });
-    }
+    const index = posts.findIndex(p => p.postId === postId);
+    if (index === -1) return res.status(404).json({ error: 'Post not found' });
+    posts.splice(index, 1);
+    res.json({ success: true });
 });
 
 app.post('/api/admin/broadcast', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const adminId = userSessions.get(token);
+    const adminId = userSessions[token];
     if (!adminId) return res.status(401).json({ error: 'Invalid token' });
-    const admin = db.getUser(adminId);
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === adminId) {
+            admin = users[key];
+            break;
+        }
+    }
     if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
-    const { message, type = 'info' } = req.body;
+    const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'Message required' });
 
     io.emit('broadcast', {
         message: message,
         from: admin.username,
-        type: type,
         timestamp: new Date().toISOString()
     });
 
-    log(`Broadcast from admin ${admin.username}: ${message.substring(0, 50)}...`);
     res.json({ success: true, message: message });
 });
 
 app.get('/api/admin/stats', (req, res) => {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const userId = userSessions.get(token);
+    const userId = userSessions[token];
     if (!userId) return res.status(401).json({ error: 'Invalid token' });
-    const user = db.getUser(userId);
-    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    let admin = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            admin = users[key];
+            break;
+        }
+    }
+    if (!admin || !admin.isAdmin) return res.status(403).json({ error: 'Admin access required' });
 
-    const dbStats = db.getStats();
-    const cacheStats = cache.getStats();
-    const queueStats = queue.getStats();
+    let totalUsers = 0;
+    let totalPosts = posts.length;
+    let totalStories = stories.length;
+    let onlineCount = Object.keys(onlineUsers).length;
+    let adminCount = 0;
+    let bannedCount = 0;
+
+    for (const key in users) {
+        totalUsers++;
+        if (users[key].isAdmin) adminCount++;
+        if (users[key].isBanned) bannedCount++;
+    }
 
     res.json({
-        database: dbStats,
-        cache: cacheStats,
-        queue: queueStats,
-        system: {
-            uptime: process.uptime(),
-            memory: process.memoryUsage(),
-            node: process.version,
-            platform: process.platform
-        }
+        totalUsers: totalUsers,
+        totalPosts: totalPosts,
+        totalStories: totalStories,
+        onlineUsers: onlineCount,
+        admins: adminCount,
+        banned: bannedCount
     });
-});
-
-app.post('/api/admin/add-shard', (req, res) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Unauthorized' });
-    const userId = userSessions.get(token);
-    if (!userId) return res.status(401).json({ error: 'Invalid token' });
-    const user = db.getUser(userId);
-    if (!user || !user.isAdmin) return res.status(403).json({ error: 'Admin access required' });
-
-    const newShardIndex = db.shardCount;
-    db.shards[newShardIndex] = {
-        users: {},
-        posts: [],
-        stories: [],
-        messages: {},
-        likes: {},
-        comments: {},
-        reports: [],
-        notifications: [],
-        followers: {},
-        following: {},
-        bookmarks: {},
-        hashtags: {},
-        trends: [],
-        analytics: {}
-    };
-    db.shardCount++;
-
-    log(`New shard ${newShardIndex} added by admin ${user.username}`);
-    res.json({ success: true, shardCount: db.shardCount });
 });
 
 // ===== کاربران =====
 app.get('/api/users', (req, res) => {
-    const users = db.getAllUsers().map(u => ({
-        userId: u.userId,
-        username: u.username,
-        avatar: u.avatar || '',
-        bio: u.bio || '',
-        followers: u.followers || 0,
-        following: u.following || 0,
-        isOnline: u.isOnline || false,
-        isBanned: u.isBanned || false,
-        isVerified: u.isVerified || false,
-        lastSeen: u.lastSeen
-    }));
-    res.json(users);
-});
-
-app.get('/api/users/:userId', (req, res) => {
-    const { userId } = req.params;
-    const user = db.getUser(userId);
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+    const list = [];
+    for (const key in users) {
+        const u = users[key];
+        list.push({
+            userId: u.userId,
+            username: u.username,
+            avatar: u.avatar || '',
+            bio: u.bio || '',
+            followers: u.followers || 0,
+            following: u.following || 0,
+            isOnline: u.isOnline || false,
+            isBanned: u.isBanned || false,
+            lastSeen: u.lastSeen
+        });
     }
-    res.json({
-        userId: user.userId,
-        username: user.username,
-        avatar: user.avatar || '',
-        bio: user.bio || '',
-        followers: user.followers || 0,
-        following: user.following || 0,
-        postsCount: user.postsCount || 0,
-        isOnline: user.isOnline || false,
-        isBanned: user.isBanned || false,
-        isVerified: user.isVerified || false,
-        createdAt: user.createdAt,
-        lastSeen: user.lastSeen
-    });
+    res.json(list);
 });
 
 app.put('/api/users/:userId/profile', (req, res) => {
     const { userId } = req.params;
-    const { bio, avatar, language, theme, username } = req.body;
-
-    const user = db.getUser(userId);
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+    const { bio, avatar, language, theme } = req.body;
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
     }
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (bio !== undefined) user.bio = bio;
     if (avatar !== undefined) user.avatar = avatar;
     if (language !== undefined) user.language = language;
     if (theme !== undefined) user.theme = theme;
-    if (username !== undefined) {
-        // Check if username is taken
-        const existing = db.getAllUsers().find(u => u.username === username && u.userId !== userId);
-        if (existing) {
-            return res.status(400).json({ error: 'این نام کاربری قبلاً گرفته شده است' });
-        }
-        user.username = username;
-    }
 
-    db.updateUser(userId, user);
     res.json({ success: true, user: user });
 });
 
@@ -1104,91 +465,20 @@ app.post('/api/users/:userId/follow', (req, res) => {
     const { userId } = req.params;
     const { followerId } = req.body;
 
-    const target = db.getUser(userId);
-    const follower = db.getUser(followerId);
-
-    if (!target || !follower) {
-        return res.status(404).json({ error: 'User not found' });
+    let target = null;
+    let follower = null;
+    for (const key in users) {
+        if (users[key].userId === userId) target = users[key];
+        if (users[key].userId === followerId) follower = users[key];
     }
 
-    if (userId === followerId) {
-        return res.status(400).json({ error: 'Cannot follow yourself' });
-    }
+    if (!target || !follower) return res.status(404).json({ error: 'User not found' });
+    if (userId === followerId) return res.status(400).json({ error: 'Cannot follow yourself' });
 
-    const result = db.followUser(followerId, userId);
-    if (!result) {
-        return res.status(400).json({ error: 'Already following or invalid user' });
-    }
+    target.followers = (target.followers || 0) + 1;
+    follower.following = (follower.following || 0) + 1;
 
-    // Track analytics
-    queue.add('analytics', {
-        userId: followerId,
-        event: 'follow',
-        data: { targetId: userId }
-    });
-
-    // Send notification (queue)
-    queue.add('notification', {
-        userId: userId,
-        type: 'follow',
-        fromUserId: followerId,
-        data: { username: follower.username }
-    });
-
-    res.json({ success: true, followers: target.followers || 0 });
-});
-
-app.post('/api/users/:userId/unfollow', (req, res) => {
-    const { userId } = req.params;
-    const { followerId } = req.body;
-
-    const result = db.unfollowUser(followerId, userId);
-    if (!result) {
-        return res.status(400).json({ error: 'Not following or invalid user' });
-    }
-
-    res.json({ success: true });
-});
-
-app.get('/api/users/:userId/followers', (req, res) => {
-    const { userId } = req.params;
-    const followers = db.getFollowers(userId);
-    res.json(followers.map(u => ({
-        userId: u.userId,
-        username: u.username,
-        avatar: u.avatar || '',
-        bio: u.bio || '',
-        isOnline: u.isOnline || false
-    })));
-});
-
-app.get('/api/users/:userId/following', (req, res) => {
-    const { userId } = req.params;
-    const following = db.getFollowing(userId);
-    res.json(following.map(u => ({
-        userId: u.userId,
-        username: u.username,
-        avatar: u.avatar || '',
-        bio: u.bio || '',
-        isOnline: u.isOnline || false
-    })));
-});
-
-app.get('/api/users/search', (req, res) => {
-    const { q } = req.query;
-    if (!q) {
-        return res.status(400).json({ error: 'Search query required' });
-    }
-    const results = db.searchUsers(q);
-    res.json(results.map(u => ({
-        userId: u.userId,
-        username: u.username,
-        avatar: u.avatar || '',
-        bio: u.bio || '',
-        followers: u.followers || 0,
-        isOnline: u.isOnline || false,
-        isVerified: u.isVerified || false
-    })));
+    res.json({ success: true, followers: target.followers });
 });
 
 // ===== پست‌ها =====
@@ -1203,167 +493,121 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 500 * 1024 * 1024 },
     fileFilter: function(req, file, cb) {
-        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
         cb(null, allowed.includes(file.mimetype));
     }
 });
 
 app.get('/api/posts', (req, res) => {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const hashtag = req.query.hashtag || null;
-    const userId = req.query.userId || null;
-    
-    const cacheKey = 'posts:' + page + ':' + limit + ':' + (hashtag || 'all') + ':' + (userId || 'all');
-    const cached = cache.get(cacheKey);
-    if (cached) {
-        return res.json(cached);
+    const { page = 1, limit = 20, hashtag } = req.query;
+    const skip = (page - 1) * limit;
+    let filtered = [...posts];
+    if (hashtag) {
+        filtered = filtered.filter(p => p.hashtags && p.hashtags.some(h => h.toLowerCase() === hashtag.toLowerCase()));
     }
-
-    const result = db.getPosts(page, limit, hashtag, userId);
-    cache.set(cacheKey, result, 60);
-    res.json(result);
+    const total = filtered.length;
+    const paginated = filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(skip, skip + parseInt(limit));
+    res.json({ posts: paginated, total: total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
 });
 
 app.post('/api/posts', upload.single('file'), (req, res) => {
-    const caption = req.body.caption || '';
-    const userId = req.body.userId || 'user1';
-    const username = req.body.username || 'کاربر';
-    const hashtags = req.body.hashtags || '';
+    const { caption, userId, username, hashtags } = req.body;
     const file = req.file;
 
-    if (!file) {
-        return res.status(400).json({ error: 'فایل انتخاب نشده است' });
-    }
+    if (!file) return res.status(400).json({ error: 'فایل انتخاب نشده است' });
 
-    const user = db.getUser(userId);
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
     }
-
-    if (user.isBanned) {
-        return res.status(403).json({ error: 'User is banned' });
-    }
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.isBanned) return res.status(403).json({ error: 'User is banned' });
 
     const isVideo = file.mimetype.startsWith('video/');
-    const postId = 'post_' + uuidv4();
+    const postId = 'post_' + (currentId++);
 
     const newPost = {
         postId: postId,
         userId: userId,
         username: username || user.username,
         image: '/uploads/posts/' + file.filename,
-        caption: caption,
-        hashtags: hashtags ? hashtags.split(',').map(function(h) { return h.trim(); }) : [],
+        caption: caption || '',
+        hashtags: hashtags ? hashtags.split(',').map(h => h.trim()) : [],
         likes: 0,
         comments: [],
         shares: 0,
         views: 0,
         isVideo: isVideo,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: new Date().toISOString()
     };
 
-    db.savePost(newPost);
-    db.updateUser(userId, { postsCount: (user.postsCount || 0) + 1 });
+    posts.unshift(newPost);
+    user.postsCount = (user.postsCount || 0) + 1;
 
-    cache.delete('posts:*');
-    queue.add('post-processing', { postId: postId, userId: userId });
-
-    log(`Post created: ${postId} by ${username}`);
+    log('Post created: ' + postId + ' by ' + username);
     res.status(201).json(newPost);
 });
 
 app.put('/api/posts/:postId/like', (req, res) => {
-    const postId = req.params.postId;
-    const userId = req.body.userId || 'user1';
+    const { postId } = req.params;
+    const { userId } = req.body;
 
-    const user = db.getUser(userId);
-    if (!user || user.isBanned) {
-        return res.status(403).json({ error: 'User is banned' });
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
+    }
+    if (!user || user.isBanned) return res.status(403).json({ error: 'User is banned' });
+
+    const post = posts.find(p => p.postId === postId);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const key = postId + '_' + userId;
+    if (likes[key]) {
+        likes[key] = false;
+        post.likes -= 1;
+    } else {
+        likes[key] = true;
+        post.likes += 1;
     }
 
-    const result = db.likePost(postId, userId);
-    cache.delete('posts:*');
-    
-    // Track analytics
-    if (result.liked) {
-        queue.add('analytics', {
-            userId: userId,
-            event: 'like',
-            data: { postId: postId }
-        });
-    }
-    
-    res.json(result);
+    res.json({ liked: !!likes[key], likes: post.likes });
 });
 
 app.post('/api/posts/:postId/comment', (req, res) => {
-    const postId = req.params.postId;
-    const userId = req.body.userId || 'user1';
-    const username = req.body.username || 'کاربر';
-    const text = req.body.text || '';
+    const { postId } = req.params;
+    const { userId, username, text } = req.body;
 
-    const user = db.getUser(userId);
-    if (!user || user.isBanned) {
-        return res.status(403).json({ error: 'User is banned' });
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
     }
+    if (!user || user.isBanned) return res.status(403).json({ error: 'User is banned' });
+
+    const post = posts.find(p => p.postId === postId);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
 
     const comment = {
-        commentId: 'cmt_' + uuidv4(),
+        commentId: 'cmt_' + (currentId++),
         userId: userId,
         username: username || user.username,
         text: text,
         createdAt: new Date().toISOString()
     };
 
-    const added = db.addComment(postId, comment);
-    if (!added) {
-        return res.status(404).json({ error: 'Post not found' });
-    }
-
-    cache.delete('posts:*');
-    
-    // Send notification
-    const post = db.getPost(postId);
-    if (post && post.userId !== userId) {
-        queue.add('notification', {
-            userId: post.userId,
-            type: 'comment',
-            fromUserId: userId,
-            data: { postId: postId, comment: text.substring(0, 50) }
-        });
-    }
+    if (!post.comments) post.comments = [];
+    post.comments.push(comment);
 
     res.json({ success: true, comment: comment });
-});
-
-app.get('/api/posts/:postId', (req, res) => {
-    const postId = req.params.postId;
-    const post = db.getPost(postId);
-    if (!post) {
-        return res.status(404).json({ error: 'Post not found' });
-    }
-    res.json(post);
-});
-
-app.post('/api/posts/:postId/bookmark', (req, res) => {
-    const postId = req.params.postId;
-    const userId = req.body.userId || 'user1';
-    
-    const user = db.getUser(userId);
-    if (!user || user.isBanned) {
-        return res.status(403).json({ error: 'User is banned' });
-    }
-    
-    const result = db.bookmarkPost(postId, userId);
-    res.json(result);
-});
-
-app.get('/api/posts/:postId/comments', (req, res) => {
-    const postId = req.params.postId;
-    const comments = db.getComments(postId);
-    res.json(comments);
 });
 
 // ===== استوری‌ها =====
@@ -1384,26 +628,28 @@ const storyUpload = multer({
 });
 
 app.get('/api/stories', (req, res) => {
-    const stories = db.getStories();
-    res.json(stories);
+    const now = Date.now();
+    const active = stories.filter(s => (now - new Date(s.createdAt).getTime()) < 24 * 60 * 60 * 1000);
+    res.json(active);
 });
 
 app.post('/api/stories', storyUpload.single('file'), (req, res) => {
-    const userId = req.body.userId || 'user1';
-    const username = req.body.username || 'کاربر';
+    const { userId, username } = req.body;
     const file = req.file;
 
-    if (!file) {
-        return res.status(400).json({ error: 'فایل انتخاب نشده است' });
-    }
+    if (!file) return res.status(400).json({ error: 'فایل انتخاب نشده است' });
 
-    const user = db.getUser(userId);
-    if (!user || user.isBanned) {
-        return res.status(403).json({ error: 'User is banned' });
+    let user = null;
+    for (const key in users) {
+        if (users[key].userId === userId) {
+            user = users[key];
+            break;
+        }
     }
+    if (!user || user.isBanned) return res.status(403).json({ error: 'User is banned' });
 
     const isVideo = file.mimetype.startsWith('video/');
-    const storyId = 'story_' + uuidv4();
+    const storyId = 'story_' + (storyId++);
 
     const newStory = {
         storyId: storyId,
@@ -1413,127 +659,112 @@ app.post('/api/stories', storyUpload.single('file'), (req, res) => {
         isVideo: isVideo,
         views: 0,
         viewers: [],
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        createdAt: new Date().toISOString()
     };
 
-    db.saveStory(newStory);
-    log(`Story created: ${storyId} by ${username}`);
+    stories.push(newStory);
     res.status(201).json(newStory);
 });
 
 app.post('/api/stories/:storyId/view', (req, res) => {
-    const storyId = req.params.storyId;
-    const userId = req.body.userId || 'user1';
+    const { storyId } = req.params;
+    const { userId } = req.body;
 
-    const viewed = db.viewStory(storyId, userId);
-    res.json({ success: viewed });
-});
+    const story = stories.find(s => s.storyId === storyId);
+    if (story && !story.viewers) story.viewers = [];
+    if (story && !story.viewers.includes(userId)) {
+        story.views = (story.views || 0) + 1;
+        story.viewers.push(userId);
+    }
 
-// ===== Trends =====
-app.get('/api/trends', (req, res) => {
-    const trends = db.getTrendingHashtags(10);
-    res.json(trends);
+    res.json({ success: true });
 });
 
 // ============================================
-// 💬 WebSocket چت (با رمزنگاری)
+// 💬 WebSocket چت
 // ============================================
 
 io.on('connection', function(socket) {
     log('Socket connected: ' + socket.id);
 
     socket.on('register', function(data) {
-        var userId = data.userId;
-        var username = data.username;
-        onlineUsers[userId] = {
-            socketId: socket.id,
-            username: username,
-            lastSeen: new Date().toISOString()
-        };
+        const { userId, username } = data;
+        if (onlineUsers[userId]) {
+            onlineUsers[userId].socketId = socket.id;
+        }
         socket.userId = userId;
         socket.username = username;
-
-        db.updateUser(userId, { isOnline: true, lastSeen: new Date().toISOString() });
+        for (const key in users) {
+            if (users[key].userId === userId) {
+                users[key].isOnline = true;
+                users[key].lastSeen = new Date().toISOString();
+                break;
+            }
+        }
         io.emit('users-online', Object.keys(onlineUsers));
-
-        log('User ' + username + ' (' + userId + ') online');
+        log('User online: ' + username);
     });
 
     socket.on('join-room', function(data) {
-        var roomId = data.roomId;
-        var userId = data.userId;
+        const { roomId, userId } = data;
         socket.join(roomId);
         socket.roomId = roomId;
-
-        var messages = db.getMessages(roomId, 50);
-        var decryptedMessages = messages.map(function(msg) {
-            return {
-                messageId: msg.messageId,
-                userId: msg.userId,
-                username: msg.username,
-                message: decryptMessage(msg.message, msg.userId),
-                timestamp: msg.timestamp
-            };
-        });
-        socket.emit('history', decryptedMessages);
-
-        log('User ' + userId + ' joined room ' + roomId);
+        if (chatMessages[roomId]) {
+            socket.emit('history', chatMessages[roomId].slice(-50));
+        }
+        log('User joined room: ' + userId + ' -> ' + roomId);
     });
 
     socket.on('send-message', function(data) {
-        var roomId = data.roomId;
-        var userId = data.userId;
-        var username = data.username;
-        var message = data.message;
-
-        var user = db.getUser(userId);
+        const { roomId, userId, username, message } = data;
+        let user = null;
+        for (const key in users) {
+            if (users[key].userId === userId) {
+                user = users[key];
+                break;
+            }
+        }
         if (user && user.isBanned) {
-            socket.emit('error', { message: 'You are banned from chatting' });
+            socket.emit('error', { message: 'You are banned' });
             return;
         }
-
-        var encrypted = encryptMessage(message, userId);
-        var msgData = {
-            messageId: 'msg_' + uuidv4(),
+        const msgData = {
+            messageId: 'msg_' + (currentId++),
             userId: userId,
-            username: username || (user ? user.username : 'کاربر'),
-            message: encrypted,
+            username: username,
+            message: message,
             timestamp: new Date().toISOString()
         };
-
-        db.saveMessage(roomId, msgData);
-
-        io.to(roomId).emit('receive-message', {
-            messageId: msgData.messageId,
-            userId: msgData.userId,
-            username: msgData.username,
-            message: message,
-            timestamp: msgData.timestamp
-        });
-
-        log('Message from ' + username + ' in ' + roomId + ': ' + message.substring(0, 30) + '...');
+        if (!chatMessages[roomId]) chatMessages[roomId] = [];
+        chatMessages[roomId].push(msgData);
+        io.to(roomId).emit('receive-message', msgData);
+        log('Message: ' + username + ' -> ' + roomId);
     });
 
     socket.on('leave-room', function(data) {
-        var roomId = data.roomId;
-        var userId = data.userId;
+        const { roomId, userId } = data;
         socket.leave(roomId);
-        log('User ' + userId + ' left room ' + roomId);
+        log('User left room: ' + userId);
     });
 
     socket.on('disconnect', function() {
         if (socket.userId) {
             delete onlineUsers[socket.userId];
-            db.updateUser(socket.userId, { isOnline: false, lastSeen: new Date().toISOString() });
+            for (const key in users) {
+                if (users[key].userId === socket.userId) {
+                    users[key].isOnline = false;
+                    users[key].lastSeen = new Date().toISOString();
+                    break;
+                }
+            }
             io.emit('users-online', Object.keys(onlineUsers));
-            log('User ' + socket.userId + ' disconnected');
+            log('User disconnected: ' + socket.userId);
         }
     });
 });
 
 // ============================================
-// 🌐 صفحه HTML کامل
+// 🌐 صفحه HTML
 // ============================================
 app.get('/', function(req, res) {
     res.send(`
@@ -1542,7 +773,7 @@ app.get('/', function(req, res) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>سوشال مدیا حرفه‌ای</title>
+    <title>سوشال مدیا</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1561,7 +792,6 @@ app.get('/', function(req, res) {
             --radius-sm: 8px;
             --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             --font: 'Segoe UI', Tahoma, sans-serif;
-            --max-width: 935px;
             --header-height: 60px;
             --bottom-nav-height: 65px;
         }
@@ -1641,15 +871,6 @@ app.get('/', function(req, res) {
             background: var(--primary-dark);
             transform: scale(1.02);
         }
-        .login-box .toggle-link {
-            color: var(--primary);
-            cursor: pointer;
-            text-align: center;
-            margin-top: 12px;
-        }
-        .login-box .toggle-link:hover {
-            text-decoration: underline;
-        }
         .login-box .error {
             color: var(--danger);
             font-size: 13px;
@@ -1670,8 +891,7 @@ app.get('/', function(req, res) {
             position: sticky;
             top: 0;
         }
-        .menu-icon { font-size: 24px; cursor: pointer; color: var(--text); transition: var(--transition); }
-        .menu-icon:hover { transform: scale(1.05); }
+        .menu-icon { font-size: 24px; cursor: pointer; color: var(--text); }
         .logo { font-size: 20px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
         .logo i { color: var(--primary); }
         .search-box {
@@ -1684,9 +904,7 @@ app.get('/', function(req, res) {
             align-items: center;
             gap: 10px;
             border: 1px solid var(--border);
-            transition: var(--transition);
         }
-        .search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(0,149,246,0.2); }
         .search-box input {
             border: none;
             background: transparent;
@@ -1699,7 +917,7 @@ app.get('/', function(req, res) {
         .search-box i { color: var(--text-secondary); }
         .header-right { display: flex; gap: 18px; font-size: 22px; color: var(--text); }
         .header-right i { cursor: pointer; transition: var(--transition); }
-        .header-right i:hover { color: var(--primary); transform: scale(1.05); }
+        .header-right i:hover { color: var(--primary); }
 
         .stories-section {
             background: var(--bg-secondary);
@@ -1725,7 +943,6 @@ app.get('/', function(req, res) {
             border-radius: 50%;
             padding: 2px;
             background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-            transition: var(--transition);
         }
         .story-avatar img {
             width: 100%;
@@ -1738,8 +955,11 @@ app.get('/', function(req, res) {
             background: var(--bg);
             border: 2px dashed var(--border);
             padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        .story-avatar.add-story i { font-size: 28px; color: var(--primary); display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+        .story-avatar.add-story i { font-size: 28px; color: var(--primary); }
         .story-username {
             font-size: 11px;
             color: var(--text);
@@ -1756,7 +976,7 @@ app.get('/', function(req, res) {
             grid-template-columns: repeat(3, 1fr);
             gap: 4px;
             padding: 4px;
-            max-width: var(--max-width);
+            max-width: 935px;
             margin: 0 auto;
         }
         .gallery-item {
@@ -1807,12 +1027,11 @@ app.get('/', function(req, res) {
             border-radius: 6px;
             border: none;
             background: transparent;
-            transition: var(--transition);
             font-family: var(--font);
+            transition: var(--transition);
         }
         .gallery-item .explore-post-actions .action-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.05); }
         .gallery-item .explore-post-actions .action-btn.liked i { color: var(--danger); }
-        .gallery-item .explore-post-actions .action-btn i { font-size: 16px; }
 
         .bottom-nav {
             position: fixed;
@@ -1839,8 +1058,8 @@ app.get('/', function(req, res) {
             color: var(--text-secondary);
             padding: 4px 16px;
             border-radius: 30px;
-            transition: var(--transition);
             font-family: var(--font);
+            transition: var(--transition);
         }
         .bottom-nav button i { font-size: 24px; color: var(--text-secondary); transition: var(--transition); }
         .bottom-nav button:hover { background: var(--bg); }
@@ -1926,8 +1145,8 @@ app.get('/', function(req, res) {
             border-radius: 24px;
             font-weight: 600;
             cursor: pointer;
-            transition: var(--transition);
             font-family: var(--font);
+            transition: var(--transition);
         }
         .modal-footer button:hover { background: var(--primary-dark); transform: scale(1.02); }
 
@@ -1936,17 +1155,9 @@ app.get('/', function(req, res) {
             gap: 12px;
             padding: 10px 0;
             border-bottom: 1px solid var(--border);
-            transition: var(--transition);
         }
         .comment-item:last-child { border-bottom: none; }
-        .comment-avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            background: var(--border);
-            flex-shrink: 0;
-            overflow: hidden;
-        }
+        .comment-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--border); flex-shrink: 0; overflow: hidden; }
         .comment-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .comment-content { flex: 1; }
         .comment-username { font-weight: 600; font-size: 13px; color: var(--text); }
@@ -1998,15 +1209,7 @@ app.get('/', function(req, res) {
             align-items: center;
             border-bottom: 1px solid var(--border);
         }
-        .profile-avatar-large {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            overflow: hidden;
-            border: 3px solid var(--border);
-            margin-bottom: 10px;
-            transition: var(--transition);
-        }
+        .profile-avatar-large { width: 100px; height: 100px; border-radius: 50%; overflow: hidden; border: 3px solid var(--border); margin-bottom: 10px; }
         .profile-avatar-large img { width: 100%; height: 100%; object-fit: cover; }
         .profile-username { font-size: 20px; font-weight: 600; color: var(--text); }
         .profile-bio { font-size: 14px; color: var(--text); margin: 6px 0; text-align: center; padding: 0 20px; }
@@ -2248,14 +1451,7 @@ app.get('/', function(req, res) {
             transition: var(--transition);
         }
         .chat-user:hover { background: var(--bg-secondary); }
-        .chat-user .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            overflow: hidden;
-            background: var(--border);
-            flex-shrink: 0;
-        }
+        .chat-user .user-avatar { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: var(--border); flex-shrink: 0; }
         .chat-user .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .chat-user .user-name { font-size: 14px; color: var(--text); font-weight: 500; }
         .chat-user .user-status { font-size: 11px; color: var(--text-secondary); }
@@ -2441,7 +1637,7 @@ app.get('/', function(req, res) {
         .settings-item:last-child { border-bottom: none; }
         .settings-item .label { font-size: 14px; color: var(--text); }
         .settings-item .value { font-size: 14px; color: var(--text-secondary); }
-        .settings-item select, .settings-item input {
+        .settings-item select {
             padding: 6px 12px;
             border: 1px solid var(--border);
             border-radius: var(--radius-sm);
@@ -2451,7 +1647,7 @@ app.get('/', function(req, res) {
             outline: none;
             transition: var(--transition);
         }
-        .settings-item select:focus, .settings-item input:focus { border-color: var(--primary); }
+        .settings-item select:focus { border-color: var(--primary); }
         .settings-item .toggle {
             width: 52px;
             height: 28px;
@@ -2590,17 +1786,7 @@ app.get('/', function(req, res) {
             transition: var(--transition);
         }
         .share-option:hover { background: var(--bg); border-radius: var(--radius-sm); }
-        .share-option .share-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            color: white;
-            flex-shrink: 0;
-        }
+        .share-option .share-icon { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; color: white; flex-shrink: 0; }
         .share-option .share-icon.telegram { background: #0088cc; }
         .share-option .share-icon.whatsapp { background: #25d366; }
         .share-option .share-icon.copy { background: #6c757d; }
@@ -2742,9 +1928,6 @@ app.get('/', function(req, res) {
             .gallery { gap: 3px; padding: 3px; }
             .search-box { max-width: 200px; }
             .modal-content { max-width: 95%; }
-            .settings-stats { grid-template-columns: repeat(3, 1fr); }
-            .settings-stats .stat-box .num { font-size: 20px; }
-            .side-menu { width: 280px; right: -290px; }
         }
         @media (max-width: 480px) {
             .gallery { gap: 2px; padding: 2px; }
@@ -2755,10 +1938,6 @@ app.get('/', function(req, res) {
             .logo { font-size: 16px; }
             .story-avatar { width: 54px; height: 54px; }
             .chat-message { max-width: 90%; }
-            .profile-avatar-large { width: 80px; height: 80px; }
-            .settings-stats { grid-template-columns: repeat(3, 1fr); gap: 6px; }
-            .settings-stats .stat-box { padding: 10px; }
-            .settings-stats .stat-box .num { font-size: 18px; }
         }
     </style>
 </head>
@@ -2770,13 +1949,11 @@ app.get('/', function(req, res) {
     <!-- Login Page -->
     <div id="loginPage" class="login-container">
         <div class="login-box">
-            <h2 id="loginTitle">🔐 ورود</h2>
+            <h2>🔐 ورود به حساب کاربری</h2>
             <div id="loginError" class="error"></div>
-            <input type="text" id="loginUsername" placeholder="نام کاربری">
             <input type="email" id="loginEmail" placeholder="ایمیل">
             <input type="password" id="loginPassword" placeholder="رمز عبور">
             <button id="loginBtn">ورود</button>
-            <div class="toggle-link" id="toggleAuth">ثبت نام ندارید؟ ثبت نام کنید</div>
         </div>
     </div>
 
@@ -2880,11 +2057,18 @@ app.get('/', function(req, res) {
                         <img id="profileAvatar" src="https://i.pravatar.cc/150?img=10" alt="profile">
                     </div>
                     <div class="profile-username" id="profileUsername">کاربر</div>
-                    <div class="profile-bio" id="bioDisplay">توسعه‌دهنده وب | عاشق کدنویسی</div>
+                    <div class="profile-bio" id="bioDisplay">توسعه‌دهنده وب</div>
                     <button class="profile-follow-btn" id="profileFollowBtn">دنبال کردن</button>
                     <div class="profile-bio-edit" style="display:flex;gap:10px;margin:10px 0;width:100%;max-width:300px;">
                         <input type="text" id="bioInput" placeholder="بیوگرافی خود را بنویسید..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:14px;background:var(--bg);color:var(--text);direction:rtl;">
                         <button id="saveBio" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:var(--transition);">ذخیره</button>
+                    </div>
+                    <div style="margin-top:10px;width:100%;max-width:300px;">
+                        <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:4px;">تغیر نام کاربری</label>
+                        <div style="display:flex;gap:10px;">
+                            <input type="text" id="usernameInput" placeholder="نام کاربری جدید..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;outline:none;font-size:14px;background:var(--bg);color:var(--text);direction:rtl;">
+                            <button id="saveUsername" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:600;transition:var(--transition);">تغیر</button>
+                        </div>
                     </div>
                 </div>
                 <div class="profile-stats">
@@ -3000,14 +2184,6 @@ app.get('/', function(req, res) {
                 <h4>📸 مدیریت پست‌ها</h4>
                 <div id="adminPostsList"></div>
             </div>
-            <div class="admin-card">
-                <h4>⚡ مدیریت سیستم</h4>
-                <div class="admin-item">
-                    <span>شاردها</span>
-                    <span id="adminShardCount">10</span>
-                </div>
-                <button id="addShardBtn" class="admin-btn success">➕ اضافه کردن شارد جدید</button>
-            </div>
         </div>
 
         <div class="upload-page" id="uploadPage">
@@ -3103,7 +2279,7 @@ app.get('/', function(req, res) {
     <script src="/socket.io/socket.io.js"></script>
     <script>
         // ============================================
-        // 🌐 تنظیمات اصلی
+        // 🌐 تنظیمات
         // ============================================
         const API_URL = window.location.origin;
         const socket = io();
@@ -3117,11 +2293,6 @@ app.get('/', function(req, res) {
         let currentChatUser = null;
         let isLoading = false;
         let isUploading = false;
-        let isLogin = true;
-
-        // ============================================
-        // 📱 توابع
-        // ============================================
 
         function showToast(msg) {
             var toast = document.getElementById('toast');
@@ -3140,17 +2311,8 @@ app.get('/', function(req, res) {
         }
 
         // ============================================
-        // 🔐 احراز هویت
+        // 🔐 احراز هویت - فقط ورود
         // ============================================
-
-        async function registerUser(username, email, password) {
-            var res = await fetch(API_URL + '/api/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: username, email: email, password: password })
-            });
-            return await res.json();
-        }
 
         async function loginUser(email, password) {
             var res = await fetch(API_URL + '/api/auth/login', {
@@ -3188,6 +2350,18 @@ app.get('/', function(req, res) {
             }
         }
 
+        async function updateUsername(userId, username) {
+            var res = await fetch(API_URL + '/api/users/' + userId + '/username', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: username })
+            });
+            return await res.json();
+        }
+
         async function verifyAdmin() {
             if (!currentToken) return false;
             try {
@@ -3205,7 +2379,7 @@ app.get('/', function(req, res) {
         }
 
         // ============================================
-        // 📦 توابع API
+        // 📦 API
         // ============================================
 
         async function getPosts(page, hashtag) {
@@ -3219,11 +2393,10 @@ app.get('/', function(req, res) {
         async function createPost(file, caption, hashtags) {
             var formData = new FormData();
             formData.append('file', file);
-            formData.append('caption', caption);
+            formData.append('caption', caption || '');
             formData.append('userId', currentUser?.userId || 'user1');
             formData.append('username', currentUser?.username || 'کاربر');
             if (hashtags) formData.append('hashtags', hashtags);
-
             var res = await fetch(API_URL + '/api/posts', {
                 method: 'POST',
                 body: formData
@@ -3263,7 +2436,6 @@ app.get('/', function(req, res) {
             formData.append('file', file);
             formData.append('userId', currentUser?.userId || 'user1');
             formData.append('username', currentUser?.username || 'کاربر');
-
             var res = await fetch(API_URL + '/api/stories', {
                 method: 'POST',
                 body: formData
@@ -3279,7 +2451,10 @@ app.get('/', function(req, res) {
         async function updateProfile(userId, data) {
             var res = await fetch(API_URL + '/api/users/' + userId + '/profile', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Authorization': 'Bearer ' + currentToken,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(data)
             });
             return await res.json();
@@ -3288,36 +2463,19 @@ app.get('/', function(req, res) {
         async function followUser(userId, followerId) {
             var res = await fetch(API_URL + '/api/users/' + userId + '/follow', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Authorization': 'Bearer ' + currentToken,
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ followerId: followerId })
             });
             return await res.json();
         }
 
-        async function unfollowUser(userId, followerId) {
-            var res = await fetch(API_URL + '/api/users/' + userId + '/unfollow', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ followerId: followerId })
-            });
-            return await res.json();
-        }
+        // ============================================
+        // 👑 ادمین API
+        // ============================================
 
-        async function bookmarkPost(postId) {
-            var res = await fetch(API_URL + '/api/posts/' + postId + '/bookmark', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser?.userId || 'user1' })
-            });
-            return await res.json();
-        }
-
-        async function getTrends() {
-            var res = await fetch(API_URL + '/api/trends');
-            return await res.json();
-        }
-
-        // ===== Admin API =====
         async function getAdminUsers() {
             var res = await fetch(API_URL + '/api/admin/users', {
                 headers: { 'Authorization': 'Bearer ' + currentToken }
@@ -3371,14 +2529,6 @@ app.get('/', function(req, res) {
             return await res.json();
         }
 
-        async function addShard() {
-            var res = await fetch(API_URL + '/api/admin/add-shard', {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + currentToken }
-            });
-            return await res.json();
-        }
-
         // ============================================
         // 💬 چت
         // ============================================
@@ -3421,37 +2571,31 @@ app.get('/', function(req, res) {
 
         function startChat(userId, username) {
             if (currentUser && currentUser.isBanned) {
-                showToast('❌ شما مسدود شده‌اید و نمی‌توانید چت کنید');
+                showToast('❌ شما مسدود شده‌اید');
                 return;
             }
-
             currentChatUser = userId;
             var roomId = [currentUser?.userId || 'user1', userId].sort().join('_');
             currentChatRoom = roomId;
-
             document.getElementById('chatTitle').textContent = '💬 ' + username;
             document.getElementById('chatInterface').classList.add('active');
-
             socket.emit('join-room', { roomId: roomId, userId: currentUser?.userId || 'user1' });
         }
 
         function sendChatMessage() {
             if (currentUser && currentUser.isBanned) {
-                showToast('❌ شما مسدود شده‌اید و نمی‌توانید چت کنید');
+                showToast('❌ شما مسدود شده‌اید');
                 return;
             }
-
             var input = document.getElementById('chatInput');
             var text = input.value.trim();
             if (!text || !currentChatRoom || !currentUser) return;
-
             socket.emit('send-message', {
                 roomId: currentChatRoom,
                 userId: currentUser.userId,
                 username: currentUser.username,
                 message: text
             });
-
             displayChatMessage(currentUser.userId, currentUser.username, text, new Date().toISOString());
             input.value = '';
         }
@@ -3460,14 +2604,10 @@ app.get('/', function(req, res) {
             var messagesDiv = document.getElementById('chatMessages');
             var empty = messagesDiv.querySelector('.chat-empty');
             if (empty) empty.remove();
-
             var div = document.createElement('div');
             div.className = 'chat-message' + (userId === currentUser?.userId ? ' own' : '');
-
             var time = timestamp ? new Date(timestamp).toLocaleTimeString(language === 'fa' ? 'fa-IR' : 'en-US') : '';
-
             div.innerHTML = '<div class="msg-user">' + (userId === currentUser?.userId ? 'شما' : username) + '</div><div class="msg-text">' + message + '</div><div class="msg-time">' + time + '</div>';
-
             messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
@@ -3476,7 +2616,6 @@ app.get('/', function(req, res) {
             var list = document.getElementById('chatUsersList');
             list.innerHTML = '';
             var users = await getUsers();
-
             var hasUsers = false;
             users.forEach(function(user) {
                 if (user.userId === currentUser?.userId) return;
@@ -3485,14 +2624,11 @@ app.get('/', function(req, res) {
                 var div = document.createElement('div');
                 div.className = 'chat-user';
                 div.onclick = function() { startChat(user.userId, user.username); };
-
                 var statusClass = user.isOnline ? 'online' : '';
                 var statusText = user.isOnline ? 'آنلاین' : 'آفلاین';
-
                 div.innerHTML = '<div class="user-avatar"><img src="' + (user.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() * 70)) + '" alt="user"></div><div><div class="user-name">' + user.username + '</div><div class="user-status ' + statusClass + '">' + statusText + '</div></div>';
                 list.appendChild(div);
             });
-
             if (!hasUsers) {
                 list.innerHTML = '<div style="padding:10px 16px;color:var(--text-secondary);">هیچ کاربر دیگری آنلاین نیست</div>';
             }
@@ -3507,16 +2643,7 @@ app.get('/', function(req, res) {
             div.className = 'gallery-item';
             div.setAttribute('data-id', post.postId);
             div.onclick = function() { openPostDetail(post.postId); };
-
             var isLiked = localStorage.getItem('liked_' + post.postId) === 'true';
-
-            var captionHtml = post.caption || '';
-            if (post.hashtags && post.hashtags.length > 0) {
-                post.hashtags.forEach(function(h) {
-                    captionHtml = captionHtml.replace('#' + h, '<span class="hashtag" style="color:var(--primary);cursor:pointer;" onclick="event.stopPropagation(); searchHashtag(\'' + h + '\')">#' + h + '</span>');
-                });
-            }
-
             div.innerHTML = '<div class="image-container"><img src="' + post.image + '" alt="post" loading="lazy"></div><div class="explore-post-actions"><button class="action-btn like-btn ' + (isLiked ? 'liked' : '') + '" data-id="' + post.postId + '" onclick="event.stopPropagation(); handleLike(\'' + post.postId + '\')"><i class="' + (isLiked ? 'fas' : 'far') + ' fa-heart"></i><span class="count">' + (post.likes || 0) + '</span></button><button class="action-btn comment-btn" data-id="' + post.postId + '" onclick="event.stopPropagation(); openComments(\'' + post.postId + '\')"><i class="far fa-comment"></i><span class="count">' + (post.comments || []).length + '</span></button><button class="action-btn share-btn" data-id="' + post.postId + '" onclick="event.stopPropagation(); sharePost(\'' + post.postId + '\')"><i class="fas fa-share-alt"></i><span class="count">' + (post.shares || 0) + '</span></button></div>';
             return div;
         }
@@ -3526,7 +2653,6 @@ app.get('/', function(req, res) {
             div.className = 'profile-post';
             div.setAttribute('data-id', post.postId);
             div.onclick = function() { openPostDetail(post.postId); };
-
             div.innerHTML = '<div class="image-container"><img src="' + post.image + '" alt="post" loading="lazy"><div class="profile-post-overlay"><span><i class="fas fa-heart"></i> ' + (post.likes || 0) + '</span><span><i class="fas fa-comment"></i> ' + (post.comments || []).length + '</span></div></div>';
             return div;
         }
@@ -3538,7 +2664,6 @@ app.get('/', function(req, res) {
                 showToast('📸 استوری از ' + story.username);
                 viewStory(story.storyId);
             };
-
             div.innerHTML = '<div class="story-avatar"><img src="' + story.image + '" alt="story"></div><span class="story-username">' + story.username + '</span>';
             return div;
         }
@@ -3551,62 +2676,52 @@ app.get('/', function(req, res) {
             page = page || 1;
             if (isLoading) return;
             isLoading = true;
-
             var gallery = document.getElementById('gallery');
             var loading = document.getElementById('loadingIndicator');
             var noPosts = document.getElementById('noPostsMessage');
-
             if (page === 1) {
                 loading.style.display = 'block';
                 gallery.innerHTML = '';
                 noPosts.style.display = 'none';
             }
-
             var data = await getPosts(page, hashtag);
-
             if (page === 1) {
                 loading.style.display = 'none';
             }
-
             if (data.posts.length === 0 && page === 1) {
                 noPosts.style.display = 'block';
                 isLoading = false;
                 return;
             }
-
             data.posts.forEach(function(post) {
                 gallery.appendChild(createPostElement(post));
             });
-
             isLoading = false;
         }
 
         async function loadStories() {
             var container = document.getElementById('storiesContainer');
             container.innerHTML = '';
-
-            // Add story button
             var addDiv = document.createElement('div');
             addDiv.className = 'story-item';
             addDiv.onclick = function() {
-                var fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = 'image/*,video/*';
-                fileInput.onchange = async function(e) {
+                var input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*,video/*';
+                input.onchange = async function(e) {
                     var file = e.target.files[0];
                     if (file) {
                         var result = await createStory(file);
                         if (result.storyId) {
-                            showToast('✅ استوری با موفقیت آپلود شد!');
+                            showToast('✅ استوری آپلود شد!');
                             loadStories();
                         }
                     }
                 };
-                fileInput.click();
+                input.click();
             };
             addDiv.innerHTML = '<div class="story-avatar add-story"><i class="fas fa-plus"></i></div><span class="story-username">افزودن</span>';
             container.appendChild(addDiv);
-
             var stories = await getStories();
             stories.forEach(function(story) {
                 container.appendChild(createStoryElement(story));
@@ -3615,16 +2730,13 @@ app.get('/', function(req, res) {
 
         async function loadProfile() {
             if (!currentUser) return;
-
             document.getElementById('profileUsername').textContent = currentUser.username || 'کاربر';
-            document.getElementById('bioDisplay').textContent = currentUser.bio || 'توسعه‌دهنده وب | عاشق کدنویسی';
+            document.getElementById('bioDisplay').textContent = currentUser.bio || 'توسعه‌دهنده وب';
             document.getElementById('followerCount').textContent = currentUser.followers || 0;
             document.getElementById('followingCount').textContent = currentUser.following || 0;
-
             var data = await getPosts(1);
             var userPosts = data.posts.filter(function(p) { return p.userId === currentUser.userId; });
             document.getElementById('postCount').textContent = userPosts.length;
-
             var gallery = document.getElementById('profileGallery');
             gallery.innerHTML = '';
             if (userPosts.length === 0) {
@@ -3634,17 +2746,12 @@ app.get('/', function(req, res) {
                     gallery.appendChild(createProfilePostElement(post));
                 });
             }
-
-            // Settings
             document.getElementById('settingsUsername').textContent = currentUser.username || '-';
             document.getElementById('settingsEmail').textContent = currentUser.email || '-';
             document.getElementById('settingsPostCount').textContent = userPosts.length || 0;
             document.getElementById('statTotalPosts').textContent = data.total || 0;
-
             var users = await getUsers();
             document.getElementById('statTotalUsers').textContent = users.length || 0;
-
-            // Admin Panel
             if (isAdmin) {
                 await loadAdminPanel();
             }
@@ -3652,19 +2759,15 @@ app.get('/', function(req, res) {
 
         async function loadAdminPanel() {
             if (!isAdmin) return;
-
             document.getElementById('menuAdmin').style.display = 'flex';
-
             try {
                 var stats = await getAdminStats();
                 if (stats) {
-                    document.getElementById('adminUserCount').textContent = stats.database?.totalUsers || 0;
-                    document.getElementById('adminPostCount').textContent = stats.database?.totalPosts || 0;
-                    document.getElementById('adminOnlineCount').textContent = stats.database?.onlineUsers || 0;
-                    document.getElementById('adminShardCount').textContent = stats.database?.shardCount || 10;
+                    document.getElementById('adminUserCount').textContent = stats.totalUsers || 0;
+                    document.getElementById('adminPostCount').textContent = stats.totalPosts || 0;
+                    document.getElementById('adminOnlineCount').textContent = stats.onlineUsers || 0;
                 }
-            } catch (e) { console.error(e); }
-
+            } catch (e) {}
             try {
                 var users = await getAdminUsers();
                 var list = document.getElementById('adminUsersList');
@@ -3676,8 +2779,7 @@ app.get('/', function(req, res) {
                     div.innerHTML = '<span>' + user.username + ' (' + user.email + ')</span><span><button class="admin-btn ' + (user.isBanned ? 'success' : 'danger') + '" onclick="toggleBan(\'' + user.userId + '\', ' + (!user.isBanned) + ')">' + (user.isBanned ? 'رفع مسدودیت' : 'مسدود کردن') + '</button></span>';
                     list.appendChild(div);
                 });
-            } catch (e) { console.error(e); }
-
+            } catch (e) {}
             try {
                 var posts = await getAdminPosts();
                 var list = document.getElementById('adminPostsList');
@@ -3688,7 +2790,7 @@ app.get('/', function(req, res) {
                     div.innerHTML = '<span>' + (post.caption || 'بدون توضیحات').substring(0, 30) + ' ...</span><span><button class="admin-btn danger" onclick="deletePostAdmin(\'' + post.postId + '\')">🗑️ حذف</button></span>';
                     list.appendChild(div);
                 });
-            } catch (e) { console.error(e); }
+            } catch (e) {}
         }
 
         // ============================================
@@ -3700,7 +2802,6 @@ app.get('/', function(req, res) {
                 showToast('❌ شما مسدود شده‌اید');
                 return;
             }
-
             var result = await likePost(postId);
             document.querySelectorAll('.like-btn[data-id="' + postId + '"]').forEach(function(btn) {
                 btn.querySelector('i').className = result.liked ? 'fas fa-heart' : 'far fa-heart';
@@ -3715,13 +2816,11 @@ app.get('/', function(req, res) {
                 showToast('❌ شما مسدود شده‌اید');
                 return;
             }
-
             currentPostId = postId;
             var data = await getPosts(1);
             var post = data.posts.find(function(p) { return p.postId === postId; });
             var list = document.getElementById('commentList');
             list.innerHTML = '';
-
             if (!post || !post.comments || post.comments.length === 0) {
                 list.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:20px;">هنوز کامنتی وجود ندارد</div>';
             } else {
@@ -3732,7 +2831,6 @@ app.get('/', function(req, res) {
                     list.appendChild(div);
                 });
             }
-
             document.getElementById('commentModal').classList.add('active');
             document.getElementById('modalCommentInput').focus();
         };
@@ -3755,15 +2853,7 @@ app.get('/', function(req, res) {
                 showToast('❌ پست پیدا نشد!');
                 return;
             }
-
-            var captionHtml = post.caption || 'بدون توضیحات';
-            if (post.hashtags && post.hashtags.length > 0) {
-                post.hashtags.forEach(function(h) {
-                    captionHtml = captionHtml.replace('#' + h, '<span style="color:var(--primary);cursor:pointer;" onclick="event.stopPropagation(); searchHashtag(\'' + h + '\')">#' + h + '</span>');
-                });
-            }
-
-            showToast('📸 ' + captionHtml + '\n❤️ ' + (post.likes || 0) + ' لایک\n💬 ' + (post.comments || []).length + ' کامنت');
+            showToast('📸 ' + (post.caption || 'بدون توضیحات') + '\n❤️ ' + (post.likes || 0) + ' لایک\n💬 ' + (post.comments || []).length + ' کامنت');
         };
 
         window.viewStory = async function(storyId) {
@@ -3790,7 +2880,7 @@ app.get('/', function(req, res) {
             if (!confirm('آیا از حذف این پست مطمئن هستید؟')) return;
             var result = await deletePostAdmin(postId);
             if (result.success) {
-                showToast('✅ پست با موفقیت حذف شد');
+                showToast('✅ پست حذف شد');
                 loadAdminPanel();
                 loadPosts(1);
             }
@@ -3800,11 +2890,52 @@ app.get('/', function(req, res) {
         // 🎬 Event Listeners
         // ============================================
 
-        // Auth
+        document.getElementById('loginBtn').addEventListener('click', async function() {
+            clearError();
+            var email = document.getElementById('loginEmail').value.trim();
+            var password = document.getElementById('loginPassword').value.trim();
+
+            if (!email || !password) {
+                showError('لطفا ایمیل و رمز عبور را وارد کنید');
+                return;
+            }
+
+            this.textContent = '⏳ در حال...';
+            this.disabled = true;
+
+            var result = await loginUser(email, password);
+
+            if (result.success) {
+                currentToken = result.token;
+                localStorage.setItem('token', currentToken);
+                currentUser = result.user;
+                isAdmin = currentUser.isAdmin || false;
+                document.getElementById('loginPage').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'flex';
+                this.textContent = 'ورود';
+                this.disabled = false;
+                showToast('✅ خوش آمدید ' + currentUser.username);
+                socket.emit('register', { userId: currentUser.userId, username: currentUser.username });
+                if (isAdmin) {
+                    document.getElementById('menuAdmin').style.display = 'flex';
+                }
+                await loadPosts(1);
+                await loadStories();
+                await loadProfile();
+            } else {
+                showError(result.error || 'خطا!');
+                this.textContent = 'ورود';
+                this.disabled = false;
+            }
+        });
+
+        document.getElementById('loginPassword').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') document.getElementById('loginBtn').click();
+        });
+
         document.getElementById('logoutBtn')?.addEventListener('click', logoutUser);
         document.getElementById('menuLogout')?.addEventListener('click', logoutUser);
 
-        // Chat
         document.getElementById('chatOpenBtn').addEventListener('click', function() {
             document.getElementById('chatInterface').classList.add('active');
             renderChatUsers();
@@ -3824,14 +2955,13 @@ app.get('/', function(req, res) {
             if (e.key === 'Enter') sendChatMessage();
         });
 
-        // Comments
         document.getElementById('modalSendComment').addEventListener('click', async function() {
             var input = document.getElementById('modalCommentInput');
             var text = input.value.trim();
             if (text && currentPostId) {
                 await addComment(currentPostId, text);
                 input.value = '';
-                document.getElementById('commentList').innerHTML = '<div style="text-align:center;color:var(--success);padding:20px;">✅ کامنت با موفقیت ثبت شد!</div>';
+                document.getElementById('commentList').innerHTML = '<div style="text-align:center;color:var(--success);padding:20px;">✅ کامنت ثبت شد!</div>';
                 setTimeout(function() { openComments(currentPostId); }, 500);
             }
         });
@@ -3852,7 +2982,6 @@ app.get('/', function(req, res) {
             }
         });
 
-        // Share
         document.getElementById('closeShareModal').addEventListener('click', function() {
             document.getElementById('shareModal').classList.remove('active');
         });
@@ -3866,7 +2995,6 @@ app.get('/', function(req, res) {
                 var type = this.getAttribute('data-share');
                 var postId = document.getElementById('shareModal').dataset.postId;
                 var link = window.location.href + '?post=' + postId;
-
                 if (type === 'site') {
                     showToast('✅ پست در سایت اشتراک‌گذاری شد!');
                 } else if (type === 'telegram') {
@@ -3882,7 +3010,6 @@ app.get('/', function(req, res) {
             });
         });
 
-        // Profile
         document.getElementById('profileBtn').addEventListener('click', function() {
             document.getElementById('profilePage').classList.add('active');
             loadProfile();
@@ -3916,17 +3043,39 @@ app.get('/', function(req, res) {
                     document.getElementById('bioDisplay').textContent = bio;
                     document.getElementById('bioInput').value = '';
                     currentUser.bio = bio;
-                    showToast('✅ بیوگرافی با موفقیت ذخیره شد!');
+                    showToast('✅ بیوگرافی ذخیره شد!');
                 }
             } else {
-                showToast('❌ لطفا بیوگرافی خود را وارد کنید.');
+                showToast('❌ لطفا بیوگرافی را وارد کنید');
             }
         });
 
-        // Upload
+        document.getElementById('saveUsername').addEventListener('click', async function() {
+            var username = document.getElementById('usernameInput').value.trim();
+            if (!username) {
+                showToast('❌ لطفا نام کاربری را وارد کنید');
+                return;
+            }
+            if (username.length < 3 || username.length > 30) {
+                showToast('❌ نام کاربری باید بین 3 تا 30 کاراکتر باشد');
+                return;
+            }
+            if (currentUser) {
+                var result = await updateUsername(currentUser.userId, username);
+                if (result.success) {
+                    document.getElementById('profileUsername').textContent = username;
+                    document.getElementById('usernameInput').value = '';
+                    currentUser.username = username;
+                    showToast('✅ نام کاربری با موفقیت تغییر کرد!');
+                } else {
+                    showToast('❌ ' + (result.error || 'خطا!'));
+                }
+            }
+        });
+
         document.getElementById('uploadBtn').addEventListener('click', function() {
             if (currentUser && currentUser.isBanned) {
-                showToast('❌ شما مسدود شده‌اید و نمی‌توانید آپلود کنید');
+                showToast('❌ شما مسدود شده‌اید');
                 return;
             }
             document.getElementById('uploadPage').classList.add('active');
@@ -3956,7 +3105,6 @@ app.get('/', function(req, res) {
                 reader.onload = function(e) {
                     var previewImg = document.getElementById('previewImage');
                     var previewVideo = document.getElementById('previewVideo');
-
                     if (file.type.startsWith('image/')) {
                         previewImg.src = e.target.result;
                         previewImg.style.display = 'block';
@@ -3980,27 +3128,22 @@ app.get('/', function(req, res) {
             var file = document.getElementById('fileInput').files[0];
             var caption = document.getElementById('captionInput').value.trim();
             var hashtags = document.getElementById('hashtagInput').value.trim();
-
             if (!file) {
-                showToast('❌ لطفا یک فایل انتخاب کنید.');
+                showToast('❌ لطفا یک فایل انتخاب کنید');
                 return;
             }
-
             isUploading = true;
             this.textContent = '⏳ در حال آپلود...';
             this.disabled = true;
-
             var result = await createPost(file, caption, hashtags);
-
             if (result && result.postId) {
                 showToast('✅ پست با موفقیت آپلود شد!');
                 resetUpload();
                 document.getElementById('uploadPage').classList.remove('active');
                 loadPosts(1);
             } else {
-                showToast('❌ خطا در آپلود پست!');
+                showToast('❌ خطا در آپلود');
             }
-
             this.textContent = '📤 ارسال پست';
             this.disabled = false;
             isUploading = false;
@@ -4018,7 +3161,6 @@ app.get('/', function(req, res) {
             document.getElementById('hashtagInput').value = '';
         }
 
-        // Side Menu
         document.getElementById('menuIcon').addEventListener('click', function() {
             document.getElementById('sideMenu').classList.add('active');
             document.getElementById('menuOverlay').classList.add('active');
@@ -4068,7 +3210,6 @@ app.get('/', function(req, res) {
             loadAdminPanel();
         });
 
-        // Settings
         document.getElementById('settingsOpenBtn').addEventListener('click', function() {
             document.getElementById('settingsPage').classList.add('active');
             loadProfile();
@@ -4099,10 +3240,9 @@ app.get('/', function(req, res) {
             document.documentElement.setAttribute('data-theme', isDarkTheme ? 'dark' : 'light');
             localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
             document.getElementById('themeToggle').classList.toggle('active');
-            showToast(isDarkTheme ? '🌙 تم تاریک فعال شد' : '☀️ تم روشن فعال شد');
+            showToast(isDarkTheme ? '🌙 تم تاریک' : '☀️ تم روشن');
         }
 
-        // Admin
         document.getElementById('broadcastBtn').addEventListener('click', async function() {
             var input = document.getElementById('broadcastInput');
             var message = input.value.trim();
@@ -4117,27 +3257,16 @@ app.get('/', function(req, res) {
             }
         });
 
-        document.getElementById('addShardBtn').addEventListener('click', async function() {
-            var result = await addShard();
-            if (result.success) {
-                showToast('✅ شارد جدید با موفقیت اضافه شد! تعداد شاردها: ' + result.shardCount);
-                loadAdminPanel();
-            }
-        });
-
-        // Close Admin
         document.getElementById('adminPanel').addEventListener('click', function(e) {
             if (e.target === this) this.classList.remove('active');
         });
 
-        // Explore / Reels
         var exploreMode = true;
         var reelsMode = false;
 
         document.getElementById('exploreBtn').addEventListener('click', function() {
             var gallery = document.getElementById('gallery');
             var stories = document.getElementById('storiesSection');
-
             if (exploreMode) {
                 exploreMode = false;
                 reelsMode = false;
@@ -4159,7 +3288,6 @@ app.get('/', function(req, res) {
         document.getElementById('reelsBtn').addEventListener('click', function() {
             var gallery = document.getElementById('gallery');
             var stories = document.getElementById('storiesSection');
-
             if (reelsMode) {
                 reelsMode = false;
                 exploreMode = false;
@@ -4177,7 +3305,6 @@ app.get('/', function(req, res) {
             }
         });
 
-        // Search
         document.getElementById('searchInput').addEventListener('input', function() {
             var query = this.value.trim();
             if (query.startsWith('#')) {
@@ -4195,7 +3322,6 @@ app.get('/', function(req, res) {
             }
         });
 
-        // Follow stats
         document.getElementById('statFollowers').addEventListener('click', async function() {
             var modal = document.getElementById('followModal');
             document.getElementById('followModalTitle').textContent = '👥 دنبال‌کنندگان';
@@ -4236,116 +3362,40 @@ app.get('/', function(req, res) {
             if (e.target === this) this.classList.remove('active');
         });
 
-        // Login/Register
-        document.getElementById('loginBtn').addEventListener('click', async function() {
-            clearError();
-            var username = document.getElementById('loginUsername').value.trim();
-            var email = document.getElementById('loginEmail').value.trim();
-            var password = document.getElementById('loginPassword').value.trim();
+        if (isDarkTheme) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            document.getElementById('themeToggle').classList.add('active');
+        }
 
-            if (!email || !password) {
-                showError('لطفا ایمیل و رمز عبور را وارد کنید');
-                return;
-            }
+        document.getElementById('languageSelect').value = language;
 
-            if (!isLogin && !username) {
-                showError('لطفا نام کاربری را وارد کنید');
-                return;
-            }
-
-            this.textContent = '⏳ در حال...';
-            this.disabled = true;
-
-            var result;
-            if (isLogin) {
-                result = await loginUser(email, password);
-            } else {
-                result = await registerUser(username, email, password);
-            }
-
-            if (result.success) {
-                currentToken = result.token;
-                localStorage.setItem('token', currentToken);
-                currentUser = result.user;
-                isAdmin = currentUser.isAdmin || false;
-                document.getElementById('loginPage').style.display = 'none';
-                document.getElementById('mainApp').style.display = 'flex';
-                document.getElementById('loginBtn').textContent = isLogin ? 'ورود' : 'ثبت نام';
-                document.getElementById('loginBtn').disabled = false;
-                showToast('✅ خوش آمدید ' + currentUser.username);
-                socket.emit('register', { userId: currentUser.userId, username: currentUser.username });
-                if (isAdmin) {
-                    document.getElementById('menuAdmin').style.display = 'flex';
-                }
-                await loadPosts(1);
-                await loadStories();
-                await loadProfile();
-            } else {
-                showError(result.error || 'خطا!');
-                document.getElementById('loginBtn').textContent = isLogin ? 'ورود' : 'ثبت نام';
-                document.getElementById('loginBtn').disabled = false;
-            }
-        });
-
-        document.getElementById('loginPassword').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') document.getElementById('loginBtn').click();
-        });
-
-        document.getElementById('toggleAuth').addEventListener('click', function() {
-            isLogin = !isLogin;
-            document.getElementById('loginTitle').textContent = isLogin ? '🔐 ورود' : '📝 ثبت نام';
-            document.getElementById('loginBtn').textContent = isLogin ? 'ورود' : 'ثبت نام';
-            document.getElementById('toggleAuth').textContent = isLogin ? 'ثبت نام ندارید؟ ثبت نام کنید' : 'حساب دارید؟ وارد شوید';
-            document.getElementById('loginUsername').style.display = isLogin ? 'none' : 'block';
-            clearError();
-        });
-
-        // ============================================
-        // 🚀 شروع
-        // ============================================
-
-        document.addEventListener('DOMContentLoaded', function() {
-            // Theme
-            if (isDarkTheme) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                document.getElementById('themeToggle').classList.add('active');
-            }
-
-            // Language
-            document.getElementById('languageSelect').value = language;
-
-            // Login username
-            document.getElementById('loginUsername').style.display = 'none';
-
-            // Init
-            (async function init() {
-                if (currentToken) {
-                    var user = await getCurrentUser();
-                    if (user) {
-                        currentUser = user;
-                        isAdmin = user.isAdmin || false;
-                        document.getElementById('loginPage').style.display = 'none';
-                        document.getElementById('mainApp').style.display = 'flex';
-                        socket.emit('register', { userId: currentUser.userId, username: currentUser.username });
-                        if (isAdmin) {
-                            document.getElementById('menuAdmin').style.display = 'flex';
-                        }
-                        await loadPosts(1);
-                        await loadStories();
-                        await loadProfile();
-                        console.log('✅ User:', currentUser.username, isAdmin ? '(Admin)' : '');
-                        return;
-                    } else {
-                        localStorage.removeItem('token');
-                        currentToken = null;
+        (async function init() {
+            if (currentToken) {
+                var user = await getCurrentUser();
+                if (user) {
+                    currentUser = user;
+                    isAdmin = user.isAdmin || false;
+                    document.getElementById('loginPage').style.display = 'none';
+                    document.getElementById('mainApp').style.display = 'flex';
+                    socket.emit('register', { userId: currentUser.userId, username: currentUser.username });
+                    if (isAdmin) {
+                        document.getElementById('menuAdmin').style.display = 'flex';
                     }
+                    await loadPosts(1);
+                    await loadStories();
+                    await loadProfile();
+                    console.log('✅ User:', currentUser.username, isAdmin ? '(Admin)' : '');
+                    return;
+                } else {
+                    localStorage.removeItem('token');
+                    currentToken = null;
                 }
+            }
 
-                document.getElementById('loginPage').style.display = 'flex';
-                document.getElementById('mainApp').style.display = 'none';
-                console.log('🔐 Please login');
-            })();
-        });
+            document.getElementById('loginPage').style.display = 'flex';
+            document.getElementById('mainApp').style.display = 'none';
+            console.log('🔐 Please login');
+        })();
     </script>
 </body>
 </html>
@@ -4358,9 +3408,6 @@ app.get('/', function(req, res) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, function() {
     console.log('🚀 Server running on http://localhost:' + PORT);
-    console.log('🔐 Encryption: AES-256-GCM');
-    console.log('📊 Database: 10 Shards');
-    console.log('💾 Cache: In-Memory with TTL');
-    console.log('📦 Queue: Background Processing');
     console.log('👑 Admin: milad.yari1377m@gmail.com / M09145978426m');
+    console.log('🔐 Encryption: SHA-512');
 });
