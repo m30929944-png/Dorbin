@@ -1,6 +1,10 @@
 // ============================================
 // 🚀 ULTIMATE SOCIAL MEDIA ENGINE - m1.js
 // ============================================
+// این فایل شامل: سرور اصلی، دیتابیس ۱۰۰ شاردی،
+// رمزنگاری نظامی، مدیریت جلسات، WebSocket،
+// مسیردهی پایه، احراز هویت، و تمام امکانات پایه
+// ============================================
 
 const express = require('express');
 const http = require('http');
@@ -13,6 +17,7 @@ const os = require('os');
 const compression = require('compression');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const multer = require('multer');
 
 const numCPUs = os.cpus().length;
 const app = express();
@@ -75,6 +80,34 @@ class MilitaryEncryption {
         const [salt, hash] = stored.split(':');
         const verifyHash = crypto.pbkdf2Sync(password, salt, this.ITERATIONS, this.KEY_LENGTH, this.DIGEST).toString('hex');
         return hash === verifyHash;
+    }
+
+    encrypt(text, key) {
+        try {
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);
+            let encrypted = cipher.update(text, 'utf8', 'hex');
+            encrypted += cipher.final('hex');
+            const authTag = cipher.getAuthTag().toString('hex');
+            return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+        } catch (error) {
+            return text;
+        }
+    }
+
+    decrypt(encrypted, key) {
+        try {
+            const parts = encrypted.split(':');
+            if (parts.length !== 3) return '[پیام رمزنگاری شده]';
+            const [iv, authTag, data] = parts;
+            const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'hex'));
+            decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+            let decrypted = decipher.update(data, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+            return decrypted;
+        } catch (error) {
+            return '[پیام رمزنگاری شده]';
+        }
     }
 
     generateToken() {
@@ -162,7 +195,7 @@ class UltraShardedDatabase {
                 posts: [],
                 stories: [],
                 messages: new Map(),
-                likes: new Set(),
+                likes: new Map(),
                 comments: new Map(),
                 followers: new Map(),
                 following: new Map(),
@@ -259,7 +292,7 @@ class UltraShardedDatabase {
                     posts: this.shards[i].posts,
                     stories: this.shards[i].stories,
                     messages: Array.from(this.shards[i].messages.entries()),
-                    likes: Array.from(this.shards[i].likes),
+                    likes: Array.from(this.shards[i].likes.entries()),
                     comments: Array.from(this.shards[i].comments.entries()),
                     followers: Array.from(this.shards[i].followers.entries()),
                     following: Array.from(this.shards[i].following.entries()),
@@ -650,7 +683,7 @@ class UltraShardedDatabase {
             this.setCache(`post:${postId}`, post);
             return { liked: false, likes: post.likes };
         } else {
-            this.shards[idx].likes.add(likeKey);
+            this.shards[idx].likes.set(likeKey, true);
             post.likes = (post.likes || 0) + 1;
             this.setCache(`post:${postId}`, post);
             return { liked: true, likes: post.likes };
@@ -663,9 +696,6 @@ class UltraShardedDatabase {
         if (!post) return false;
         
         const viewKey = `${postId}_${userId}`;
-        if (!this.shards[idx].views) {
-            this.shards[idx].views = new Map();
-        }
         if (!this.shards[idx].views.has(viewKey)) {
             this.shards[idx].views.set(viewKey, true);
             post.views = (post.views || 0) + 1;
@@ -681,9 +711,6 @@ class UltraShardedDatabase {
         if (!post) return false;
         
         const shareKey = `${postId}_${userId}`;
-        if (!this.shards[idx].shares) {
-            this.shards[idx].shares = new Map();
-        }
         if (!this.shards[idx].shares.has(shareKey)) {
             this.shards[idx].shares.set(shareKey, true);
             post.shares = (post.shares || 0) + 1;
@@ -1656,7 +1683,7 @@ app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
 });
 
 // ============================================
-// 📡 API ROUTES - MESSAGES
+// 📡 API ROUTES - MESSAGES & CHAT
 // ============================================
 app.get('/api/messages', authMiddleware, (req, res) => {
     const { roomId, limit = 50 } = req.query;
@@ -1682,6 +1709,51 @@ app.post('/api/messages', authMiddleware, (req, res) => {
     db.saveMessage(roomId, msgData);
     io.to(roomId).emit('receive-message', msgData);
     res.json({ success: true, message: msgData });
+});
+
+app.get('/api/chat/users', authMiddleware, (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const rooms = [];
+        const chatUsers = [];
+        
+        // Get all rooms from database
+        for (let i = 0; i < db.SHARD_COUNT; i++) {
+            for (const [roomId, messages] of db.shards[i].messages) {
+                if (roomId.includes(userId)) {
+                    const participants = roomId.split('_');
+                    const otherId = participants.find(id => id !== userId);
+                    if (otherId) {
+                        const user = db.getUser(otherId);
+                        if (user && !user.isBanned) {
+                            const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+                            chatUsers.push({
+                                userId: user.userId,
+                                username: user.username,
+                                fullName: user.fullName || user.username,
+                                avatar: user.avatar || '',
+                                isOnline: encryption.isOnline(user.userId),
+                                lastMessage: lastMsg,
+                                unreadCount: 0
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Sort by last message
+        chatUsers.sort((a, b) => {
+            const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0;
+            const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0;
+            return timeB - timeA;
+        });
+        
+        res.json(chatUsers);
+    } catch (error) {
+        console.error('Get chat users error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ============================================

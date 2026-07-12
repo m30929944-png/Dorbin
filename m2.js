@@ -20,6 +20,8 @@ class UserService {
         this.userChats = new Map();
         this.lastSeen = new Map();
         this.typingUsers = new Map();
+        this.profileViews = new Map();
+        this.userAnalytics = new Map();
     }
 
     // ===== GET USER PROFILE =====
@@ -30,6 +32,11 @@ class UserService {
         const isFollowing = viewerId ? this.isFollowing(viewerId, userId) : false;
         const isBlocked = viewerId ? this.isBlocked(viewerId, userId) : false;
         const isOnline = encryption.isOnline(userId);
+
+        // Track profile view
+        if (viewerId && viewerId !== userId) {
+            this.trackProfileView(userId, viewerId);
+        }
 
         return {
             userId: user.userId,
@@ -46,8 +53,55 @@ class UserService {
             isFollowing: isFollowing,
             isBlocked: isBlocked,
             createdAt: user.createdAt,
-            lastSeen: user.lastSeen
+            lastSeen: user.lastSeen,
+            profileViews: this.getProfileViews(userId)
         };
+    }
+
+    // ===== PROFILE VIEWS =====
+    trackProfileView(userId, viewerId) {
+        const key = `${userId}_${viewerId}`;
+        if (!this.profileViews.has(key)) {
+            this.profileViews.set(key, {
+                userId,
+                viewerId,
+                count: 0,
+                lastView: null
+            });
+        }
+        const view = this.profileViews.get(key);
+        view.count += 1;
+        view.lastView = new Date().toISOString();
+    }
+
+    getProfileViews(userId) {
+        let total = 0;
+        for (const [key, view] of this.profileViews) {
+            if (view.userId === userId) {
+                total += view.count;
+            }
+        }
+        return total;
+    }
+
+    getProfileViewers(userId, limit = 10) {
+        const viewers = [];
+        for (const [key, view] of this.profileViews) {
+            if (view.userId === userId) {
+                const user = db.getUser(view.viewerId);
+                if (user) {
+                    viewers.push({
+                        userId: user.userId,
+                        username: user.username,
+                        fullName: user.fullName,
+                        avatar: user.avatar,
+                        lastView: view.lastView,
+                        count: view.count
+                    });
+                }
+            }
+        }
+        return viewers.slice(0, limit);
     }
 
     // ===== FOLLOW SYSTEM =====
@@ -89,6 +143,9 @@ class UserService {
                 fromUsername: db.getUser(userId)?.username || 'کاربر'
             });
         }
+
+        // Track analytics
+        this.trackUserAction(userId, 'follow');
 
         return { success: true };
     }
@@ -230,7 +287,43 @@ class UserService {
             isVerified: user.isVerified || false,
             isAdmin: user.isAdmin || false,
             createdAt: user.createdAt,
-            lastSeen: user.lastSeen
+            lastSeen: user.lastSeen,
+            profileViews: this.getProfileViews(userId)
+        };
+    }
+
+    // ===== USER ANALYTICS =====
+    trackUserAction(userId, action) {
+        if (!this.userAnalytics.has(userId)) {
+            this.userAnalytics.set(userId, {
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                follows: 0,
+                posts: 0,
+                totalActions: 0,
+                lastActive: new Date().toISOString()
+            });
+        }
+        const stats = this.userAnalytics.get(userId);
+        if (action === 'like') stats.likes += 1;
+        else if (action === 'comment') stats.comments += 1;
+        else if (action === 'share') stats.shares += 1;
+        else if (action === 'follow') stats.follows += 1;
+        else if (action === 'post') stats.posts += 1;
+        stats.totalActions += 1;
+        stats.lastActive = new Date().toISOString();
+    }
+
+    getUserAnalytics(userId) {
+        return this.userAnalytics.get(userId) || {
+            likes: 0,
+            comments: 0,
+            shares: 0,
+            follows: 0,
+            posts: 0,
+            totalActions: 0,
+            lastActive: null
         };
     }
 
@@ -270,7 +363,7 @@ class UserService {
             }
         }
         
-        // Sort by last message time
+        // Sort by last message
         users.sort((a, b) => {
             const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0;
             const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0;
@@ -396,6 +489,7 @@ class UserService {
         const now = Date.now();
         const oneDay = 24 * 60 * 60 * 1000;
         const oneMinute = 60 * 1000;
+        const oneWeek = 7 * oneDay;
 
         // Clean typing indicators
         for (const [key, data] of this.typingUsers) {
@@ -404,16 +498,47 @@ class UserService {
             }
         }
 
-        // Clean old chat rooms (inactive for 7 days)
+        // Clean old chat rooms (inactive for 30 days)
         for (const [roomId, room] of this.chatRooms) {
             const lastMessage = room.messages.length > 0 ? room.messages[room.messages.length - 1] : null;
             if (lastMessage) {
                 const age = now - new Date(lastMessage.timestamp).getTime();
-                if (age > 7 * oneDay) {
+                if (age > 30 * oneDay) {
+                    this.chatRooms.delete(roomId);
+                }
+            } else {
+                const age = now - new Date(room.createdAt).getTime();
+                if (age > oneWeek) {
                     this.chatRooms.delete(roomId);
                 }
             }
         }
+
+        // Clean profile views older than 30 days
+        for (const [key, view] of this.profileViews) {
+            if (view.lastView) {
+                const age = now - new Date(view.lastView).getTime();
+                if (age > 30 * oneDay) {
+                    this.profileViews.delete(key);
+                }
+            }
+        }
+    }
+
+    // ============================================
+    // 📊 STATS
+    // ============================================
+    getStats() {
+        return {
+            totalUsers: db.getAllUsers().length,
+            totalChatRooms: this.chatRooms.size,
+            totalChatMessages: Array.from(this.chatRooms.values())
+                .reduce((acc, room) => acc + room.messages.length, 0),
+            totalProfileViews: this.profileViews.size,
+            totalBlockedUsers: this.blockedUsers.size,
+            totalFollowRequests: this.followRequests.size,
+            totalUserAnalytics: this.userAnalytics.size
+        };
     }
 }
 
@@ -425,108 +550,196 @@ const userService = new UserService();
 
 // ===== GET USER PROFILE =====
 app.get('/api/users/profile/:userId', authMiddleware, (req, res) => {
-    const profile = userService.getUserProfile(req.params.userId, req.user.userId);
-    if (!profile) return res.status(404).json({ error: 'کاربر یافت نشد' });
-    res.json(profile);
+    try {
+        const profile = userService.getUserProfile(req.params.userId, req.user.userId);
+        if (!profile) return res.status(404).json({ error: 'کاربر یافت نشد' });
+        res.json(profile);
+    } catch (error) {
+        console.error('Get profile error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 app.get('/api/users/me', authMiddleware, (req, res) => {
-    const profile = userService.getUserProfile(req.user.userId);
-    res.json(profile);
+    try {
+        const profile = userService.getUserProfile(req.user.userId);
+        res.json(profile);
+    } catch (error) {
+        console.error('Get me error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== FOLLOW =====
 app.post('/api/users/:userId/follow', authMiddleware, async (req, res) => {
-    const { userId } = req.params;
-    const result = await userService.followUser(req.user.userId, userId);
-    if (result.success) {
-        const target = db.getUser(userId);
-        io.emit('follow-update', { 
-            userId: target.userId, 
-            followers: target.followers 
-        });
-        res.json({ success: true, followers: target.followers });
-    } else {
-        res.status(400).json(result);
+    try {
+        const { userId } = req.params;
+        const result = await userService.followUser(req.user.userId, userId);
+        if (result.success) {
+            const target = db.getUser(userId);
+            io.emit('follow-update', { 
+                userId: target.userId, 
+                followers: target.followers 
+            });
+            res.json({ success: true, followers: target.followers });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Follow error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
 });
 
 app.post('/api/users/:userId/unfollow', authMiddleware, async (req, res) => {
-    const { userId } = req.params;
-    const result = await userService.unfollowUser(req.user.userId, userId);
-    if (result.success) {
-        const target = db.getUser(userId);
-        res.json({ success: true, followers: target.followers });
-    } else {
-        res.status(400).json(result);
+    try {
+        const { userId } = req.params;
+        const result = await userService.unfollowUser(req.user.userId, userId);
+        if (result.success) {
+            const target = db.getUser(userId);
+            res.json({ success: true, followers: target.followers });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Unfollow error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
 });
 
 app.get('/api/users/:userId/followers', authMiddleware, (req, res) => {
-    const followers = userService.getFollowers(req.params.userId);
-    res.json(followers.map(u => ({ ...u, password: undefined })));
+    try {
+        const followers = userService.getFollowers(req.params.userId);
+        res.json(followers.map(u => ({ ...u, password: undefined })));
+    } catch (error) {
+        console.error('Get followers error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 app.get('/api/users/:userId/following', authMiddleware, (req, res) => {
-    const following = userService.getFollowing(req.params.userId);
-    res.json(following.map(u => ({ ...u, password: undefined })));
+    try {
+        const following = userService.getFollowing(req.params.userId);
+        res.json(following.map(u => ({ ...u, password: undefined })));
+    } catch (error) {
+        console.error('Get following error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 app.get('/api/users/:userId/follow-status', authMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const isFollowing = userService.isFollowing(req.user.userId, userId);
-    const isBlocked = userService.isBlocked(userId, req.user.userId);
-    res.json({ isFollowing, isBlocked });
+    try {
+        const { userId } = req.params;
+        const isFollowing = userService.isFollowing(req.user.userId, userId);
+        const isBlocked = userService.isBlocked(userId, req.user.userId);
+        res.json({ isFollowing, isBlocked });
+    } catch (error) {
+        console.error('Follow status error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== BLOCK =====
 app.post('/api/users/:userId/block', authMiddleware, async (req, res) => {
-    const { userId } = req.params;
-    const result = await userService.blockUser(req.user.userId, userId);
-    if (result.success) {
-        res.json({ success: true });
-    } else {
-        res.status(400).json(result);
+    try {
+        const { userId } = req.params;
+        const result = await userService.blockUser(req.user.userId, userId);
+        if (result.success) {
+            res.json({ success: true });
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Block error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
 });
 
 app.post('/api/users/:userId/unblock', authMiddleware, async (req, res) => {
-    const { userId } = req.params;
-    const result = await userService.unblockUser(req.user.userId, userId);
-    res.json({ success: true });
+    try {
+        const { userId } = req.params;
+        const result = await userService.unblockUser(req.user.userId, userId);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Unblock error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== SUGGESTIONS =====
 app.get('/api/users/suggestions', authMiddleware, (req, res) => {
-    const limit = parseInt(req.query.limit) || 10;
-    const suggestions = userService.getFollowSuggestions(req.user.userId, limit);
-    res.json(suggestions);
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+        const suggestions = userService.getFollowSuggestions(req.user.userId, limit);
+        res.json(suggestions);
+    } catch (error) {
+        console.error('Suggestions error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== SEARCH =====
 app.get('/api/users/search', authMiddleware, (req, res) => {
-    const { q, limit = 20 } = req.query;
-    if (!q || q.length < 2) return res.json([]);
-    const results = userService.searchUsers(q, parseInt(limit));
-    res.json(results);
+    try {
+        const { q, limit = 20 } = req.query;
+        if (!q || q.length < 2) return res.json([]);
+        const results = userService.searchUsers(q, parseInt(limit));
+        res.json(results);
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== PROFILE UPDATE =====
 app.put('/api/users/profile', authMiddleware, async (req, res) => {
-    const { bio, fullName, username } = req.body;
-    const result = await userService.updateProfile(req.user.userId, { bio, fullName, username });
-    if (result.success) {
-        res.json(result);
-    } else {
-        res.status(400).json(result);
+    try {
+        const { bio, fullName, username } = req.body;
+        const result = await userService.updateProfile(req.user.userId, { bio, fullName, username });
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
 });
 
-// ===== STATS =====
+// ===== USER STATS =====
 app.get('/api/users/:userId/stats', authMiddleware, (req, res) => {
-    const stats = userService.getUserStats(req.params.userId);
-    if (!stats) return res.status(404).json({ error: 'کاربر یافت نشد' });
-    res.json(stats);
+    try {
+        const stats = userService.getUserStats(req.params.userId);
+        if (!stats) return res.status(404).json({ error: 'کاربر یافت نشد' });
+        res.json(stats);
+    } catch (error) {
+        console.error('User stats error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
+});
+
+// ===== USER ANALYTICS =====
+app.get('/api/users/:userId/analytics', authMiddleware, (req, res) => {
+    try {
+        const analytics = userService.getUserAnalytics(req.params.userId);
+        res.json(analytics);
+    } catch (error) {
+        console.error('Analytics error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
+});
+
+// ===== PROFILE VIEWERS =====
+app.get('/api/users/:userId/viewers', authMiddleware, (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 10;
+        const viewers = userService.getProfileViewers(req.params.userId, limit);
+        res.json(viewers);
+    } catch (error) {
+        console.error('Viewers error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ============================================
@@ -546,8 +759,13 @@ app.get('/api/chat/users', authMiddleware, async (req, res) => {
 
 // ===== GET CHAT ROOMS =====
 app.get('/api/chat/rooms', authMiddleware, (req, res) => {
-    const rooms = userService.getChatRooms(req.user.userId);
-    res.json(rooms);
+    try {
+        const rooms = userService.getChatRooms(req.user.userId);
+        res.json(rooms);
+    } catch (error) {
+        console.error('Get chat rooms error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ===== GET ROOM MESSAGES =====
