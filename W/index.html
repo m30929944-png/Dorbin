@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>سوشال مدیا حرفه‌ای</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           🎨 ULTIMATE MODERN UI
+           ============================================ */
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #12122a;
+            --bg-card: #1a1a3a;
+            --bg-card-hover: #22224a;
+            --bg-glass: rgba(26, 26, 58, 0.85);
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0c0;
+            --text-muted: #5a5a7a;
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-glow: rgba(67, 97, 238, 0.3);
+            --primary: #4361ee;
+            --primary-dark: #3651d4;
+            --primary-light: #6a8aff;
+            --primary-glow: rgba(67, 97, 238, 0.4);
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --warning: #f39c12;
+            --radius: 18px;
+            --radius-sm: 12px;
+            --radius-xs: 8px;
+            --shadow-card: 0 8px 32px rgba(0,0,0,0.4);
+            --shadow-hover: 0 12px 48px rgba(67, 97, 238, 0.2);
+            --transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --header-height: 60px;
+            --bottom-nav-height: 70px;
+            --max-width: 600px;
+            --font: 'Inter', 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            transition: var(--transition);
+        }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 4px; }
+
+        /* ===== LOADING ===== */
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg-primary);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .loading-screen.hide { opacity: 0; pointer-events: none; }
+        .loader-ring { width: 80px; height: 80px; position: relative; }
+        .loader-ring svg { width: 100%; height: 100%; animation: spin 1.5s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loader-ring .circle-bg { fill: none; stroke: var(--bg-card); stroke-width: 4; }
+        .loader-ring .circle-fg { fill: none; stroke: var(--primary); stroke-width: 4; stroke-dasharray: 200; stroke-dashoffset: 50; animation: dash 1.5s ease-in-out infinite; }
+        @keyframes dash { 0% { stroke-dashoffset: 200; } 50% { stroke-dashoffset: 50; } 100% { stroke-dashoffset: 200; } }
+        .loader-text { margin-top: 20px; font-size: 14px; color: var(--text-secondary); letter-spacing: 4px; text-transform: uppercase; animation: pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        .loader-dots { display: flex; gap: 8px; margin-top: 12px; }
+        .loader-dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: bounce 1.4s ease-in-out infinite; }
+        .loader-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); opacity: 0.3; } 40% { transform: scale(1); opacity: 1; } }
+
+        /* ===== LOGIN ===== */
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: var(--bg-primary);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .login-container::before {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, var(--primary-glow), transparent 70%);
+            top: -100px;
+            right: -100px;
+            border-radius: 50%;
+            opacity: 0.3;
+            animation: floatGlow 8s ease-in-out infinite;
+        }
+        @keyframes floatGlow { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-50px, 50px) scale(1.2); } }
+        .login-box {
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 40px 32px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-card);
+            max-width: 380px;
+            width: 100%;
+            position: relative;
+            z-index: 1;
+            animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(40px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .login-box .logo-icon { text-align: center; font-size: 48px; margin-bottom: 4px; display: block; }
+        .login-box h2 { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .login-box .sub-text { text-align: center; color: var(--text-secondary); font-size: 13px; margin-bottom: 20px; }
+        .login-box .input-group { position: relative; margin: 8px 0; }
+        .login-box .input-group i { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 16px; }
+        .login-box input {
+            width: 100%;
+            padding: 12px 44px 12px 14px;
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            direction: rtl;
+            transition: var(--transition);
+            outline: none;
+            font-family: var(--font);
+        }
+        .login-box input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); }
+        .login-box input::placeholder { color: var(--text-muted); }
+        .login-box .error { color: var(--danger); font-size: 13px; text-align: center; margin: 6px 0; min-height: 20px; }
+        .login-box .login-btn {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            margin-top: 10px;
+            font-family: var(--font);
+            position: relative;
+            overflow: hidden;
+        }
+        .login-box .login-btn::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, var(--primary-light), var(--primary)); opacity: 0; transition: var(--transition); }
+        .login-box .login-btn:hover::before { opacity: 1; }
+        .login-box .login-btn:active { transform: scale(0.97); }
+        .login-box .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .login-box .login-btn span { position: relative; z-index: 1; }
+        .login-box .switch-link { text-align: center; margin-top: 14px; color: var(--primary); cursor: pointer; font-size: 14px; font-weight: 500; transition: var(--transition); }
+        .login-box .switch-link:hover { opacity: 0.8; }
+
+        /* ===== HEADER ===== */
+        .header {
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 0 14px;
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .logo { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 6px; flex-shrink: 0; background: linear-gradient(135deg, var(--primary), var(--primary-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo i { -webkit-text-fill-color: var(--primary); font-size: 24px; }
+        .search-box {
+            flex: 1;
+            max-width: 300px;
+            background: var(--bg-secondary);
+            padding: 6px 14px;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1.5px solid var(--border-color);
+            transition: var(--transition);
+        }
+        .search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); }
+        .search-box input { border: none; background: transparent; outline: none; width: 100%; font-size: 13px; color: var(--text-primary); font-family: var(--font); }
+        .search-box input::placeholder { color: var(--text-muted); }
+        .search-box i { color: var(--text-muted); font-size: 14px; }
+        .header-right { display: flex; gap: 12px; font-size: 20px; color: var(--text-primary); flex-shrink: 0; }
+        .header-right .icon-btn {
+            cursor: pointer;
+            transition: var(--transition);
+            padding: 6px;
+            border-radius: 10px;
+            position: relative;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+        }
+        .header-right .icon-btn:hover { color: var(--primary); background: var(--bg-card); transform: translateY(-2px); }
+        .header-right .icon-btn:active { transform: scale(0.92); }
+        .header-right .badge-dot { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; background: var(--danger); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+
+        /* ===== STORIES ===== */
+        .stories-section { background: var(--bg-secondary); padding: 8px 12px; border-bottom: 1px solid var(--border-color); overflow-x: auto; flex-shrink: 0; }
+        .stories-container { display: flex; gap: 14px; padding: 2px 0; }
+        .story-item { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; flex-shrink: 0; transition: var(--transition); min-width: 60px; }
+        .story-item:hover { transform: translateY(-3px); }
+        .story-item:active { transform: scale(0.95); }
+        .story-avatar { width: 58px; height: 58px; border-radius: 50%; padding: 2px; background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366); box-shadow: 0 2px 12px rgba(0,0,0,0.2); }
+        .story-avatar img { width: 100%; height: 100%; border-radius: 50%; border: 2px solid var(--bg-secondary); object-fit: cover; }
+        .story-avatar.add-story { background: var(--bg-card); border: 2px dashed var(--border-color); padding: 0; display: flex; align-items: center; justify-content: center; transition: var(--transition); }
+        .story-avatar.add-story:hover { border-color: var(--primary); background: var(--primary-glow); }
+        .story-avatar.add-story i { font-size: 24px; color: var(--primary); }
+        .story-name { font-size: 10px; color: var(--text-secondary); max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+
+        /* ===== GALLERY ===== */
+        .gallery-wrapper { flex: 1; overflow-y: auto; padding-bottom: calc(var(--bottom-nav-height) + 10px); -webkit-overflow-scrolling: touch; }
+        .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; max-width: var(--max-width); margin: 0 auto; }
+        .gallery-item {
+            background: var(--bg-card);
+            border-radius: var(--radius-xs);
+            overflow: hidden;
+            cursor: pointer;
+            position: relative;
+            transition: var(--transition);
+            aspect-ratio: 1;
+            border: 1px solid var(--border-color);
+        }
+        .gallery-item:hover { transform: scale(1.03); box-shadow: var(--shadow-hover); z-index: 2; border-color: var(--primary); }
+        .gallery-item:active { transform: scale(0.97); }
+        .gallery-item .image-container { width: 100%; height: 100%; overflow: hidden; background: var(--bg-secondary); }
+        .gallery-item .image-container img { width: 100%; height: 100%; object-fit: cover; transition: var(--transition); }
+        .gallery-item:hover .image-container img { transform: scale(1.08); }
+        .gallery-item .post-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.7));
+            padding: 12px 8px 8px;
+            display: flex;
+            justify-content: space-around;
+            color: #fff;
+            opacity: 0;
+            transition: var(--transition);
+        }
+        .gallery-item:hover .post-overlay, .gallery-item:active .post-overlay { opacity: 1; }
+        .gallery-item .post-overlay button {
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            transition: var(--transition);
+            backdrop-filter: blur(4px);
+            font-family: var(--font);
+        }
+        .gallery-item .post-overlay button:hover { background: rgba(255,255,255,0.2); transform: scale(1.05); }
+        .gallery-item .post-overlay button:active { transform: scale(0.92); }
+        .gallery-item .post-overlay button.liked i { color: var(--danger); }
+
+        /* ===== POST DETAIL ===== */
+        .post-detail-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 500;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            backdrop-filter: blur(20px);
+            animation: fadeIn 0.4s ease;
+        }
+        .post-detail-modal.active { display: flex; }
+        .post-detail-modal .close-post {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 8px 16px;
+            border-radius: 50%;
+            transition: var(--transition);
+            z-index: 501;
+        }
+        .post-detail-modal .close-post:hover { background: rgba(255,255,255,0.2); transform: rotate(90deg); }
+        .post-detail-content {
+            display: flex;
+            flex-direction: column;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            overflow: hidden;
+            animation: zoomIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .post-detail-image { width: 100%; max-height: 60vh; object-fit: contain; background: var(--bg-secondary); }
+        .post-detail-info { padding: 16px 20px; background: var(--bg-card); border-top: 1px solid var(--border-color); }
+        .post-detail-user { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .post-detail-user img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); }
+        .post-detail-user .name { font-weight: 600; font-size: 14px; }
+        .post-detail-user .username { color: var(--text-secondary); font-size: 12px; }
+        .post-detail-caption { font-size: 14px; margin-bottom: 8px; line-height: 1.6; }
+        .post-detail-stats { display: flex; gap: 20px; font-size: 13px; color: var(--text-secondary); padding: 8px 0; border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); }
+        .post-detail-stats span { display: flex; align-items: center; gap: 4px; }
+        .post-detail-stats i { color: var(--primary); }
+        .post-detail-actions { display: flex; gap: 16px; padding: 10px 0 4px; }
+        .post-detail-actions button {
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 20px;
+            cursor: pointer;
+            transition: var(--transition);
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: var(--font);
+        }
+        .post-detail-actions button:hover { background: var(--bg-secondary); transform: translateY(-2px); }
+        .post-detail-actions button:active { transform: scale(0.92); }
+        .post-detail-actions button.liked { color: var(--danger); }
+        .post-detail-comments { max-height: 120px; overflow-y: auto; padding: 8px 0; border-top: 1px solid var(--border-color); }
+        .post-detail-comments .comment { display: flex; gap: 8px; padding: 4px 0; font-size: 13px; }
+        .post-detail-comments .comment .user { font-weight: 600; color: var(--primary); }
+        .post-detail-comment-input { display: flex; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-color); }
+        .post-detail-comment-input input {
+            flex: 1;
+            padding: 8px 14px;
+            border: 1.5px solid var(--border-color);
+            border-radius: 24px;
+            outline: none;
+            font-size: 13px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: var(--font);
+            direction: rtl;
+        }
+        .post-detail-comment-input input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); }
+        .post-detail-comment-input button { padding: 8px 20px; background: var(--primary); color: #fff; border: none; border-radius: 24px; cursor: pointer; font-weight: 600; font-size: 13px; transition: var(--transition); font-family: var(--font); }
+        .post-detail-comment-input button:hover { opacity: 0.9; transform: scale(1.02); }
+
+        /* ===== BOTTOM NAV ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-around;
+            padding: 4px 0 10px;
+            z-index: 100;
+            height: var(--bottom-nav-height);
+        }
+        .bottom-nav .nav-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            font-size: 9px;
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            transition: var(--transition);
+            position: relative;
+            font-family: var(--font);
+            border-radius: var(--radius-sm);
+        }
+        .bottom-nav .nav-btn i { font-size: 22px; transition: var(--transition); }
+        .bottom-nav .nav-btn:hover { background: var(--bg-card); }
+        .bottom-nav .nav-btn:active { transform: scale(0.92); }
+        .bottom-nav .nav-btn.active i { color: var(--primary); }
+        .bottom-nav .nav-btn.active { color: var(--primary); font-weight: 600; }
+        .bottom-nav .nav-btn.active i { filter: drop-shadow(0 0 20px var(--primary-glow)); }
+
+        /* ===== TOAST ===== */
+        .toast {
+            position: fixed;
+            bottom: calc(var(--bottom-nav-height) + 20px);
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            color: var(--text-primary);
+            padding: 12px 28px;
+            border-radius: 24px;
+            font-size: 13px;
+            z-index: 999;
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-card);
+            max-width: 92%;
+            text-align: center;
+            font-family: var(--font);
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            .gallery { gap: 3px; padding: 3px; }
+            .search-box { max-width: 150px; padding: 4px 10px; }
+            .search-box input { font-size: 12px; }
+            .header-right { gap: 8px; font-size: 18px; }
+            .header { padding: 0 10px; gap: 6px; }
+            .logo { font-size: 16px; }
+            .story-avatar { width: 50px; height: 50px; }
+            .story-name { font-size: 9px; max-width: 50px; }
+            .login-box { padding: 28px 20px; }
+            .post-detail-content { max-height: 95vh; }
+            .bottom-nav .nav-btn { padding: 2px 8px; font-size: 8px; }
+            .bottom-nav .nav-btn i { font-size: 18px; }
+        }
+        @media (max-width: 400px) {
+            .search-box { max-width: 100px; }
+            .header-right { gap: 4px; font-size: 16px; }
+            .gallery { gap: 2px; padding: 2px; }
+        }
+        @media (min-width: 601px) {
+            .gallery { gap: 6px; padding: 6px; }
+            .stories-container { gap: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== LOADING ===== -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loader-ring">
+            <svg viewBox="0 0 100 100">
+                <circle class="circle-bg" cx="50" cy="50" r="45"/>
+                <circle class="circle-fg" cx="50" cy="50" r="45"/>
+            </svg>
+        </div>
+        <div class="loader-text">در حال بارگذاری</div>
+        <div class="loader-dots"><span></span><span></span><span></span></div>
+    </div>
+
+    <!-- ===== TOAST ===== -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ===== LOGIN ===== -->
+    <div id="loginPage" class="login-container">
+        <div class="login-box">
+            <span class="logo-icon">📸</span>
+            <h2 id="loginTitle">🔐 ورود</h2>
+            <p class="sub-text" id="loginSub">به سوشال مدیا حرفه‌ای خوش آمدید</p>
+            <div id="loginError" class="error"></div>
+            <div class="input-group"><i class="fas fa-user"></i><input type="text" id="loginUsername" placeholder="نام کاربری" style="display:none;"></div>
+            <div class="input-group"><i class="fas fa-user-plus"></i><input type="text" id="loginFullName" placeholder="نام کامل" style="display:none;"></div>
+            <div class="input-group"><i class="fas fa-envelope"></i><input type="email" id="loginEmail" placeholder="ایمیل"></div>
+            <div class="input-group"><i class="fas fa-lock"></i><input type="password" id="loginPassword" placeholder="رمز عبور"></div>
+            <button class="login-btn" id="loginBtn"><span>ورود</span></button>
+            <div class="switch-link" id="switchAuth">ثبت نام ندارید؟ ثبت نام کنید</div>
+        </div>
+    </div>
+
+    <!-- ===== MAIN APP ===== -->
+    <div id="mainApp" style="display:none;flex-direction:column;height:100vh;">
+        <header class="header">
+            <div class="logo"><i class="fab fa-instagram"></i> سوشال</div>
+            <div class="search-box"><i class="fas fa-search"></i><input id="searchInput" placeholder="جستجو..."></div>
+            <div class="header-right">
+                <button class="icon-btn" id="chatOpenBtn"><i class="fas fa-comment-dots"></i></button>
+                <button class="icon-btn" id="liveOpenBtn"><i class="fas fa-video"></i><span class="badge-dot" id="liveDot" style="display:none;"></span></button>
+            </div>
+        </header>
+
+        <div class="stories-section"><div class="stories-container" id="storiesContainer"></div></div>
+
+        <div class="gallery-wrapper"><div class="gallery" id="gallery"></div></div>
+
+        <nav class="bottom-nav">
+            <button class="nav-btn" id="profileNavBtn"><i class="fas fa-user"></i><span>پروفایل</span></button>
+            <button class="nav-btn" id="uploadNavBtn"><i class="fas fa-upload"></i><span>آپلود</span></button>
+            <button class="nav-btn active" id="exploreNavBtn"><i class="fas fa-compass"></i><span>اکسپلور</span></button>
+            <button class="nav-btn" id="adminNavBtn" style="display:none;"><i class="fas fa-crown"></i><span>مدیریت</span></button>
+        </nav>
+    </div>
+
+    <!-- ===== POST DETAIL ===== -->
+    <div class="post-detail-modal" id="postDetailModal">
+        <button class="close-post" id="closePostDetail">&times;</button>
+        <div class="post-detail-content" id="postDetailContent">
+            <img class="post-detail-image" id="postDetailImage" src="" alt="post">
+            <div class="post-detail-info">
+                <div class="post-detail-user">
+                    <img id="postDetailAvatar" src="" alt="user">
+                    <div><div class="name" id="postDetailName">کاربر</div><div class="username" id="postDetailUsername">@username</div></div>
+                </div>
+                <div class="post-detail-caption" id="postDetailCaption"></div>
+                <div class="post-detail-stats">
+                    <span><i class="fas fa-eye"></i> <span id="postDetailViews">0</span></span>
+                    <span><i class="fas fa-heart"></i> <span id="postDetailLikes">0</span></span>
+                    <span><i class="fas fa-comment"></i> <span id="postDetailComments">0</span></span>
+                    <span><i class="fas fa-share"></i> <span id="postDetailShares">0</span></span>
+                </div>
+                <div class="post-detail-actions">
+                    <button id="detailLikeBtn"><i class="far fa-heart"></i> لایک</button>
+                    <button id="detailCommentBtn"><i class="far fa-comment"></i> کامنت</button>
+                    <button id="detailShareBtn"><i class="fas fa-share"></i> اشتراک</button>
+                </div>
+                <div class="post-detail-comments" id="postDetailCommentsList"></div>
+                <div class="post-detail-comment-input">
+                    <input type="text" id="postDetailCommentInput" placeholder="کامنت خود را بنویسید...">
+                    <button id="postDetailCommentSend">ارسال</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // 🚀 ULTIMATE FRONTEND ENGINE
+        // ============================================
+        
+        const STATE = {
+            token: localStorage.getItem('token') || null,
+            user: null,
+            socket: null,
+            isAdmin: false,
+            isLogin: true,
+            currentPostId: null,
+            currentChatRoom: null,
+            currentChatUser: null,
+            isLive: false,
+            streamId: null,
+            isLoading: true
+        };
+
+        const $ = (s) => document.querySelector(s);
+        const $$ = (s) => document.querySelectorAll(s);
+
+        function hideLoading() {
+            const screen = $('#loadingScreen');
+            screen.classList.add('hide');
+            setTimeout(() => { screen.style.display = 'none'; }, 800);
+        }
+
+        function showToast(msg, type = 'info') {
+            const toast = $('#toast');
+            toast.textContent = msg;
+            toast.style.borderColor = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--primary)';
+            toast.classList.add('show');
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function showError(msg) { $('#loginError').textContent = msg; }
+        function clearError() { $('#loginError').textContent = ''; }
+
+        function timeAgo(date) {
+            const diff = Date.now() - new Date(date).getTime();
+            const mins = Math.floor(diff / 60000);
+            if (mins < 1) return 'همین الان';
+            if (mins < 60) return mins + ' دقیقه';
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return hrs + ' ساعت';
+            const days = Math.floor(hrs / 24);
+            if (days < 7) return days + ' روز';
+            return new Date(date).toLocaleDateString('fa-IR');
+        }
+
+        // ===== AUTH =====
+        async function registerUser(username, fullName, email, password) {
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, fullName, email, password })
+            });
+            return await res.json();
+        }
+
+        async function loginUser(email, password) {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            return await res.json();
+        }
+
+        async function getCurrentUser() {
+            if (!STATE.token) return null;
+            try {
+                const res = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': 'Bearer ' + STATE.token }
+                });
+                if (res.ok) return await res.json();
+                return null;
+            } catch { return null; }
+        }
+
+        // ===== API =====
+        async function getPosts(page = 1, hashtag = null) {
+            let url = '/api/posts?page=' + page + '&limit=20';
+            if (hashtag) url += '&hashtag=' + encodeURIComponent(hashtag);
+            const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + STATE.token } });
+            return await res.json();
+        }
+
+        async function createPost(file, caption, hashtags) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('caption', caption);
+            formData.append('userId', STATE.user?.userId);
+            formData.append('username', STATE.user?.username);
+            if (hashtags) formData.append('hashtags', hashtags);
+
+            const res = await fetch('/api/posts', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + STATE.token },
+                body: formData
+            });
+            return await res.json();
+        }
+
+        async function likePost(postId) {
+            const res = await fetch('/api/posts/' + postId + '/like', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ userId: STATE.user?.userId })
+            });
+            return await res.json();
+        }
+
+        async function addComment(postId, text) {
+            const res = await fetch('/api/posts/' + postId + '/comment', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: STATE.user?.userId,
+                    username: STATE.user?.username,
+                    text: text
+                })
+            });
+            return await res.json();
+        }
+
+        async function getStories() {
+            const res = await fetch('/api/stories', { headers: { 'Authorization': 'Bearer ' + STATE.token } });
+            return await res.json();
+        }
+
+        async function createStory(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('userId', STATE.user?.userId);
+            formData.append('username', STATE.user?.username);
+
+            const res = await fetch('/api/stories', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + STATE.token },
+                body: formData
+            });
+            return await res.json();
+        }
+
+        async function getUsers() {
+            const res = await fetch('/api/users', { headers: { 'Authorization': 'Bearer ' + STATE.token } });
+            return await res.json();
+        }
+
+        async function updateProfile(data) {
+            const res = await fetch('/api/users/' + STATE.user?.userId + '/profile', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            return await res.json();
+        }
+
+        async function followUser(userId) {
+            const res = await fetch('/api/users/' + userId + '/follow', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ followerId: STATE.user?.userId })
+            });
+            return await res.json();
+        }
+
+        async function unfollowUser(userId) {
+            const res = await fetch('/api/users/' + userId + '/unfollow', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ followerId: STATE.user?.userId })
+            });
+            return await res.json();
+        }
+
+        async function getAdminStats() {
+            const res = await fetch('/api/admin/stats', { headers: { 'Authorization': 'Bearer ' + STATE.token } });
+            return await res.json();
+        }
+
+        async function startLive(title) {
+            const res = await fetch('/api/live/start', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + STATE.token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ userId: STATE.user?.userId, title })
+            });
+            return await res.json();
+        }
+
+        async function getLiveStreams() {
+            const res = await fetch('/api/live/streams', { headers: { 'Authorization': 'Bearer ' + STATE.token } });
+            return await res.json();
+        }
+
+        // ===== SOCKET =====
+        function connectSocket() {
+            if (STATE.socket) return;
+            STATE.socket = io();
+
+            STATE.socket.on('connect', () => {
+                if (STATE.user) {
+                    STATE.socket.emit('register', {
+                        userId: STATE.user.userId,
+                        username: STATE.user.username,
+                        token: STATE.token
+                    });
+                }
+            });
+
+            STATE.socket.on('broadcast', (data) => {
+                showToast('📢 ' + data.message + ' (از ' + data.from + ')');
+            });
+
+            STATE.socket.on('notification', (data) => {
+                if (data.type === 'like') showToast('❤️ ' + data.fromUserId + ' پست شما را لایک کرد');
+                else if (data.type === 'comment') showToast('💬 ' + data.fromUserId + ' روی پست شما کامنت گذاشت');
+                else if (data.type === 'post') showToast('📸 ' + data.fromUserId + ' پست جدیدی منتشر کرد');
+            });
+
+            STATE.socket.on('new-story', (data) => { showToast('📸 ' + data.userId + ' استوری جدید گذاشت'); loadStories(); });
+            STATE.socket.on('new-post', (data) => { loadPosts(); });
+            STATE.socket.on('live-started', (data) => { showToast('🔴 ' + data.userId + ' لایو را شروع کرد'); $('#liveDot').style.display = 'block'; });
+            STATE.socket.on('live-ended', (data) => { showToast('🔴 لایو به پایان رسید'); $('#liveDot').style.display = 'none'; });
+            STATE.socket.on('error', (data) => { showToast('❌ ' + data.message, 'error'); });
+        }
+
+        // ===== RENDER =====
+        function createPostElement(post) {
+            const div = document.createElement('div');
+            div.className = 'gallery-item';
+            div.dataset.id = post.postId;
+            const isLiked = localStorage.getItem('liked_' + post.postId) === 'true';
+
+            div.innerHTML = `
+                <div class="image-container">
+                    <img src="${post.image}" loading="lazy" alt="post" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%231a1a3a%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%235a5a7a%22 font-size=%2212%22>📸</text></svg>'">
+                </div>
+                <div class="post-overlay">
+                    <button class="like-btn ${isLiked ? 'liked' : ''}" data-id="${post.postId}">
+                        <i class="fa-${isLiked ? 'solid' : 'regular'} fa-heart"></i> <span class="count">${post.likes || 0}</span>
+                    </button>
+                    <button class="comment-btn" data-id="${post.postId}">
+                        <i class="fa-regular fa-comment"></i> <span class="count">${(post.comments || []).length}</span>
+                    </button>
+                    <button class="share-btn" data-id="${post.postId}">
+                        <i class="fa-solid fa-share-alt"></i>
+                    </button>
+                </div>
+            `;
+
+            div.querySelector('.like-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleLike(post.postId);
+            });
+
+            div.querySelector('.comment-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPostDetail(post.postId);
+            });
+
+            div.querySelector('.share-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(window.location.href + '?post=' + post.postId)
+                    .then(() => showToast('✅ لینک کپی شد!'));
+            });
+
+            div.addEventListener('click', () => { openPostDetail(post.postId); });
+
+            return div;
+        }
+
+        function createStoryElement(story) {
+            const div = document.createElement('div');
+            div.className = 'story-item';
+            div.innerHTML = `
+                <div class="story-avatar"><img src="${story.image}" alt="story" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%231a1a3a%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%235a5a7a%22 font-size=%2212%22>📸</text></svg>'"></div>
+                <span class="story-name">${story.username}</span>
+            `;
+            div.addEventListener('click', () => { showToast('📸 استوری از ' + story.username); });
+            return div;
+        }
+
+        // ===== LOAD FUNCTIONS =====
+        async function loadPosts(page = 1, hashtag = null) {
+            const gallery = $('#gallery');
+            gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">⏳ در حال بارگذاری...</div>';
+
+            try {
+                const data = await getPosts(page, hashtag);
+                gallery.innerHTML = '';
+                if (data.posts && data.posts.length > 0) {
+                    data.posts.forEach(post => { gallery.appendChild(createPostElement(post)); });
+                } else {
+                    gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);grid-column:span 3;">📭 هنوز پستی وجود ندارد</div>';
+                }
+            } catch (e) {
+                gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--danger);grid-column:span 3;">❌ خطا در بارگذاری پست‌ها</div>';
+            }
+        }
+
+        async function loadStories() {
+            const container = $('#storiesContainer');
+            container.innerHTML = '';
+
+            const addDiv = document.createElement('div');
+            addDiv.className = 'story-item';
+            addDiv.innerHTML = `<div class="story-avatar add-story"><i class="fas fa-plus"></i></div><span class="story-name">افزودن</span>`;
+            addDiv.addEventListener('click', () => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*,video/*';
+                input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const result = await createStory(file);
+                        if (result.storyId) { showToast('✅ استوری آپلود شد!', 'success'); loadStories(); }
+                    }
+                };
+                input.click();
+            });
+            container.appendChild(addDiv);
+
+            try {
+                const stories = await getStories();
+                stories.forEach(story => { container.appendChild(createStoryElement(story)); });
+            } catch (e) { /* Silent fail */ }
+        }
+
+        // ===== ACTIONS =====
+        async function handleLike(postId) {
+            try {
+                const result = await likePost(postId);
+                document.querySelectorAll('.like-btn[data-id="' + postId + '"]').forEach(btn => {
+                    const icon = btn.querySelector('i');
+                    const count = btn.querySelector('.count');
+                    if (result.liked) {
+                        icon.className = 'fa-solid fa-heart';
+                        btn.classList.add('liked');
+                    } else {
+                        icon.className = 'fa-regular fa-heart';
+                        btn.classList.remove('liked');
+                    }
+                    count.textContent = result.likes || 0;
+                    localStorage.setItem('liked_' + postId, result.liked ? 'true' : 'false');
+                });
+
+                if (STATE.currentPostId === postId) {
+                    $('#postDetailLikes').textContent = result.likes || 0;
+                    const likeBtn = $('#detailLikeBtn');
+                    if (result.liked) {
+                        likeBtn.classList.add('liked');
+                        likeBtn.innerHTML = '<i class="fas fa-heart"></i> لایک';
+                    } else {
+                        likeBtn.classList.remove('liked');
+                        likeBtn.innerHTML = '<i class="far fa-heart"></i> لایک';
+                    }
+                }
+            } catch (e) {
+                showToast('❌ خطا در لایک', 'error');
+            }
+        }
+
+        async function openPostDetail(postId) {
+            STATE.currentPostId = postId;
+            try {
+                const data = await getPosts(1);
+                const post = data.posts.find(p => p.postId === postId);
+                if (!post) { showToast('❌ پست یافت نشد', 'error'); return; }
+
+                $('#postDetailImage').src = post.image;
+                $('#postDetailImage').onerror = function() {
+                    this.src = 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%231a1a3a%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%235a5a7a%22 font-size=%2212%22>📸</text></svg>';
+                };
+                
+                $('#postDetailAvatar').src = post.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() * 70);
+                $('#postDetailName').textContent = post.fullName || post.username || 'کاربر';
+                $('#postDetailUsername').textContent = '@' + (post.username || 'کاربر');
+                $('#postDetailCaption').textContent = post.caption || '';
+                $('#postDetailViews').textContent = post.views || 0;
+                $('#postDetailLikes').textContent = post.likes || 0;
+                $('#postDetailComments').textContent = (post.comments || []).length;
+                $('#postDetailShares').textContent = post.shares || 0;
+
+                const isLiked = localStorage.getItem('liked_' + postId) === 'true';
+                const likeBtn = $('#detailLikeBtn');
+                if (isLiked) {
+                    likeBtn.classList.add('liked');
+                    likeBtn.innerHTML = '<i class="fas fa-heart"></i> لایک';
+                } else {
+                    likeBtn.classList.remove('liked');
+                    likeBtn.innerHTML = '<i class="far fa-heart"></i> لایک';
+                }
+
+                const commentsList = $('#postDetailCommentsList');
+                commentsList.innerHTML = '';
+                if (post.comments && post.comments.length > 0) {
+                    post.comments.forEach(comment => {
+                        const div = document.createElement('div');
+                        div.className = 'comment';
+                        div.innerHTML = `<span class="user">${comment.fullName || comment.username || 'کاربر'}:</span> <span>${comment.text}</span>`;
+                        commentsList.appendChild(div);
+                    });
+                } else {
+                    commentsList.innerHTML = '<div style="color:var(--text-secondary);font-size:13px;text-align:center;padding:8px;">هنوز کامنتی وجود ندارد</div>';
+                }
+
+                $('#postDetailModal').classList.add('active');
+                $('#postDetailCommentInput').focus();
+
+                // Track view
+                await fetch('/api/posts/' + postId + '/view', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + STATE.token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ userId: STATE.user?.userId })
+                }).catch(() => {});
+            } catch (e) {
+                showToast('❌ خطا در نمایش پست', 'error');
+            }
+        }
+
+        async function sendDetailComment() {
+            const input = $('#postDetailCommentInput');
+            const text = input.value.trim();
+            if (!text || !STATE.currentPostId) return;
+
+            try {
+                const result = await addComment(STATE.currentPostId, text);
+                if (result.comment) {
+                    input.value = '';
+                    openPostDetail(STATE.currentPostId);
+                    showToast('✅ کامنت ثبت شد', 'success');
+                    loadPosts();
+                }
+            } catch (e) {
+                showToast('❌ خطا در ارسال کامنت', 'error');
+            }
+        }
+
+        // ===== EVENT LISTENERS =====
+        $('#loginBtn').addEventListener('click', async () => {
+            clearError();
+            const username = $('#loginUsername').value.trim();
+            const fullName = $('#loginFullName').value.trim();
+            const email = $('#loginEmail').value.trim();
+            const password = $('#loginPassword').value.trim();
+
+            if (!email || !password) { showError('لطفا ایمیل و رمز عبور را وارد کنید'); return; }
+            if (!STATE.isLogin && !username) { showError('لطفا نام کاربری را وارد کنید'); return; }
+            if (!STATE.isLogin && !fullName) { showError('لطفا نام کامل را وارد کنید'); return; }
+
+            const btn = $('#loginBtn');
+            btn.innerHTML = '<span>⏳</span>';
+            btn.disabled = true;
+
+            let result;
+            if (STATE.isLogin) {
+                result = await loginUser(email, password);
+            } else {
+                result = await registerUser(username, fullName, email, password);
+            }
+
+            if (result.success) {
+                STATE.token = result.token;
+                localStorage.setItem('token', result.token);
+                STATE.user = result.user;
+                STATE.isAdmin = result.user.isAdmin || false;
+
+                $('#loginPage').style.display = 'none';
+                $('#mainApp').style.display = 'flex';
+
+                if (STATE.isAdmin) { $('#adminNavBtn').style.display = 'flex'; }
+
+                connectSocket();
+                loadPosts();
+                loadStories();
+                hideLoading();
+                showToast('✅ خوش آمدید ' + (result.user.fullName || result.user.username), 'success');
+            } else {
+                showError(result.error || 'خطا!');
+                btn.innerHTML = `<span>${STATE.isLogin ? 'ورود' : 'ثبت نام'}</span>`;
+                btn.disabled = false;
+            }
+        });
+
+        $('#switchAuth').addEventListener('click', () => {
+            STATE.isLogin = !STATE.isLogin;
+            $('#loginTitle').textContent = STATE.isLogin ? '🔐 ورود' : '📝 ثبت نام';
+            $('#loginBtn').innerHTML = `<span>${STATE.isLogin ? 'ورود' : 'ثبت نام'}</span>`;
+            $('#switchAuth').textContent = STATE.isLogin ? 'ثبت نام ندارید؟ ثبت نام کنید' : 'حساب دارید؟ وارد شوید';
+            $('#loginUsername').style.display = STATE.isLogin ? 'none' : 'block';
+            $('#loginFullName').style.display = STATE.isLogin ? 'none' : 'block';
+            clearError();
+        });
+
+        $('#loginPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') $('#loginBtn').click();
+        });
+
+        // Profile
+        $('#profileNavBtn').addEventListener('click', () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            $('#profileNavBtn').classList.add('active');
+            showToast('👤 پروفایل شما');
+        });
+
+        // Upload
+        $('#uploadNavBtn').addEventListener('click', () => {
+            if (STATE.user?.isBanned) { showToast('❌ شما مسدود شده‌اید', 'error'); return; }
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*,video/*';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const caption = prompt('توضیحات پست:');
+                    const hashtags = prompt('هشتگ‌ها (با کاما جدا کنید):');
+                    showToast('⏳ در حال آپلود...');
+                    const result = await createPost(file, caption || '', hashtags || '');
+                    if (result.postId) {
+                        showToast('✅ پست با موفقیت آپلود شد!', 'success');
+                        loadPosts();
+                    } else {
+                        showToast('❌ خطا در آپلود پست', 'error');
+                    }
+                }
+            };
+            input.click();
+        });
+
+        // Explore
+        $('#exploreNavBtn').addEventListener('click', () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            $('#exploreNavBtn').classList.add('active');
+            loadPosts();
+        });
+
+        // Admin
+        $('#adminNavBtn').addEventListener('click', async () => {
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            $('#adminNavBtn').classList.add('active');
+            try {
+                const stats = await getAdminStats();
+                showToast(`👑 مدیریت: ${stats.totalUsers} کاربر، ${stats.totalPosts} پست`);
+            } catch (e) {
+                showToast('❌ دسترسی به پنل مدیریت', 'error');
+            }
+        });
+
+        // Post Detail
+        $('#closePostDetail').addEventListener('click', () => {
+            $('#postDetailModal').classList.remove('active');
+            STATE.currentPostId = null;
+        });
+
+        $('#postDetailModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                $('#postDetailModal').classList.remove('active');
+                STATE.currentPostId = null;
+            }
+        });
+
+        $('#detailLikeBtn').addEventListener('click', () => {
+            if (STATE.currentPostId) { handleLike(STATE.currentPostId); }
+        });
+
+        $('#detailCommentBtn').addEventListener('click', () => {
+            $('#postDetailCommentInput').focus();
+        });
+
+        $('#detailShareBtn').addEventListener('click', () => {
+            if (STATE.currentPostId) {
+                navigator.clipboard.writeText(window.location.href + '?post=' + STATE.currentPostId)
+                    .then(() => showToast('✅ لینک کپی شد!'));
+            }
+        });
+
+        $('#postDetailCommentSend').addEventListener('click', sendDetailComment);
+        $('#postDetailCommentInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendDetailComment();
+        });
+
+        // Chat
+        $('#chatOpenBtn').addEventListener('click', () => {
+            showToast('💬 چت در حال راه‌اندازی...');
+        });
+
+        // Live
+        $('#liveOpenBtn').addEventListener('click', async () => {
+            try {
+                const streams = await getLiveStreams();
+                if (streams && streams.length > 0) {
+                    showToast('🔴 ' + streams.length + ' لایو فعال وجود دارد');
+                } else {
+                    const title = prompt('عنوان لایو را وارد کنید:');
+                    if (title) {
+                        const result = await startLive(title);
+                        if (result.success) {
+                            showToast('🔴 لایو شروع شد!', 'success');
+                            $('#liveDot').style.display = 'block';
+                        }
+                    }
+                }
+            } catch (e) {
+                showToast('❌ خطا در لایو', 'error');
+            }
+        });
+
+        // Search
+        let searchTimeout;
+        $('#searchInput').addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            const query = $('#searchInput').value.trim();
+            searchTimeout = setTimeout(() => {
+                if (query.startsWith('#')) {
+                    loadPosts(1, query.substring(1));
+                } else if (query.length > 2) {
+                    const gallery = $('#gallery');
+                    const items = gallery.querySelectorAll('.gallery-item');
+                    let found = false;
+                    items.forEach(item => {
+                        const text = item.textContent.toLowerCase();
+                        if (text.includes(query.toLowerCase())) {
+                            item.style.display = '';
+                            found = true;
+                        } else {
+                            item.style.display = 'none';
+                        }
+                    });
+                    if (!found) { loadPosts(); }
+                } else {
+                    loadPosts();
+                }
+            }, 400);
+        });
+
+        // ===== INIT =====
+        document.addEventListener('DOMContentLoaded', async () => {
+            $('#loginUsername').style.display = 'none';
+            $('#loginFullName').style.display = 'none';
+
+            if (STATE.token) {
+                const user = await getCurrentUser();
+                if (user) {
+                    STATE.user = user;
+                    STATE.isAdmin = user.isAdmin || false;
+
+                    $('#loginPage').style.display = 'none';
+                    $('#mainApp').style.display = 'flex';
+
+                    if (STATE.isAdmin) { $('#adminNavBtn').style.display = 'flex'; }
+
+                    connectSocket();
+                    await loadPosts();
+                    await loadStories();
+                    hideLoading();
+
+                    try {
+                        const streams = await getLiveStreams();
+                        if (streams && streams.length > 0) {
+                            $('#liveDot').style.display = 'block';
+                            showToast('🔴 ' + streams.length + ' لایو فعال وجود دارد');
+                        }
+                    } catch (e) {}
+
+                    return;
+                } else {
+                    localStorage.removeItem('token');
+                    STATE.token = null;
+                }
+            }
+
+            $('#loginPage').style.display = 'flex';
+            $('#mainApp').style.display = 'none';
+            hideLoading();
+        });
+
+        console.log('🚀 ULTIMATE SOCIAL MEDIA ENGINE');
+        console.log('📊 100 Shards for Big Data');
+        console.log('🔐 AES-256-GCM Encryption');
+        console.log('💬 Real-time Chat');
+        console.log('🔴 Live Streaming');
+        console.log('👑 Admin: milad.yari1377m@gmail.com');
+        console.log('⚡ Ultra Modern UI with Plastic Design');
+    </script>
+</body>
+  </html>
