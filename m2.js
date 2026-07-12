@@ -2,7 +2,9 @@
 // 👥 m2.js - USER MANAGEMENT, FOLLOW, PROFILE, CHAT
 // ============================================
 
-const { app, db, io, encryption, authMiddleware, adminMiddleware, avatarUpload } = require('./m1.js');
+const { app, db, io, encryption, authMiddleware, adminMiddleware } = require('./m1.js');
+const path = require('path');
+const crypto = require('crypto');
 
 // ============================================
 // 👤 USER SERVICE
@@ -16,6 +18,8 @@ class UserService {
         this.userReports = new Map();
         this.chatRooms = new Map();
         this.userChats = new Map();
+        this.lastSeen = new Map();
+        this.typingUsers = new Map();
     }
 
     // ===== GET USER PROFILE =====
@@ -230,37 +234,49 @@ class UserService {
         };
     }
 
-    // ===== CHAT SYSTEM =====
+    // ============================================
+    // 💬 CHAT SYSTEM
+    // ============================================
     getChatRooms(userId) {
         if (!this.userChats.has(userId)) {
-            this.userChats.set(userId, []);
+            this.userChats.set(userId, new Set());
         }
-        return this.userChats.get(userId);
+        return Array.from(this.userChats.get(userId));
     }
 
     async getChatUsers(userId) {
         const rooms = this.getChatRooms(userId);
         const users = [];
+        
         for (const roomId of rooms) {
             const room = this.chatRooms.get(roomId);
             if (room) {
                 const otherId = room.participants.find(id => id !== userId);
                 if (otherId) {
                     const user = db.getUser(otherId);
-                    if (user) {
+                    if (user && !user.isBanned) {
+                        const lastMessage = room.messages && room.messages.length > 0 ? room.messages[room.messages.length - 1] : null;
                         users.push({
                             userId: user.userId,
                             username: user.username,
-                            fullName: user.fullName,
-                            avatar: user.avatar,
+                            fullName: user.fullName || user.username,
+                            avatar: user.avatar || '',
                             isOnline: encryption.isOnline(user.userId),
-                            lastMessage: room.lastMessage || null,
+                            lastMessage: lastMessage,
                             unreadCount: room.unreadCount?.get(userId) || 0
                         });
                     }
                 }
             }
         }
+        
+        // Sort by last message time
+        users.sort((a, b) => {
+            const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0;
+            const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0;
+            return timeB - timeA;
+        });
+        
         return users;
     }
 
@@ -280,11 +296,9 @@ class UserService {
             // Add to user chats
             for (const userId of [user1, user2]) {
                 if (!this.userChats.has(userId)) {
-                    this.userChats.set(userId, []);
+                    this.userChats.set(userId, new Set());
                 }
-                if (!this.userChats.get(userId).includes(roomId)) {
-                    this.userChats.get(userId).push(roomId);
-                }
+                this.userChats.get(userId).add(roomId);
             }
         }
         
@@ -348,6 +362,58 @@ class UserService {
             }
         }
         return total;
+    }
+
+    // ===== TYPING INDICATOR =====
+    setTyping(roomId, userId, isTyping) {
+        const key = `${roomId}_${userId}`;
+        if (isTyping) {
+            this.typingUsers.set(key, {
+                userId,
+                roomId,
+                startedAt: new Date().toISOString()
+            });
+        } else {
+            this.typingUsers.delete(key);
+        }
+        return true;
+    }
+
+    getTypingUsers(roomId) {
+        const result = [];
+        for (const [key, data] of this.typingUsers) {
+            if (data.roomId === roomId) {
+                result.push(data.userId);
+            }
+        }
+        return result;
+    }
+
+    // ============================================
+    // 🧹 CLEANUP
+    // ============================================
+    cleanup() {
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+        const oneMinute = 60 * 1000;
+
+        // Clean typing indicators
+        for (const [key, data] of this.typingUsers) {
+            if (now - new Date(data.startedAt).getTime() > oneMinute) {
+                this.typingUsers.delete(key);
+            }
+        }
+
+        // Clean old chat rooms (inactive for 7 days)
+        for (const [roomId, room] of this.chatRooms) {
+            const lastMessage = room.messages.length > 0 ? room.messages[room.messages.length - 1] : null;
+            if (lastMessage) {
+                const age = now - new Date(lastMessage.timestamp).getTime();
+                if (age > 7 * oneDay) {
+                    this.chatRooms.delete(roomId);
+                }
+            }
+        }
     }
 }
 
@@ -456,19 +522,6 @@ app.put('/api/users/profile', authMiddleware, async (req, res) => {
     }
 });
 
-// ===== AVATAR UPDATE =====
-app.post('/api/users/avatar', authMiddleware, avatarUpload.single('avatar'), async (req, res) => {
-    const file = req.file;
-    if (!file) {
-        return res.status(400).json({ error: 'فایل الزامی است' });
-    }
-
-    const avatarPath = '/uploads/avatars/' + file.filename;
-    db.updateUser(req.user.userId, { avatar: avatarPath });
-
-    res.json({ success: true, avatar: avatarPath });
-});
-
 // ===== STATS =====
 app.get('/api/users/:userId/stats', authMiddleware, (req, res) => {
     const stats = userService.getUserStats(req.params.userId);
@@ -480,93 +533,179 @@ app.get('/api/users/:userId/stats', authMiddleware, (req, res) => {
 // 📡 CHAT ROUTES
 // ============================================
 
+// ===== GET CHAT USERS =====
 app.get('/api/chat/users', authMiddleware, async (req, res) => {
-    const users = await userService.getChatUsers(req.user.userId);
-    res.json(users);
+    try {
+        const users = await userService.getChatUsers(req.user.userId);
+        res.json(users);
+    } catch (error) {
+        console.error('Get chat users error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
+// ===== GET CHAT ROOMS =====
 app.get('/api/chat/rooms', authMiddleware, (req, res) => {
     const rooms = userService.getChatRooms(req.user.userId);
     res.json(rooms);
 });
 
-app.get('/api/chat/messages', authMiddleware, (req, res) => {
-    const { roomId, limit = 50 } = req.query;
-    if (!roomId) {
-        return res.status(400).json({ error: 'roomId الزامی است' });
+// ===== GET ROOM MESSAGES =====
+app.get('/api/chat/messages/room', authMiddleware, (req, res) => {
+    try {
+        const { roomId, limit = 50 } = req.query;
+        if (!roomId) {
+            return res.status(400).json({ error: 'roomId الزامی است' });
+        }
+        const messages = userService.getChatMessages(roomId, parseInt(limit));
+        res.json(messages);
+    } catch (error) {
+        console.error('Get messages error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
-    const messages = userService.getChatMessages(roomId, parseInt(limit));
-    res.json(messages);
 });
 
+// ===== CREATE CHAT ROOM =====
 app.post('/api/chat/room', authMiddleware, async (req, res) => {
-    const { userId } = req.body;
-    if (!userId) {
-        return res.status(400).json({ error: 'userId الزامی است' });
+    try {
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ error: 'userId الزامی است' });
+        }
+        const room = await userService.createChatRoom(req.user.userId, userId);
+        res.json(room);
+    } catch (error) {
+        console.error('Create room error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
-    const room = await userService.createChatRoom(req.user.userId, userId);
-    res.json(room);
 });
 
+// ===== SEND MESSAGE =====
+app.post('/api/chat/message', authMiddleware, async (req, res) => {
+    try {
+        const { targetUserId, message } = req.body;
+        if (!targetUserId || !message) {
+            return res.status(400).json({ error: 'targetUserId و message الزامی هستند' });
+        }
+        
+        const roomId = encryption.generateRoomId(req.user.userId, targetUserId);
+        const room = await userService.createChatRoom(req.user.userId, targetUserId);
+        
+        const result = await userService.sendChatMessage(
+            roomId,
+            req.user.userId,
+            req.user.fullName || req.user.username,
+            message
+        );
+        
+        if (result.success) {
+            // Send to receiver via socket
+            const socketId = encryption.getUserSocket(targetUserId);
+            if (socketId) {
+                io.to(socketId).emit('receive-chat-message', {
+                    ...result.message,
+                    roomId: roomId
+                });
+            }
+            res.json(result);
+        } else {
+            res.status(400).json(result);
+        }
+    } catch (error) {
+        console.error('Send message error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
+});
+
+// ===== MARK MESSAGES AS READ =====
 app.post('/api/chat/messages/read', authMiddleware, (req, res) => {
-    const { roomId } = req.body;
-    if (!roomId) {
-        return res.status(400).json({ error: 'roomId الزامی است' });
+    try {
+        const { roomId } = req.body;
+        if (!roomId) {
+            return res.status(400).json({ error: 'roomId الزامی است' });
+        }
+        const result = userService.markMessagesRead(roomId, req.user.userId);
+        res.json({ success: result });
+    } catch (error) {
+        console.error('Mark read error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
-    const result = userService.markMessagesRead(roomId, req.user.userId);
-    res.json({ success: result });
 });
 
+// ===== GET UNREAD COUNT =====
 app.get('/api/chat/unread', authMiddleware, (req, res) => {
-    const unread = userService.getUnreadCount(req.user.userId);
-    res.json({ unread });
+    try {
+        const unread = userService.getUnreadCount(req.user.userId);
+        res.json({ unread });
+    } catch (error) {
+        console.error('Get unread error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
 });
 
 // ============================================
 // 💬 WEBSOCKET CHAT EVENTS
 // ============================================
 io.on('connection', (socket) => {
-    // Existing chat events from m1.js plus additional
+    // ===== JOIN CHAT ROOM =====
     socket.on('join-chat', async (data) => {
-        const { userId, targetUserId } = data;
-        const room = await userService.createChatRoom(userId, targetUserId);
-        socket.join(room.roomId);
-        socket.roomId = room.roomId;
-        const messages = userService.getChatMessages(room.roomId, 50);
-        socket.emit('chat-history', messages);
-        userService.markMessagesRead(room.roomId, userId);
-    });
-
-    socket.on('send-chat-message', async (data) => {
-        const { roomId, userId, username, message } = data;
-        const result = await userService.sendChatMessage(roomId, userId, username, message);
-        if (result.success) {
-            io.to(roomId).emit('receive-chat-message', result.message);
-            
-            // Notify other participants
-            const room = userService.chatRooms.get(roomId);
-            if (room) {
-                for (const participant of room.participants) {
-                    if (participant !== userId) {
-                        const socketId = encryption.getUserSocket(participant);
-                        if (socketId) {
-                            io.to(socketId).emit('new-chat-message', {
-                                roomId,
-                                fromUserId: userId,
-                                message: result.message
-                            });
-                        }
-                    }
-                }
-            }
-        } else {
-            socket.emit('error', { message: result.error });
+        try {
+            const { userId, targetUserId } = data;
+            const room = await userService.createChatRoom(userId, targetUserId);
+            socket.join(room.roomId);
+            socket.roomId = room.roomId;
+            const messages = userService.getChatMessages(room.roomId, 50);
+            socket.emit('chat-history', messages);
+            userService.markMessagesRead(room.roomId, userId);
+        } catch (error) {
+            console.error('Join chat error:', error);
         }
     });
 
+    // ===== SEND CHAT MESSAGE =====
+    socket.on('send-chat-message', async (data) => {
+        try {
+            const { roomId, userId, username, message } = data;
+            const result = await userService.sendChatMessage(roomId, userId, username, message);
+            if (result.success) {
+                io.to(roomId).emit('receive-chat-message', result.message);
+                
+                // Notify other participants
+                const room = userService.chatRooms.get(roomId);
+                if (room) {
+                    for (const participant of room.participants) {
+                        if (participant !== userId) {
+                            const socketId = encryption.getUserSocket(participant);
+                            if (socketId) {
+                                io.to(socketId).emit('new-chat-message', {
+                                    roomId,
+                                    fromUserId: userId,
+                                    message: result.message
+                                });
+                            }
+                        }
+                    }
+                }
+            } else {
+                socket.emit('error', { message: result.error });
+            }
+        } catch (error) {
+            console.error('Send chat message error:', error);
+            socket.emit('error', { message: 'خطا در ارسال پیام' });
+        }
+    });
+
+    // ===== TYPING INDICATOR =====
     socket.on('chat-typing', (data) => {
         const { roomId, userId, isTyping } = data;
+        userService.setTyping(roomId, userId, isTyping);
         socket.to(roomId).emit('chat-typing', { userId, isTyping });
+    });
+
+    // ===== LEAVE CHAT =====
+    socket.on('leave-chat', (data) => {
+        const { roomId } = data;
+        socket.leave(roomId);
     });
 });
 

@@ -2,9 +2,10 @@
 // 📸 m3.js - POSTS, STORIES, LIKES, COMMENTS
 // ============================================
 
-const { app, db, io, encryption, authMiddleware, upload, storyUpload } = require('./m1.js');
+const { app, db, io, encryption, authMiddleware, adminMiddleware } = require('./m1.js');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ============================================
 // 📸 POST SERVICE
@@ -17,8 +18,10 @@ class PostService {
         this.trendingCacheTime = 0;
         this.CACHE_TTL = 10 * 1000;
         this.postReports = new Map();
+        this.commentLikes = new Map();
     }
 
+    // ===== CREATE POST =====
     async createPost(data) {
         const { userId, username, fullName, caption, hashtags, file, isVideo, location, mentions } = data;
 
@@ -64,6 +67,7 @@ class PostService {
         };
     }
 
+    // ===== GET POSTS =====
     getPosts(page = 1, limit = 20, hashtag = null, userId = null) {
         const cacheKey = `posts_${page}_${limit}_${hashtag || 'all'}_${userId || 'all'}`;
         
@@ -79,6 +83,7 @@ class PostService {
         return result;
     }
 
+    // ===== GET SINGLE POST =====
     getPost(postId) {
         return db.getPost(postId);
     }
@@ -113,6 +118,7 @@ class PostService {
         return db.shards[idx].bookmarks.get(userId).has(postId);
     }
 
+    // ===== DELETE POST =====
     async deletePost(postId, userId) {
         const post = db.getPost(postId);
         if (!post) return { success: false, error: 'پست یافت نشد' };
@@ -131,6 +137,7 @@ class PostService {
         return { success: true };
     }
 
+    // ===== HASHTAGS =====
     getTrendingHashtags(limit = 10) {
         const now = Date.now();
         if (this.trendingCache && now - this.trendingCacheTime < 60000) {
@@ -144,6 +151,7 @@ class PostService {
         return trends;
     }
 
+    // ===== COMMENTS =====
     getPostComments(postId) {
         return db.getComments(postId);
     }
@@ -188,12 +196,14 @@ class PostService {
         return { success: true };
     }
 
+    // ===== LIKES =====
     async likePost(postId, userId) {
         const result = db.likePost(postId, userId);
         this.postCache.clear();
         return result;
     }
 
+    // ===== VIEWS =====
     async viewPost(postId, userId) {
         const viewed = db.viewPost(postId, userId);
         if (viewed) {
@@ -202,6 +212,7 @@ class PostService {
         return { success: viewed };
     }
 
+    // ===== SHARES =====
     async sharePost(postId, userId) {
         const shared = db.sharePost(postId, userId);
         if (shared) {
@@ -210,6 +221,7 @@ class PostService {
         return { success: shared };
     }
 
+    // ===== BOOKMARKS =====
     async bookmarkPost(postId, userId) {
         const result = db.bookmarkPost(postId, userId);
         return result;
@@ -219,6 +231,7 @@ class PostService {
         return db.getBookmarks(userId);
     }
 
+    // ===== REPORT =====
     async reportPost(postId, userId, reason) {
         const post = db.getPost(postId);
         if (!post) return { success: false, error: 'پست یافت نشد' };
@@ -233,7 +246,7 @@ class PostService {
         return { success: true };
     }
 
-    // ===== GET USER POSTS =====
+    // ===== USER POSTS =====
     getUserPosts(userId, page = 1, limit = 20) {
         return db.getPosts(page, limit, null, userId);
     }
@@ -365,62 +378,14 @@ app.get('/api/posts/:postId', authMiddleware, (req, res) => {
     res.json(post);
 });
 
-app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) => {
-    try {
-        const { caption, hashtags, location, mentions } = req.body;
-        const file = req.file;
-
-        if (!file) {
-            return res.status(400).json({ error: 'فایل الزامی است' });
-        }
-
-        const result = await postService.createPost({
-            userId: req.user.userId,
-            username: req.user.username,
-            fullName: req.user.fullName,
-            caption,
-            hashtags,
-            location,
-            mentions: mentions ? mentions.split(',') : [],
-            file: '/uploads/posts/' + file.filename,
-            isVideo: file.mimetype.startsWith('video/')
-        });
-
-        if (result.success) {
-            const followers = db.getFollowers(result.post.userId);
-            for (const follower of followers) {
-                const socketId = encryption.getUserSocket(follower.userId);
-                if (socketId) {
-                    io.to(socketId).emit('new-post', {
-                        userId: result.post.userId,
-                        postId: result.post.postId
-                    });
-                }
-            }
-            res.status(201).json(result.post);
-        } else {
-            res.status(400).json(result);
-        }
-    } catch (error) {
-        console.error('Post creation error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-app.delete('/api/posts/:postId', authMiddleware, async (req, res) => {
-    const { postId } = req.params;
-    const result = await postService.deletePost(postId, req.user.userId);
-    if (result.success) {
-        res.json({ success: true });
-    } else {
-        res.status(404).json(result);
-    }
-});
-
 app.post('/api/posts/:postId/view', authMiddleware, async (req, res) => {
     const { postId } = req.params;
-    const result = await postService.viewPost(postId, req.user.userId);
-    res.json(result);
+    try {
+        const viewed = db.viewPost(postId, req.user.userId);
+        res.json({ success: viewed });
+    } catch (error) {
+        res.json({ success: false });
+    }
 });
 
 app.put('/api/posts/:postId/like', authMiddleware, async (req, res) => {
@@ -457,6 +422,10 @@ app.put('/api/posts/:postId/like', authMiddleware, async (req, res) => {
 app.post('/api/posts/:postId/comment', authMiddleware, async (req, res) => {
     const { postId } = req.params;
     const { text } = req.body;
+
+    if (!text) {
+        return res.status(400).json({ error: 'متن کامنت الزامی است' });
+    }
 
     const result = await postService.addComment(postId, {
         userId: req.user.userId,
@@ -565,51 +534,28 @@ app.get('/api/stories/:userId', authMiddleware, (req, res) => {
     res.json(stories);
 });
 
-app.post('/api/stories', authMiddleware, storyUpload.single('file'), async (req, res) => {
-    const file = req.file;
-    if (!file) {
-        return res.status(400).json({ error: 'فایل الزامی است' });
-    }
-
-    const result = await storyService.createStory({
-        userId: req.user.userId,
-        username: req.user.username,
-        fullName: req.user.fullName,
-        file: '/uploads/stories/' + file.filename,
-        isVideo: file.mimetype.startsWith('video/')
-    });
-
-    if (result.success) {
-        const followers = db.getFollowers(result.story.userId);
-        for (const follower of followers) {
-            const socketId = encryption.getUserSocket(follower.userId);
-            if (socketId) {
-                io.to(socketId).emit('new-story', {
-                    userId: result.story.userId,
-                    storyId: result.story.storyId
-                });
-            }
-        }
-        res.status(201).json(result.story);
-    } else {
-        res.status(400).json(result);
-    }
-});
-
-app.delete('/api/stories/:storyId', authMiddleware, async (req, res) => {
+app.get('/api/stories/:storyId', authMiddleware, (req, res) => {
     const { storyId } = req.params;
-    const result = await storyService.deleteStory(storyId, req.user.userId);
-    if (result.success) {
-        res.json({ success: true });
-    } else {
-        res.status(404).json(result);
-    }
+    const idx = db.getShardIndex(storyId);
+    const story = db.shards[idx].stories.find(s => s.storyId === storyId);
+    if (!story) return res.status(404).json({ error: 'استوری یافت نشد' });
+    res.json(story);
 });
 
 app.post('/api/stories/:storyId/view', authMiddleware, async (req, res) => {
     const { storyId } = req.params;
-    const result = await storyService.viewStory(storyId, req.user.userId);
-    res.json(result);
+    try {
+        const viewed = db.viewStory(storyId, req.user.userId);
+        if (viewed) {
+            const idx = db.getShardIndex(storyId);
+            const story = db.shards[idx].stories.find(s => s.storyId === storyId);
+            res.json({ success: true, views: story?.views || 0, viewers: story?.viewers || [] });
+        } else {
+            res.json({ success: false });
+        }
+    } catch (error) {
+        res.json({ success: false });
+    }
 });
 
 app.post('/api/stories/:storyId/react', authMiddleware, async (req, res) => {

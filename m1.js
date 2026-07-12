@@ -1,9 +1,6 @@
 // ============================================
 // 🚀 ULTIMATE SOCIAL MEDIA ENGINE - m1.js
 // ============================================
-// این فایل شامل: سرور اصلی، دیتابیس ۱۰۰ شاردی،
-// رمزنگاری نظامی، مدیریت جلسات، WebSocket
-// ============================================
 
 const express = require('express');
 const http = require('http');
@@ -16,7 +13,6 @@ const os = require('os');
 const compression = require('compression');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const multer = require('multer');
 
 const numCPUs = os.cpus().length;
 const app = express();
@@ -79,34 +75,6 @@ class MilitaryEncryption {
         const [salt, hash] = stored.split(':');
         const verifyHash = crypto.pbkdf2Sync(password, salt, this.ITERATIONS, this.KEY_LENGTH, this.DIGEST).toString('hex');
         return hash === verifyHash;
-    }
-
-    encrypt(text, key) {
-        try {
-            const iv = crypto.randomBytes(16);
-            const cipher = crypto.createCipheriv(this.ALGORITHM, key, iv);
-            let encrypted = cipher.update(text, 'utf8', 'hex');
-            encrypted += cipher.final('hex');
-            const authTag = cipher.getAuthTag().toString('hex');
-            return `${iv.toString('hex')}:${authTag}:${encrypted}`;
-        } catch (error) {
-            return text;
-        }
-    }
-
-    decrypt(encrypted, key) {
-        try {
-            const parts = encrypted.split(':');
-            if (parts.length !== 3) return '[پیام رمزنگاری شده]';
-            const [iv, authTag, data] = parts;
-            const decipher = crypto.createDecipheriv(this.ALGORITHM, key, Buffer.from(iv, 'hex'));
-            decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-            let decrypted = decipher.update(data, 'hex', 'utf8');
-            decrypted += decipher.final('utf8');
-            return decrypted;
-        } catch (error) {
-            return '[پیام رمزنگاری شده]';
-        }
     }
 
     generateToken() {
@@ -225,7 +193,6 @@ class UltraShardedDatabase {
         return `${prefix}_${crypto.randomBytes(16).toString('hex')}`;
     }
 
-    // ===== CACHE =====
     getCache(key) {
         const cached = this.cache.get(key);
         if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
@@ -261,7 +228,6 @@ class UltraShardedDatabase {
         return true;
     }
 
-    // ===== TRANSACTION =====
     logTransaction(operation, data) {
         this.transactionLog.push({
             id: this.generateId('txn'),
@@ -274,7 +240,6 @@ class UltraShardedDatabase {
         }
     }
 
-    // ===== BACKUP =====
     startAutoBackup() {
         this.backupInterval = setInterval(() => {
             this.createBackup();
@@ -312,7 +277,6 @@ class UltraShardedDatabase {
         }
     }
 
-    // ===== CLEANUP =====
     startCleanupScheduler() {
         setInterval(() => this.cleanup(), 60 * 60 * 1000);
     }
@@ -339,7 +303,6 @@ class UltraShardedDatabase {
         this.clearCache();
     }
 
-    // ===== SAMPLE DATA =====
     createSampleData() {
         const sampleUsers = [
             { username: 'milad_admin', fullName: 'مدیر سیستم', email: ADMIN_EMAIL, password: ADMIN_PASSWORD, isAdmin: true, isVerified: true },
@@ -700,6 +663,9 @@ class UltraShardedDatabase {
         if (!post) return false;
         
         const viewKey = `${postId}_${userId}`;
+        if (!this.shards[idx].views) {
+            this.shards[idx].views = new Map();
+        }
         if (!this.shards[idx].views.has(viewKey)) {
             this.shards[idx].views.set(viewKey, true);
             post.views = (post.views || 0) + 1;
@@ -715,6 +681,9 @@ class UltraShardedDatabase {
         if (!post) return false;
         
         const shareKey = `${postId}_${userId}`;
+        if (!this.shards[idx].shares) {
+            this.shards[idx].shares = new Map();
+        }
         if (!this.shards[idx].shares.has(shareKey)) {
             this.shards[idx].shares.set(shareKey, true);
             post.shares = (post.shares || 0) + 1;
@@ -1107,58 +1076,6 @@ const adminMiddleware = async (req, res, next) => {
 };
 
 // ============================================
-// 📤 MULTER CONFIG
-// ============================================
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        let dir = './uploads/posts';
-        if (file.fieldname === 'avatar') dir = './uploads/avatars';
-        else if (file.fieldname === 'story') dir = './uploads/stories';
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 500 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
-        cb(null, allowed.includes(file.mimetype));
-    }
-});
-
-const storyUpload = multer({
-    storage: multer.diskStorage({
-        destination: './uploads/stories',
-        filename: (req, file, cb) => {
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
-        }
-    }),
-    limits: { fileSize: 100 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
-        cb(null, allowed.includes(file.mimetype));
-    }
-});
-
-const avatarUpload = multer({
-    storage: multer.diskStorage({
-        destination: './uploads/avatars',
-        filename: (req, file, cb) => {
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
-        }
-    }),
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-        cb(null, allowed.includes(file.mimetype));
-    }
-});
-
-// ============================================
 // ⚙️ CONFIGURE EXPRESS
 // ============================================
 app.use(helmet({
@@ -1187,7 +1104,24 @@ app.get('/', (req, res) => {
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        const publicPath = path.join(__dirname, 'public', 'index.html');
+        if (fs.existsSync(publicPath)) {
+            res.sendFile(publicPath);
+        } else {
+            res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>🚀 سوشال مدیا</title></head>
+                <body style="font-family: Arial; text-align: center; padding: 50px; background: #0a0a1a; color: #fff;">
+                    <h1 style="color: #4361ee;">🚀 سوشال مدیا</h1>
+                    <p>سرور با موفقیت اجرا شد!</p>
+                    <p>📧 Email: milad.yari1377m@gmail.com</p>
+                    <p>🔑 Password: M09145978426M</p>
+                    <p style="color: #6c757d; margin-top: 30px;">فایل index.html را در پوشه پروژه قرار دهید</p>
+                </body>
+                </html>
+            `);
+        }
     }
 });
 
@@ -1195,82 +1129,100 @@ app.get('/', (req, res) => {
 // 📡 API ROUTES - AUTH
 // ============================================
 app.post('/api/auth/register', async (req, res) => {
-    const { username, email, password, fullName } = req.body;
-    
-    if (!username || !email || !password) {
-        return res.status(400).json({ error: 'همه فیلدها الزامی هستند' });
+    try {
+        const { username, email, password, fullName } = req.body;
+        
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'همه فیلدها الزامی هستند' });
+        }
+
+        if (db.getUserByEmail(email)) {
+            return res.status(400).json({ error: 'این ایمیل قبلاً ثبت شده است' });
+        }
+
+        if (db.getUserByUsername(username)) {
+            return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است' });
+        }
+
+        if (username.length < 3 || username.length > 30) {
+            return res.status(400).json({ error: 'نام کاربری باید بین 3 تا 30 کاراکتر باشد' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'رمز عبور باید حداقل 6 کاراکتر باشد' });
+        }
+
+        const userId = encryption.generateId('user');
+        const isAdmin = email === ADMIN_EMAIL;
+
+        const user = {
+            userId: userId,
+            username: username,
+            email: email,
+            fullName: fullName || username,
+            password: encryption.hashPassword(password),
+            bio: '',
+            avatar: '',
+            followers: 0,
+            following: 0,
+            postsCount: 0,
+            language: 'fa',
+            theme: 'dark',
+            isOnline: false,
+            isAdmin: isAdmin,
+            isBanned: false,
+            isVerified: false,
+            createdAt: new Date().toISOString(),
+            lastSeen: new Date().toISOString()
+        };
+
+        db.saveUser(user);
+        const token = encryption.createSession(userId);
+
+        res.json({
+            success: true,
+            token: token,
+            user: { ...user, password: undefined }
+        });
+    } catch (error) {
+        console.error('Register error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
-
-    if (db.getUserByEmail(email)) {
-        return res.status(400).json({ error: 'این ایمیل قبلاً ثبت شده است' });
-    }
-
-    if (db.getUserByUsername(username)) {
-        return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است' });
-    }
-
-    const userId = encryption.generateId('user');
-    const isAdmin = email === ADMIN_EMAIL;
-
-    const user = {
-        userId: userId,
-        username: username,
-        email: email,
-        fullName: fullName || username,
-        password: encryption.hashPassword(password),
-        bio: '',
-        avatar: '',
-        followers: 0,
-        following: 0,
-        postsCount: 0,
-        language: 'fa',
-        theme: 'dark',
-        isOnline: false,
-        isAdmin: isAdmin,
-        isBanned: false,
-        isVerified: false,
-        createdAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString()
-    };
-
-    db.saveUser(user);
-    const token = encryption.createSession(userId);
-
-    res.json({
-        success: true,
-        token: token,
-        user: { ...user, password: undefined }
-    });
 });
 
 app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+    try {
+        const { email, password } = req.body;
 
-    if (!email || !password) {
-        return res.status(400).json({ error: 'ایمیل و رمز عبور الزامی است' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'ایمیل و رمز عبور الزامی است' });
+        }
+
+        const user = db.getUserByEmail(email);
+        if (!user) {
+            return res.status(401).json({ error: 'ایمیل یا رمز عبور اشتباه است' });
+        }
+
+        if (!encryption.verifyPassword(password, user.password)) {
+            return res.status(401).json({ error: 'ایمیل یا رمز عبور اشتباه است' });
+        }
+
+        if (user.isBanned) {
+            return res.status(403).json({ error: 'این کاربر مسدود شده است' });
+        }
+
+        const token = encryption.createSession(user.userId);
+        db.updateUser(user.userId, { isOnline: true, lastSeen: new Date().toISOString() });
+
+        res.json({
+            success: true,
+            token: token,
+            user: { ...user, password: undefined }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
     }
-
-    const user = db.getUserByEmail(email);
-    if (!user) {
-        return res.status(401).json({ error: 'ایمیل یا رمز عبور اشتباه است' });
-    }
-
-    if (!encryption.verifyPassword(password, user.password)) {
-        return res.status(401).json({ error: 'ایمیل یا رمز عبور اشتباه است' });
-    }
-
-    if (user.isBanned) {
-        return res.status(403).json({ error: 'این کاربر مسدود شده است' });
-    }
-
-    const token = encryption.createSession(user.userId);
-    db.updateUser(user.userId, { isOnline: true, lastSeen: new Date().toISOString() });
-
-    res.json({
-        success: true,
-        token: token,
-        user: { ...user, password: undefined }
-    });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -1320,16 +1272,36 @@ app.put('/api/users/profile', authMiddleware, async (req, res) => {
     res.json({ success: true, user: { ...updated, password: undefined } });
 });
 
-app.post('/api/users/avatar', authMiddleware, avatarUpload.single('avatar'), async (req, res) => {
-    const file = req.file;
-    if (!file) {
-        return res.status(400).json({ error: 'فایل الزامی است' });
-    }
+app.post('/api/users/avatar', authMiddleware, (req, res) => {
+    const multer = require('multer');
+    const upload = multer({
+        storage: multer.diskStorage({
+            destination: './uploads/avatars',
+            filename: (req, file, cb) => {
+                cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
+            }
+        }),
+        limits: { fileSize: 10 * 1024 * 1024 },
+        fileFilter: (req, file, cb) => {
+            const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+            cb(null, allowed.includes(file.mimetype));
+        }
+    }).single('avatar');
 
-    const avatarPath = '/uploads/avatars/' + file.filename;
-    db.updateUser(req.user.userId, { avatar: avatarPath });
+    upload(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: 'فایل الزامی است' });
+        }
 
-    res.json({ success: true, avatar: avatarPath });
+        const avatarPath = '/uploads/avatars/' + file.filename;
+        db.updateUser(req.user.userId, { avatar: avatarPath });
+
+        res.json({ success: true, avatar: avatarPath });
+    });
 });
 
 app.post('/api/users/:userId/follow', authMiddleware, (req, res) => {
@@ -1378,47 +1350,76 @@ app.get('/api/posts', authMiddleware, (req, res) => {
     res.json(result);
 });
 
-app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) => {
-    try {
-        const { caption, hashtags } = req.body;
-        const file = req.file;
-
-        if (!file) {
-            return res.status(400).json({ error: 'فایل الزامی است' });
+app.post('/api/posts', authMiddleware, (req, res) => {
+    const multer = require('multer');
+    const upload = multer({
+        storage: multer.diskStorage({
+            destination: './uploads/posts',
+            filename: (req, file, cb) => {
+                const ext = path.extname(file.originalname);
+                const name = path.basename(file.originalname, ext);
+                cb(null, `${Date.now()}-${name}${ext}`);
+            }
+        }),
+        limits: { fileSize: 500 * 1024 * 1024 },
+        fileFilter: (req, file, cb) => {
+            const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+            cb(null, allowed.includes(file.mimetype));
         }
+    }).single('file');
 
-        const result = {
-            postId: db.generateId('post'),
-            userId: req.user.userId,
-            username: req.user.username,
-            fullName: req.user.fullName || req.user.username,
-            image: '/uploads/posts/' + file.filename,
-            caption: caption || '',
-            hashtags: hashtags ? hashtags.split(',').map(h => h.trim()) : [],
-            likes: 0,
-            comments: [],
-            shares: 0,
-            views: 0,
-            isVideo: file.mimetype.startsWith('video/'),
-            createdAt: new Date().toISOString()
-        };
+    upload(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        try {
+            const { caption, hashtags } = req.body;
+            const file = req.file;
 
-        db.savePost(result);
-        db.updateUser(req.user.userId, { postsCount: (req.user.postsCount || 0) + 1 });
+            if (!file) {
+                return res.status(400).json({ error: 'فایل الزامی است' });
+            }
 
-        const followers = db.getFollowers(req.user.userId);
-        for (const follower of followers) {
-            io.to(`user_${follower.userId}`).emit('new-post', {
+            const isVideo = file.mimetype.startsWith('video/');
+            const postId = db.generateId('post');
+            const post = {
+                postId,
                 userId: req.user.userId,
-                postId: result.postId
-            });
-        }
+                username: req.user.username,
+                fullName: req.user.fullName || req.user.username,
+                image: '/uploads/posts/' + file.filename,
+                caption: caption || '',
+                hashtags: hashtags ? hashtags.split(',').map(h => h.trim()).filter(h => h) : [],
+                likes: 0,
+                comments: [],
+                shares: 0,
+                views: 0,
+                isVideo: isVideo,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isDeleted: false
+            };
 
-        res.status(201).json(result);
-    } catch (error) {
-        console.error('Post creation error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
+            db.savePost(post);
+            db.updateUser(req.user.userId, { postsCount: (req.user.postsCount || 0) + 1 });
+
+            const followers = db.getFollowers(req.user.userId);
+            for (const follower of followers) {
+                const socketId = encryption.getUserSocket(follower.userId);
+                if (socketId) {
+                    io.to(socketId).emit('new-post', {
+                        userId: req.user.userId,
+                        postId: post.postId
+                    });
+                }
+            }
+
+            res.status(201).json(post);
+        } catch (error) {
+            console.error('Post creation error:', error);
+            res.status(500).json({ error: 'خطای سرور: ' + error.message });
+        }
+    });
 });
 
 app.get('/api/posts/:postId', authMiddleware, (req, res) => {
@@ -1439,8 +1440,12 @@ app.delete('/api/posts/:postId', authMiddleware, (req, res) => {
 
 app.post('/api/posts/:postId/view', authMiddleware, (req, res) => {
     const { postId } = req.params;
-    const viewed = db.viewPost(postId, req.user.userId);
-    res.json({ success: viewed });
+    try {
+        const viewed = db.viewPost(postId, req.user.userId);
+        res.json({ success: viewed });
+    } catch (error) {
+        res.json({ success: false });
+    }
 });
 
 app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
@@ -1458,7 +1463,10 @@ app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
                 isRead: false,
                 createdAt: new Date().toISOString()
             });
-            io.to(`user_${post.userId}`).emit('notification', { type: 'like', fromUserId: req.user.userId, postId: postId });
+            const socketId = encryption.getUserSocket(post.userId);
+            if (socketId) {
+                io.to(socketId).emit('notification', { type: 'like', fromUserId: req.user.userId, postId: postId });
+            }
         }
     }
     res.json(result);
@@ -1494,7 +1502,10 @@ app.post('/api/posts/:postId/comment', authMiddleware, (req, res) => {
             isRead: false,
             createdAt: new Date().toISOString()
         });
-        io.to(`user_${post.userId}`).emit('notification', { type: 'comment', fromUserId: req.user.userId, postId: postId });
+        const socketId = encryption.getUserSocket(post.userId);
+        if (socketId) {
+            io.to(socketId).emit('notification', { type: 'comment', fromUserId: req.user.userId, postId: postId });
+        }
     }
 
     res.status(201).json(comment);
@@ -1547,36 +1558,78 @@ app.get('/api/stories/:userId', authMiddleware, (req, res) => {
     res.json(stories);
 });
 
-app.post('/api/stories', authMiddleware, storyUpload.single('file'), async (req, res) => {
-    const file = req.file;
-    if (!file) {
-        return res.status(400).json({ error: 'فایل الزامی است' });
-    }
+app.get('/api/stories/:storyId', authMiddleware, (req, res) => {
+    const { storyId } = req.params;
+    const idx = db.getShardIndex(storyId);
+    const story = db.shards[idx].stories.find(s => s.storyId === storyId);
+    if (!story) return res.status(404).json({ error: 'استوری یافت نشد' });
+    res.json(story);
+});
 
-    const story = {
-        storyId: db.generateId('story'),
-        userId: req.user.userId,
-        username: req.user.username,
-        fullName: req.user.fullName || req.user.username,
-        image: '/uploads/stories/' + file.filename,
-        isVideo: file.mimetype.startsWith('video/'),
-        views: 0,
-        viewers: [],
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-    };
+app.post('/api/stories', authMiddleware, (req, res) => {
+    const multer = require('multer');
+    const upload = multer({
+        storage: multer.diskStorage({
+            destination: './uploads/stories',
+            filename: (req, file, cb) => {
+                const ext = path.extname(file.originalname);
+                const name = path.basename(file.originalname, ext);
+                cb(null, `${Date.now()}-${name}${ext}`);
+            }
+        }),
+        limits: { fileSize: 100 * 1024 * 1024 },
+        fileFilter: (req, file, cb) => {
+            const allowed = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime'];
+            cb(null, allowed.includes(file.mimetype));
+        }
+    }).single('file');
 
-    db.saveStory(story);
+    upload(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        try {
+            const file = req.file;
+            if (!file) {
+                return res.status(400).json({ error: 'فایل الزامی است' });
+            }
 
-    const followers = db.getFollowers(req.user.userId);
-    for (const follower of followers) {
-        io.to(`user_${follower.userId}`).emit('new-story', {
-            userId: req.user.userId,
-            storyId: story.storyId
-        });
-    }
+            const isVideo = file.mimetype.startsWith('video/');
+            const storyId = db.generateId('story');
+            const story = {
+                storyId,
+                userId: req.user.userId,
+                username: req.user.username,
+                fullName: req.user.fullName || req.user.username,
+                image: '/uploads/stories/' + file.filename,
+                isVideo: isVideo,
+                views: 0,
+                viewers: [],
+                reactions: [],
+                createdAt: new Date().toISOString(),
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                isDeleted: false
+            };
 
-    res.status(201).json(story);
+            db.saveStory(story);
+
+            const followers = db.getFollowers(req.user.userId);
+            for (const follower of followers) {
+                const socketId = encryption.getUserSocket(follower.userId);
+                if (socketId) {
+                    io.to(socketId).emit('new-story', {
+                        userId: req.user.userId,
+                        storyId: story.storyId
+                    });
+                }
+            }
+
+            res.status(201).json(story);
+        } catch (error) {
+            console.error('Story creation error:', error);
+            res.status(500).json({ error: 'خطای سرور' });
+        }
+    });
 });
 
 app.delete('/api/stories/:storyId', authMiddleware, (req, res) => {
@@ -1588,8 +1641,18 @@ app.delete('/api/stories/:storyId', authMiddleware, (req, res) => {
 
 app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
     const { storyId } = req.params;
-    const viewed = db.viewStory(storyId, req.user.userId);
-    res.json({ success: viewed });
+    try {
+        const viewed = db.viewStory(storyId, req.user.userId);
+        if (viewed) {
+            const idx = db.getShardIndex(storyId);
+            const story = db.shards[idx].stories.find(s => s.storyId === storyId);
+            res.json({ success: true, views: story?.views || 0, viewers: story?.viewers || [] });
+        } else {
+            res.json({ success: false });
+        }
+    } catch (error) {
+        res.json({ success: false });
+    }
 });
 
 // ============================================
@@ -1861,9 +1924,6 @@ module.exports = {
     encryption,
     authMiddleware,
     adminMiddleware,
-    upload,
-    storyUpload,
-    avatarUpload,
     SHARD_COUNT,
     PORT,
     ADMIN_EMAIL,

@@ -24,6 +24,7 @@ class AdminService {
             maxUploadSize: 500,
             maxUsers: 1000000
         };
+        this.broadcastHistory = [];
     }
 
     // ===== USER MANAGEMENT =====
@@ -123,7 +124,8 @@ class AdminService {
             platform: process.platform,
             pid: process.pid,
             systemSettings: this.systemSettings,
-            bannedIPs: this.bannedIPs.size
+            bannedIPs: this.bannedIPs.size,
+            broadcastHistory: this.broadcastHistory.length
         };
     }
 
@@ -133,16 +135,23 @@ class AdminService {
             return { success: false, error: 'متن پیام الزامی است' };
         }
 
-        this.logAdminAction(adminId, 'broadcast', { message });
-        
-        // Send to all connected users
-        io.emit('broadcast', {
+        const broadcastData = {
             message: message.trim(),
             from: 'ادمین',
             timestamp: new Date().toISOString()
-        });
+        };
 
-        return { success: true, message: message.trim() };
+        this.logAdminAction(adminId, 'broadcast', { message });
+        this.broadcastHistory.push(broadcastData);
+        
+        // Send to all connected users
+        io.emit('broadcast', broadcastData);
+
+        return { success: true, data: broadcastData };
+    }
+
+    getBroadcastHistory(limit = 20) {
+        return this.broadcastHistory.slice(-limit).reverse();
     }
 
     // ===== ADMIN LOGS =====
@@ -177,6 +186,10 @@ class AdminService {
             );
         }
         return logs;
+    }
+
+    getAuditTrail(limit = 100) {
+        return this.auditTrail.slice(-limit).reverse();
     }
 
     // ===== SYSTEM MAINTENANCE =====
@@ -311,6 +324,12 @@ app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, re
     } else {
         res.status(400).json(result);
     }
+});
+
+app.get('/api/admin/broadcast/history', authMiddleware, adminMiddleware, (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
+    const history = adminService.getBroadcastHistory(limit);
+    res.json(history);
 });
 
 // ===== LOGS =====

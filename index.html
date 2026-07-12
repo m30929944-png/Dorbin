@@ -80,7 +80,6 @@
             border-radius: 4px;
         }
 
-        /* ===== LOADING ===== */
         .loading-screen {
             position: fixed;
             inset: 0;
@@ -189,7 +188,6 @@
             }
         }
 
-        /* ===== LOGIN ===== */
         .login-container {
             display: flex;
             justify-content: center;
@@ -399,7 +397,6 @@
             text-decoration: underline;
         }
 
-        /* ===== HEADER ===== */
         .header {
             background: var(--bg-glass);
             backdrop-filter: blur(20px);
@@ -508,7 +505,6 @@
             animation: pulse 2s ease-in-out infinite;
         }
 
-        /* ===== STORIES ===== */
         .stories-section {
             background: var(--bg-secondary);
             padding: 12px 16px;
@@ -586,7 +582,6 @@
             font-weight: 500;
         }
 
-        /* ===== GALLERY ===== */
         .gallery-wrapper {
             flex: 1;
             overflow-y: auto;
@@ -686,7 +681,6 @@
             font-size: 14px;
         }
 
-        /* ===== POST DETAIL ===== */
         .post-detail-modal {
             display: none;
             position: fixed;
@@ -932,7 +926,6 @@
             transform: scale(1.04);
         }
 
-        /* ===== PROFILE ===== */
         .profile-page {
             display: none;
             position: fixed;
@@ -1206,7 +1199,6 @@
             font-size: 16px;
         }
 
-        /* ===== CHAT ===== */
         .chat-interface {
             display: none;
             position: fixed;
@@ -1270,6 +1262,56 @@
         }
         .chat-header .chat-user-info .status.online {
             color: var(--success);
+        }
+
+        .chat-users-list {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            max-height: 200px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .chat-user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .chat-user-item:hover {
+            background: var(--bg-card);
+        }
+        .chat-user-item img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border-color);
+        }
+        .chat-user-item .user-info {
+            flex: 1;
+        }
+        .chat-user-item .user-info .name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .chat-user-item .user-info .last-msg {
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 150px;
+        }
+        .chat-user-item .unread-badge {
+            background: var(--primary);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 700;
         }
 
         .chat-messages {
@@ -1359,58 +1401,6 @@
             transform: scale(1.04);
         }
 
-        /* ===== CHAT USERS LIST ===== */
-        .chat-users-list {
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border-color);
-            max-height: 200px;
-            overflow-y: auto;
-            flex-shrink: 0;
-        }
-        .chat-user-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 16px;
-            cursor: pointer;
-            transition: var(--transition);
-            border-bottom: 1px solid var(--border-color);
-        }
-        .chat-user-item:hover {
-            background: var(--bg-card);
-        }
-        .chat-user-item img {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid var(--border-color);
-        }
-        .chat-user-item .user-info {
-            flex: 1;
-        }
-        .chat-user-item .user-info .name {
-            font-weight: 600;
-            font-size: 14px;
-        }
-        .chat-user-item .user-info .last-msg {
-            font-size: 12px;
-            color: var(--text-secondary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 150px;
-        }
-        .chat-user-item .unread-badge {
-            background: var(--primary);
-            color: #fff;
-            font-size: 11px;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-weight: 700;
-        }
-
-        /* ===== LIVE ===== */
         .live-container {
             display: none;
             position: fixed;
@@ -1531,7 +1521,6 @@
             font-size: 13px;
         }
 
-        /* ===== ADMIN ===== */
         .admin-panel {
             display: none;
             position: fixed;
@@ -1635,7 +1624,6 @@
             box-shadow: 0 0 0 5px var(--primary-glow);
         }
 
-        /* ===== BOTTOM NAV ===== */
         .bottom-nav {
             position: fixed;
             bottom: 0;
@@ -1699,7 +1687,6 @@
             font-weight: 700;
         }
 
-        /* ===== TOAST ===== */
         .toast {
             position: fixed;
             bottom: calc(var(--bottom-nav-height) + 24px);
@@ -1728,7 +1715,6 @@
             transform: translateX(-50%) translateY(0);
         }
 
-        /* ===== UPLOAD PROGRESS ===== */
         .upload-progress {
             display: none;
             position: fixed;
@@ -1774,7 +1760,6 @@
             margin-top: 4px;
         }
 
-        /* ===== THEME TOGGLE ===== */
         .theme-toggle {
             position: fixed;
             bottom: calc(var(--bottom-nav-height) + 80px);
@@ -1803,7 +1788,6 @@
             transform: scale(0.92);
         }
 
-        /* ===== RESPONSIVE ===== */
         @media (max-width: 600px) {
             .gallery {
                 gap: 3px;
@@ -1913,7 +1897,6 @@
 </head>
 <body>
 
-    <!-- ===== LOADING ===== -->
     <div class="loading-screen" id="loadingScreen">
         <div class="loader-ring">
             <svg viewBox="0 0 100 100">
@@ -1925,22 +1908,18 @@
         <div class="loader-dots"><span></span><span></span><span></span></div>
     </div>
 
-    <!-- ===== THEME TOGGLE ===== -->
     <button class="theme-toggle" id="themeToggle" title="تغییر تم">
         <i class="fas fa-moon"></i>
     </button>
 
-    <!-- ===== TOAST ===== -->
     <div id="toast" class="toast"></div>
 
-    <!-- ===== UPLOAD PROGRESS ===== -->
     <div class="upload-progress" id="uploadProgress">
         <div class="progress-text">📤 در حال آپلود...</div>
         <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
         <div class="progress-detail" id="progressDetail">۰%</div>
     </div>
 
-    <!-- ===== LOGIN ===== -->
     <div id="loginPage" class="login-container">
         <div class="login-box">
             <span class="logo-icon">📸</span>
@@ -1956,9 +1935,7 @@
         </div>
     </div>
 
-    <!-- ===== MAIN APP ===== -->
     <div id="mainApp" style="display:none;flex-direction:column;height:100vh;">
-        <!-- Header -->
         <header class="header">
             <div class="logo"><i class="fab fa-instagram"></i> سوشال</div>
             <div class="search-box"><i class="fas fa-search"></i><input id="searchInput" placeholder="جستجو..."></div>
@@ -1968,13 +1945,10 @@
             </div>
         </header>
 
-        <!-- Stories -->
         <div class="stories-section"><div class="stories-container" id="storiesContainer"></div></div>
 
-        <!-- Gallery -->
         <div class="gallery-wrapper"><div class="gallery" id="gallery"></div></div>
 
-        <!-- Bottom Nav -->
         <nav class="bottom-nav">
             <button class="nav-btn" id="profileNavBtn"><i class="fas fa-user"></i><span>پروفایل</span></button>
             <button class="nav-btn" id="uploadNavBtn"><i class="fas fa-upload"></i><span>آپلود</span></button>
@@ -1983,7 +1957,6 @@
         </nav>
     </div>
 
-    <!-- ===== PROFILE PAGE ===== -->
     <div class="profile-page" id="profilePage">
         <div class="profile-header-bar">
             <h2><i class="fas fa-user-circle" style="color:var(--primary);"></i> پروفایل</h2>
@@ -2013,7 +1986,6 @@
         </div>
     </div>
 
-    <!-- ===== POST DETAIL ===== -->
     <div class="post-detail-modal" id="postDetailModal">
         <button class="close-post" id="closePostDetail">&times;</button>
         <div class="post-detail-content" id="postDetailContent">
@@ -2050,7 +2022,6 @@
         </div>
     </div>
 
-    <!-- ===== CHAT INTERFACE ===== -->
     <div class="chat-interface" id="chatInterface">
         <div class="chat-header">
             <button class="back-btn" id="chatBackBtn"><i class="fas fa-arrow-right"></i></button>
@@ -2063,9 +2034,7 @@
             </div>
             <button class="icon-btn" id="chatCallBtn" style="display:none;"><i class="fas fa-phone"></i></button>
         </div>
-        <!-- Chat Users List -->
         <div class="chat-users-list" id="chatUsersList"></div>
-        <!-- Chat Messages -->
         <div class="chat-messages" id="chatMessages">
             <div style="text-align:center;padding:40px;color:var(--text-secondary);">
                 <i class="fas fa-comments" style="font-size:32px;display:block;margin-bottom:12px;"></i>
@@ -2078,7 +2047,6 @@
         </div>
     </div>
 
-    <!-- ===== LIVE STREAM ===== -->
     <div class="live-container" id="liveContainer">
         <div class="live-video-wrapper">
             <div class="live-info"><span class="live-dot"></span> <span id="liveTitle">لایو</span></div>
@@ -2092,7 +2060,6 @@
         </div>
     </div>
 
-    <!-- ===== ADMIN PANEL ===== -->
     <div class="admin-panel" id="adminPanel">
         <div class="admin-card">
             <h4><i class="fas fa-chart-bar" style="color:var(--primary);"></i> آمار سیستم</h4>
@@ -2129,10 +2096,6 @@
     </div>
 
     <script>
-        // ============================================
-        // 🚀 ULTIMATE FRONTEND ENGINE
-        // ============================================
-
         const STATE = {
             token: localStorage.getItem('token') || null,
             user: null,
@@ -2154,7 +2117,6 @@
         const $ = (s) => document.querySelector(s);
         const $$ = (s) => document.querySelectorAll(s);
 
-        // ===== THEME =====
         function setTheme(theme) {
             STATE.theme = theme;
             document.documentElement.setAttribute('data-theme', theme);
@@ -2163,7 +2125,6 @@
             icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
         }
 
-        // ===== LOADING =====
         function hideLoading() {
             const screen = $('#loadingScreen');
             screen.classList.add('hide');
@@ -2202,7 +2163,6 @@
             return num;
         }
 
-        // ===== AUTH =====
         async function registerUser(username, fullName, email, password) {
             const res = await fetch('/api/auth/register', {
                 method: 'POST',
@@ -2232,7 +2192,6 @@
             } catch { return null; }
         }
 
-        // ===== API =====
         async function getPosts(page = 1, hashtag = null) {
             let url = '/api/posts?page=' + page + '&limit=20';
             if (hashtag) url += '&hashtag=' + encodeURIComponent(hashtag);
@@ -2484,9 +2443,6 @@
             return await res.json();
         }
 
-        // ============================================
-        // 💬 SOCKET
-        // ============================================
         function connectSocket() {
             if (STATE.socket) return;
             STATE.socket = io();
@@ -2554,7 +2510,6 @@
 
             STATE.socket.on('broadcast', (data) => {
                 showToast('📢 ' + data.message + ' (از ' + data.from + ')');
-                // Add to broadcast messages in admin panel
                 const container = $('#broadcastMessages');
                 const div = document.createElement('div');
                 div.style.cssText =
@@ -2639,10 +2594,6 @@
             } catch (e) {}
         }
 
-        // ============================================
-        // 📋 RENDER FUNCTIONS
-        // ============================================
-
         function createPostElement(post) {
             const div = document.createElement('div');
             div.className = 'gallery-item';
@@ -2697,17 +2648,10 @@
             div.innerHTML = `
                 <div class="story-avatar"><img src="${story.image}" alt="story" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%231a1a3a%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%235a5a7a%22 font-size=%2212%22>📸</text></svg>'"></div>
                 <span class="story-name">${story.username}</span>
+                ${story.views > 0 ? `<span style="font-size:9px;color:var(--text-muted);">👁️ ${story.views}</span>` : ''}
             `;
             div.addEventListener('click', () => {
-                showToast('📸 استوری از ' + story.username);
-                fetch('/api/stories/' + story.storyId + '/view', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + STATE.token,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ userId: STATE.user?.userId })
-                }).catch(() => {});
+                viewStoryModal(story.storyId);
             });
             return div;
         }
@@ -2733,7 +2677,7 @@
             div.innerHTML = `
                 <img src="${user.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() * 70)}" alt="avatar">
                 <div class="user-info">
-                    <div class="name">${user.fullName || user.username} ${user.isOnline ? '🟢' : ''}</div>
+                    <div class="name">${user.fullName || user.username} ${isOnline ? '🟢' : ''}</div>
                     <div class="last-msg">${user.lastMessage ? user.lastMessage.message : 'شروع چت'}</div>
                 </div>
                 ${user.unreadCount > 0 ? `<span class="unread-badge">${user.unreadCount}</span>` : ''}
@@ -2768,10 +2712,6 @@
             `;
             return div;
         }
-
-        // ============================================
-        // 📥 LOAD FUNCTIONS
-        // ============================================
 
         async function loadPosts(page = 1, hashtag = null) {
             const gallery = $('#gallery');
@@ -2918,10 +2858,6 @@
             } catch (e) {}
         }
 
-        // ============================================
-        // 🎯 ACTION FUNCTIONS
-        // ============================================
-
         async function handleLike(postId) {
             try {
                 const result = await likePost(postId);
@@ -2978,7 +2914,6 @@
                     $('#postDetailVerified').style.display = 'none';
                 }
 
-                // Format caption with hashtags
                 let captionHtml = post.caption || '';
                 if (post.hashtags && post.hashtags.length > 0) {
                     post.hashtags.forEach(tag => {
@@ -3005,13 +2940,11 @@
                     likeBtn.innerHTML = '<i class="far fa-heart"></i> لایک';
                 }
 
-                // Bookmark status
                 const isBookmarked = localStorage.getItem('bookmark_' + postId) === 'true';
                 const bookmarkBtn = $('#detailBookmarkBtn');
                 bookmarkBtn.innerHTML = isBookmarked ? '<i class="fas fa-bookmark"></i>' :
                     '<i class="far fa-bookmark"></i>';
 
-                // Follow status
                 const followBtn = $('#detailFollowBtn');
                 const isFollowing = post.isFollowing || false;
                 if (isFollowing) {
@@ -3033,7 +2966,6 @@
                     loadPosts();
                 };
 
-                // Comments
                 const commentsList = $('#postDetailCommentsList');
                 commentsList.innerHTML = '';
                 if (post.comments && post.comments.length > 0) {
@@ -3052,7 +2984,6 @@
                 $('#postDetailModal').classList.add('active');
                 setTimeout(() => $('#postDetailCommentInput').focus(), 300);
 
-                // Track view
                 await fetch('/api/posts/' + postId + '/view', {
                     method: 'POST',
                     headers: {
@@ -3084,9 +3015,76 @@
             }
         }
 
-        // ============================================
-        // 💬 CHAT FUNCTIONS
-        // ============================================
+        async function viewStoryModal(storyId) {
+            try {
+                const res = await fetch('/api/stories/' + storyId + '/view', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + STATE.token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ userId: STATE.user?.userId })
+                });
+                const data = await res.json();
+
+                const storyRes = await fetch('/api/stories/' + storyId, {
+                    headers: { 'Authorization': 'Bearer ' + STATE.token }
+                });
+                const story = await storyRes.json();
+                if (!story) { showToast('❌ استوری یافت نشد', 'error'); return; }
+
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 600;
+                    display: flex; flex-direction: column; justify-content: center; align-items: center;
+                    animation: fadeIn 0.3s ease;
+                `;
+
+                modal.innerHTML = `
+                    <div style="position:relative;max-width:400px;width:100%;max-height:90vh;">
+                        <button onclick="this.parentElement.parentElement.remove()" style="
+                            position:absolute;top:-40px;right:0;background:none;border:none;
+                            color:#fff;font-size:28px;cursor:pointer;z-index:10;
+                        ">&times;</button>
+                        
+                        <div style="position:relative;background:#111;border-radius:12px;overflow:hidden;">
+                            ${story.isVideo ? 
+                                `<video src="${story.image}" controls autoplay style="width:100%;max-height:70vh;object-fit:contain;"></video>` :
+                                `<img src="${story.image}" style="width:100%;max-height:70vh;object-fit:contain;" alt="story">`
+                            }
+                            
+                            <div style="position:absolute;bottom:0;left:0;right:0;padding:16px;
+                                background:linear-gradient(transparent,rgba(0,0,0,0.8));
+                                color:#fff;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;">
+                                    <div>
+                                        <strong>${story.fullName || story.username}</strong>
+                                        <span style="font-size:12px;color:#aaa;margin-left:8px;">@${story.username}</span>
+                                    </div>
+                                    <div style="display:flex;gap:16px;font-size:14px;">
+                                        <span>👁️ ${data.views || story.views || 0}</span>
+                                        ${data.viewers && data.viewers.length > 0 ? `<span>👥 ${data.viewers.length}</span>` : ''}
+                                    </div>
+                                </div>
+                                ${data.viewers && data.viewers.length > 0 ? `
+                                    <div style="margin-top:8px;font-size:12px;color:#aaa;max-height:60px;overflow-y:auto;">
+                                        ${data.viewers.slice(0, 10).map(id => '👤 کاربر').join(' ')}
+                                        ${data.viewers.length > 10 ? `و ${data.viewers.length - 10} نفر دیگر` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) modal.remove();
+                });
+            } catch (e) {
+                showToast('❌ خطا در نمایش استوری', 'error');
+            }
+        }
 
         async function openChat(userId, username, avatar) {
             STATE.currentChatUser = userId;
@@ -3108,10 +3106,8 @@
 
             $('#chatInterface').classList.add('active');
 
-            // Join room
             STATE.socket.emit('join-room', { roomId, userId: STATE.user?.userId });
 
-            // Load messages
             try {
                 const messages = await getMessages(roomId);
                 const messagesDiv = $('#chatMessages');
@@ -3126,7 +3122,6 @@
                 }
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-                // Mark messages as read
                 await fetch('/api/chat/messages/read', {
                     method: 'POST',
                     headers: {
@@ -3176,10 +3171,6 @@
             messagesDiv.appendChild(div);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
-
-        // ============================================
-        // 🔴 LIVE FUNCTIONS
-        // ============================================
 
         async function startLiveStream() {
             if (STATE.user?.isBanned) {
@@ -3254,16 +3245,10 @@
             chat.scrollTop = chat.scrollHeight;
         }
 
-        // ============================================
-        // 🎬 EVENT LISTENERS
-        // ============================================
-
-        // ===== THEME =====
         $('#themeToggle').addEventListener('click', () => {
             setTheme(STATE.theme === 'dark' ? 'light' : 'dark');
         });
 
-        // ===== LOGIN =====
         $('#loginBtn').addEventListener('click', async () => {
             clearError();
             const username = $('#loginUsername').value.trim();
@@ -3329,7 +3314,6 @@
             if (e.key === 'Enter') $('#loginBtn').click();
         });
 
-        // ===== PROFILE =====
         $('#profileNavBtn').addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             $('#profileNavBtn').classList.add('active');
@@ -3343,7 +3327,6 @@
             $('#exploreNavBtn').classList.add('active');
         });
 
-        // ===== AVATAR =====
         $('#avatarUpload').addEventListener('click', () => {
             const input = document.createElement('input');
             input.type = 'file';
@@ -3386,7 +3369,6 @@
             }
         });
 
-        // ===== UPLOAD =====
         $('#uploadNavBtn').addEventListener('click', () => {
             if (STATE.user?.isBanned) { showToast('❌ شما مسدود شده‌اید', 'error'); return; }
             const input = document.createElement('input');
@@ -3438,14 +3420,12 @@
             input.click();
         });
 
-        // ===== EXPLORE =====
         $('#exploreNavBtn').addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             $('#exploreNavBtn').classList.add('active');
             loadPosts();
         });
 
-        // ===== ADMIN =====
         $('#adminNavBtn').addEventListener('click', () => {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             $('#adminNavBtn').classList.add('active');
@@ -3477,7 +3457,6 @@
             }
         });
 
-        // ===== POST DETAIL =====
         $('#closePostDetail').addEventListener('click', () => {
             $('#postDetailModal').classList.remove('active');
             STATE.currentPostId = null;
@@ -3569,7 +3548,6 @@
             if (e.key === 'Enter') sendDetailComment();
         });
 
-        // ===== CHAT =====
         $('#chatOpenBtn').addEventListener('click', async () => {
             await updateChatUsers();
             if (STATE.chatUsers.length > 0) {
@@ -3609,7 +3587,6 @@
             }
         });
 
-        // ===== LIVE =====
         $('#liveOpenBtn').addEventListener('click', async () => {
             if (STATE.isLive) {
                 endLiveStream();
@@ -3624,7 +3601,6 @@
             if (e.key === 'Enter') sendLiveComment();
         });
 
-        // ===== SEARCH =====
         let searchTimeout;
         $('#searchInput').addEventListener('input', () => {
             clearTimeout(searchTimeout);
@@ -3672,9 +3648,6 @@
             }, 400);
         });
 
-        // ============================================
-        // 🚀 INIT
-        // ============================================
         document.addEventListener('DOMContentLoaded', async () => {
             setTheme(STATE.theme);
 
@@ -3722,12 +3695,9 @@
             hideLoading();
         });
 
-        // ===== GLOBAL FUNCTIONS =====
         window.openProfile = function(userId) {
             showToast('👤 باز کردن پروفایل کاربر');
-            // Navigate to profile
             $('#profileNavBtn').click();
-            // Load user profile
             fetch('/api/users/' + userId, {
                 headers: { 'Authorization': 'Bearer ' + STATE.token }
             }).then(res => res.json()).then(user => {
