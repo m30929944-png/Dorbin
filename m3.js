@@ -1,184 +1,13 @@
 // ============================================
-// 📸 POSTS, STORIES & UPLOAD - m3.js
-// ============================================
-// این فایل شامل: مدیریت پست‌ها، استوری‌ها،
-// آپلود فایل، هشتگ‌ها، گالری
+// 📸 m3.js - POSTS & STORIES
 // ============================================
 
-const { app, db, io, encryption, authMiddleware, adminMiddleware } = require('./m1.js');
-const multer = require('multer');
+const { app, db, io, encryption, authMiddleware, adminMiddleware, upload, storyUpload } = require('./m1.js');
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
-const { v4: uuidv4 } = require('uuid');
 
 // ============================================
-// 📤 FILE UPLOAD CONFIG
-// ============================================
-const uploadDir = './uploads';
-const maxFileSize = 2 * 1024 * 1024 * 1024; // 2GB
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        let dir = './uploads/posts';
-        if (file.fieldname === 'avatar') dir = './uploads/avatars';
-        else if (file.fieldname === 'story') dir = './uploads/stories';
-        else if (file.fieldname === 'live') dir = './uploads/live';
-        else if (file.fieldname === 'document') dir = './uploads/documents';
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueName = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`;
-        cb(null, uniqueName);
-    }
-});
-
-const fileFilter = (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 
-                     'video/mp4', 'video/webm', 'video/ogg', 'application/pdf'];
-    cb(null, allowed.includes(file.mimetype));
-};
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: maxFileSize, files: 10 },
-    fileFilter: fileFilter
-});
-
-const storyUpload = multer({
-    storage: multer.diskStorage({
-        destination: './uploads/stories',
-        filename: (req, file, cb) => {
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
-        }
-    }),
-    limits: { fileSize: 200 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
-        cb(null, allowed.includes(file.mimetype));
-    }
-});
-
-const avatarUpload = multer({
-    storage: multer.diskStorage({
-        destination: './uploads/avatars',
-        filename: (req, file, cb) => {
-            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
-        }
-    }),
-    limits: { fileSize: 10 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-        cb(null, allowed.includes(file.mimetype));
-    }
-});
-
-// ============================================
-// 🖼️ IMAGE PROCESSING
-// ============================================
-class ImageProcessor {
-    constructor() {
-        this.thumbnailDir = './uploads/thumbnails';
-        if (!fs.existsSync(this.thumbnailDir)) {
-            fs.mkdirSync(this.thumbnailDir, { recursive: true });
-        }
-    }
-
-    async processImage(filePath, options = {}) {
-        try {
-            const {
-                width = null,
-                height = null,
-                quality = 85,
-                format = 'jpeg',
-                resize = true,
-                optimize = true,
-                thumbnail = false,
-                thumbnailSize = 200
-            } = options;
-
-            let image = sharp(filePath);
-            const metadata = await image.metadata();
-
-            if (resize && (width || height)) {
-                image = image.resize({
-                    width: width || metadata.width,
-                    height: height || metadata.height,
-                    fit: 'cover',
-                    position: 'center',
-                    withoutEnlargement: true
-                });
-            }
-
-            if (optimize) {
-                if (format === 'jpeg' || format === 'jpg') {
-                    image = image.jpeg({ quality, progressive: true, mozjpeg: true });
-                } else if (format === 'png') {
-                    image = image.png({ quality: Math.min(quality, 100), compressionLevel: 9 });
-                } else if (format === 'webp') {
-                    image = image.webp({ quality, lossless: false });
-                } else if (format === 'avif') {
-                    image = image.avif({ quality });
-                }
-            }
-
-            const outputPath = filePath.replace(path.extname(filePath), `.${format}`);
-            await image.toFile(outputPath);
-
-            let thumbnailPath = null;
-            if (thumbnail) {
-                const thumbDir = './uploads/thumbnails';
-                if (!fs.existsSync(thumbDir)) {
-                    fs.mkdirSync(thumbDir, { recursive: true });
-                }
-                thumbnailPath = path.join(thumbDir, `${path.basename(filePath, path.extname(filePath))}_thumb.${format}`);
-                await sharp(filePath)
-                    .resize(thumbnailSize, thumbnailSize, { fit: 'cover', position: 'center' })
-                    .toFile(thumbnailPath);
-            }
-
-            if (filePath !== outputPath) {
-                fs.unlinkSync(filePath);
-            }
-
-            return {
-                success: true,
-                path: outputPath,
-                thumbnail: thumbnailPath,
-                size: fs.statSync(outputPath).size,
-                metadata: await sharp(outputPath).metadata()
-            };
-        } catch (error) {
-            console.error('Image processing error:', error);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    async createVideoThumbnail(videoPath, thumbnailTime = 1) {
-        try {
-            const thumbDir = './uploads/thumbnails';
-            if (!fs.existsSync(thumbDir)) {
-                fs.mkdirSync(thumbDir, { recursive: true });
-            }
-            const thumbnailPath = path.join(thumbDir, `${path.basename(videoPath, path.extname(videoPath))}_thumb.jpg`);
-            
-            // In production, use ffmpeg
-            // For now, return a placeholder
-            return thumbnailPath;
-        } catch (error) {
-            console.error('Video thumbnail error:', error);
-            return null;
-        }
-    }
-}
-
-const imageProcessor = new ImageProcessor();
-
-// ============================================
-// 📸 POSTS SYSTEM
+// 📸 POST SYSTEM
 // ============================================
 class PostSystem {
     constructor() {
@@ -187,7 +16,6 @@ class PostSystem {
         this.trendingCache = null;
         this.trendingCacheTime = 0;
         this.CACHE_TTL = 10 * 1000;
-        this.postAnalytics = new Map();
     }
 
     async createPost(data) {
@@ -284,47 +112,17 @@ class PostSystem {
 
         return trends;
     }
-
-    async reportPost(postId, userId, reason) {
-        const post = db.getPost(postId);
-        if (!post) return { success: false, error: 'پست یافت نشد' };
-
-        post.reported = true;
-        post.reportedCount = (post.reportedCount || 0) + 1;
-        post.reportReason = reason;
-        post.reportedBy = userId;
-        post.reportedAt = new Date().toISOString();
-
-        db.savePost(post);
-        return { success: true };
-    }
-
-    getPostAnalytics(postId) {
-        const post = db.getPost(postId);
-        if (!post) return null;
-
-        return {
-            postId: post.postId,
-            likes: post.likes || 0,
-            comments: (post.comments || []).length,
-            shares: post.shares || 0,
-            views: post.views || 0,
-            engagement: (post.likes || 0) + (post.comments || []).length + (post.shares || 0)
-        };
-    }
 }
 
 const postSystem = new PostSystem();
 
 // ============================================
-// 📸 STORIES SYSTEM
+// 📸 STORY SYSTEM
 // ============================================
 class StorySystem {
     constructor() {
         this.storyCache = new Map();
         this.CACHE_TTL = 5 * 1000;
-        this.storyViews = new Map();
-        this.storyReactions = new Map();
     }
 
     async createStory(data) {
@@ -390,31 +188,6 @@ class StorySystem {
         }
         return { success: viewed };
     }
-
-    async reactToStory(storyId, userId, reaction) {
-        const idx = db.getShardIndex(storyId);
-        const story = db.shards[idx].stories.find(s => s.storyId === storyId);
-        if (!story) return { success: false, error: 'استوری یافت نشد' };
-
-        if (!story.reactions) story.reactions = [];
-        
-        const existingIndex = story.reactions.findIndex(r => r.userId === userId);
-        if (existingIndex !== -1) {
-            if (story.reactions[existingIndex].reaction === reaction) {
-                story.reactions.splice(existingIndex, 1);
-            } else {
-                story.reactions[existingIndex].reaction = reaction;
-                story.reactions[existingIndex].timestamp = new Date().toISOString();
-            }
-        } else {
-            story.reactions.push({ userId, reaction, timestamp: new Date().toISOString() });
-        }
-
-        db.saveStory(story);
-        this.storyCache.clear();
-
-        return { success: true, reactions: story.reactions };
-    }
 }
 
 const storySystem = new StorySystem();
@@ -434,36 +207,22 @@ app.get('/api/posts', authMiddleware, (req, res) => {
 
 app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) => {
     try {
-        const { caption, userId, username, hashtags, location, mentions } = req.body;
+        const { caption, hashtags, location, mentions } = req.body;
         const file = req.file;
 
         if (!file) {
             return res.status(400).json({ error: 'فایل الزامی است' });
         }
 
-        // Process image if it's an image
-        let filePath = '/uploads/posts/' + file.filename;
-        if (file.mimetype.startsWith('image/')) {
-            const processed = await imageProcessor.processImage(file.path, {
-                quality: 85,
-                format: 'webp',
-                thumbnail: true,
-                thumbnailSize: 200
-            });
-            if (processed.success) {
-                filePath = processed.path.replace('./uploads', '/uploads');
-            }
-        }
-
         const result = await postSystem.createPost({
-            userId: userId || req.user.userId,
-            username: username || req.user.username,
+            userId: req.user.userId,
+            username: req.user.username,
             fullName: req.user.fullName,
             caption,
             hashtags,
             location,
             mentions: mentions ? mentions.split(',') : [],
-            file: filePath,
+            file: '/uploads/posts/' + file.filename,
             isVideo: file.mimetype.startsWith('video/')
         });
 
@@ -501,24 +260,9 @@ app.delete('/api/posts/:postId', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/posts/:postId/report', authMiddleware, async (req, res) => {
-    const { postId } = req.params;
-    const { reason } = req.body;
-    if (!reason) {
-        return res.status(400).json({ error: 'دلیل گزارش الزامی است' });
-    }
-    const result = await postSystem.reportPost(postId, req.user.userId, reason);
-    if (result.success) {
-        res.json({ success: true });
-    } else {
-        res.status(404).json(result);
-    }
-});
-
-app.get('/api/posts/:postId/analytics', authMiddleware, (req, res) => {
-    const analytics = postSystem.getPostAnalytics(req.params.postId);
-    if (!analytics) return res.status(404).json({ error: 'پست یافت نشد' });
-    res.json(analytics);
+app.get('/api/trends', authMiddleware, (req, res) => {
+    const trends = postSystem.getTrendingHashtags(10);
+    res.json(trends);
 });
 
 // ============================================
@@ -535,29 +279,16 @@ app.get('/api/stories/:userId', authMiddleware, (req, res) => {
 });
 
 app.post('/api/stories', authMiddleware, storyUpload.single('file'), async (req, res) => {
-    const { userId, username } = req.body;
     const file = req.file;
-
     if (!file) {
         return res.status(400).json({ error: 'فایل الزامی است' });
     }
 
-    let filePath = '/uploads/stories/' + file.filename;
-    if (file.mimetype.startsWith('image/')) {
-        const processed = await imageProcessor.processImage(file.path, {
-            quality: 80,
-            format: 'webp'
-        });
-        if (processed.success) {
-            filePath = processed.path.replace('./uploads', '/uploads');
-        }
-    }
-
     const result = await storySystem.createStory({
-        userId: userId || req.user.userId,
-        username: username || req.user.username,
+        userId: req.user.userId,
+        username: req.user.username,
         fullName: req.user.fullName,
-        file: filePath,
+        file: '/uploads/stories/' + file.filename,
         isVideo: file.mimetype.startsWith('video/')
     });
 
@@ -591,88 +322,7 @@ app.post('/api/stories/:storyId/view', authMiddleware, async (req, res) => {
     res.json(result);
 });
 
-app.post('/api/stories/:storyId/react', authMiddleware, async (req, res) => {
-    const { storyId } = req.params;
-    const { reaction } = req.body;
-    if (!reaction) {
-        return res.status(400).json({ error: 'واکنش الزامی است' });
-    }
-    const result = await storySystem.reactToStory(storyId, req.user.userId, reaction);
-    if (result.success) {
-        io.to(`story_${storyId}`).emit('story-reaction', {
-            storyId,
-            userId: req.user.userId,
-            reaction
-        });
-        res.json(result);
-    } else {
-        res.status(404).json(result);
-    }
-});
-
-// ============================================
-// 📡 HASHTAG ROUTES
-// ============================================
-app.get('/api/trends', authMiddleware, (req, res) => {
-    const trends = postSystem.getTrendingHashtags(10);
-    res.json(trends);
-});
-
-app.get('/api/hashtags/:tag/posts', authMiddleware, (req, res) => {
-    const { tag } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const result = postSystem.getPosts(page, limit, tag);
-    res.json(result);
-});
-
-// ============================================
-// 📡 AVATAR UPLOAD
-// ============================================
-app.post('/api/users/avatar', authMiddleware, avatarUpload.single('avatar'), async (req, res) => {
-    const file = req.file;
-    if (!file) {
-        return res.status(400).json({ error: 'فایل الزامی است' });
-    }
-
-    const processed = await imageProcessor.processImage(file.path, {
-        width: 400,
-        height: 400,
-        quality: 85,
-        format: 'webp',
-        thumbnail: true,
-        thumbnailSize: 100
-    });
-
-    if (!processed.success) {
-        return res.status(500).json({ error: 'خطا در پردازش تصویر' });
-    }
-
-    const avatarPath = processed.path.replace('./uploads', '/uploads');
-    db.updateUser(req.user.userId, { avatar: avatarPath });
-
-    res.json({ success: true, avatar: avatarPath });
-});
-
-// ============================================
-// 📡 ADMIN POST ROUTES
-// ============================================
-app.get('/api/admin/posts', authMiddleware, adminMiddleware, async (req, res) => {
-    const result = db.getPosts(1, 10000);
-    res.json(result.posts);
-});
-
-app.delete('/api/admin/posts/:postId', authMiddleware, adminMiddleware, async (req, res) => {
-    const { postId } = req.params;
-    const deleted = db.deletePost(postId);
-    res.json({ success: deleted });
-});
-
 module.exports = {
     postSystem,
-    storySystem,
-    imageProcessor,
-    upload,
-    storyUpload,
-    avatarUpload
+    storySystem
 };
