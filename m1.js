@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 ULTIMATE SOCIAL MEDIA - m1.js (COMPLETE)
+// 🚀 ULTIMATE SOCIAL MEDIA ENGINE - m1.js
 // ============================================
 
 const express = require('express');
@@ -27,7 +27,7 @@ const io = socketIo(server, {
 });
 
 // ============================================
-// 📁 CONSTANTS & CONFIG
+// 📁 CONSTANTS
 // ============================================
 const PORT = process.env.PORT || 3000;
 const SHARD_COUNT = 100;
@@ -318,19 +318,16 @@ class UltraShardedDatabase {
     }
 
     // ============================================
-    // 📊 CREATE SAMPLE DATA FOR MILLIONS OF USERS
+    // 📊 CREATE SAMPLE DATA
     // ============================================
     createSampleData() {
-        // Sample users
         const sampleUsers = [
             { username: 'milad_admin', fullName: 'مدیر سیستم', email: ADMIN_EMAIL, password: ADMIN_PASSWORD, isAdmin: true, isVerified: true },
             { username: 'ali_reza', fullName: 'علی رضایی', email: 'ali@test.com', password: 'Test123456' },
             { username: 'sara_kh', fullName: 'سارا خانی', email: 'sara@test.com', password: 'Test123456' },
-            { username: 'mohammad_n', fullName: 'محمد نوری', email: 'mohammad@test.com', password: 'Test123456' },
-            { username: 'fatemeh_z', fullName: 'فاطمه زارع', email: 'fatemeh@test.com', password: 'Test123456' }
+            { username: 'mohammad_n', fullName: 'محمد نوری', email: 'mohammad@test.com', password: 'Test123456' }
         ];
 
-        const createdUsers = [];
         for (const data of sampleUsers) {
             const existing = this.getUserByEmail(data.email);
             if (!existing) {
@@ -356,23 +353,16 @@ class UltraShardedDatabase {
                     lastSeen: new Date().toISOString()
                 };
                 this.saveUser(user);
-                createdUsers.push(user);
-                console.log(`👤 User created: ${data.username}`);
             }
         }
 
-        // Sample posts with images
         const users = this.getAllUsers();
         if (users.length > 0 && this.getPosts(1, 1).total === 0) {
             const samplePosts = [
-                { caption: 'سلام به دنیای جدید! 🚀', hashtags: ['خوش_آمدید', 'سوشال_مدیا'], image: 'https://picsum.photos/seed/1/600/600' },
-                { caption: 'منظره زیبای غروب 🌅', hashtags: ['طبیعت', 'غروب'], image: 'https://picsum.photos/seed/2/600/600' },
-                { caption: 'لحظات خوش با دوستان 🎉', hashtags: ['دوستی', 'خوشحالی'], image: 'https://picsum.photos/seed/3/600/600' },
-                { caption: 'قهوه صبحگاهی ☕', hashtags: ['قهوه', 'صبح'], image: 'https://picsum.photos/seed/4/600/600' },
-                { caption: 'سفر به شمال 🌲', hashtags: ['سفر', 'شمال'], image: 'https://picsum.photos/seed/5/600/600' },
-                { caption: 'کتاب جدید 📚', hashtags: ['کتاب', 'مطالعه'], image: 'https://picsum.photos/seed/6/600/600' },
-                { caption: 'ورزش صبحگاهی 🏃', hashtags: ['ورزش', 'سلامتی'], image: 'https://picsum.photos/seed/7/600/600' },
-                { caption: 'موسیقی آرامش بخش 🎵', hashtags: ['موسیقی', 'آرامش'], image: 'https://picsum.photos/seed/8/600/600' }
+                { caption: 'سلام به دنیای جدید! 🚀', hashtags: ['خوش_آمدید'], image: 'https://picsum.photos/seed/1/600/600' },
+                { caption: 'منظره زیبای غروب 🌅', hashtags: ['طبیعت'], image: 'https://picsum.photos/seed/2/600/600' },
+                { caption: 'لحظات خوش با دوستان 🎉', hashtags: ['دوستی'], image: 'https://picsum.photos/seed/3/600/600' },
+                { caption: 'قهوه صبحگاهی ☕', hashtags: ['قهوه'], image: 'https://picsum.photos/seed/4/600/600' }
             ];
 
             for (let i = 0; i < samplePosts.length; i++) {
@@ -386,64 +376,28 @@ class UltraShardedDatabase {
                     caption: samplePosts[i].caption,
                     hashtags: samplePosts[i].hashtags,
                     likes: Math.floor(Math.random() * 50) + 5,
-                    comments: [
-                        { commentId: this.generateId('cmt'), userId: users[(i+1) % users.length].userId, username: users[(i+1) % users.length].username, text: 'عالی! 😍', createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString() },
-                        { commentId: this.generateId('cmt'), userId: users[(i+2) % users.length].userId, username: users[(i+2) % users.length].username, text: 'قشنگ بود 👍', createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString() }
-                    ],
+                    comments: [],
                     shares: Math.floor(Math.random() * 10),
                     views: Math.floor(Math.random() * 100) + 20,
                     isVideo: false,
                     createdAt: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString()
                 };
                 this.savePost(post);
-                this.updateUser(user.userId, { postsCount: (user.postsCount || 0) + 1 });
             }
-            console.log(`📸 ${samplePosts.length} sample posts created!`);
-        }
-
-        // Sample stories
-        if (this.getStories().length === 0) {
-            const usersList = this.getAllUsers();
-            for (let i = 0; i < Math.min(3, usersList.length); i++) {
-                const user = usersList[i];
-                const story = {
-                    storyId: this.generateId('story'),
-                    userId: user.userId,
-                    username: user.username,
-                    fullName: user.fullName,
-                    image: `https://picsum.photos/seed/story${i}/300/500`,
-                    isVideo: false,
-                    views: Math.floor(Math.random() * 30) + 5,
-                    viewers: [],
-                    createdAt: new Date(Date.now() - Math.random() * 12 * 3600000).toISOString(),
-                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-                };
-                this.saveStory(story);
-            }
-            console.log('📸 Sample stories created!');
-        }
-
-        // Sample follows
-        const allUsers = this.getAllUsers();
-        for (let i = 0; i < allUsers.length; i++) {
-            for (let j = 0; j < Math.min(2, allUsers.length - 1); j++) {
-                const targetIdx = (i + j + 1) % allUsers.length;
-                if (i !== targetIdx) {
-                    this.followUser(allUsers[i].userId, allUsers[targetIdx].userId);
-                }
-            }
+            console.log(`📸 Sample posts created!`);
         }
 
         console.log('═'.repeat(50));
-        console.log('📊 DATABASE STATUS');
+        console.log('📊 DATABASE READY');
         console.log('═'.repeat(50));
         console.log(`👥 Users: ${this.getAllUsers().length}`);
         console.log(`📸 Posts: ${this.getPosts(1, 1000).total}`);
-        console.log(`📸 Stories: ${this.getStories().length}`);
         console.log('═'.repeat(50));
     }
 
-    // ===== USER MANAGEMENT =====
+    // ============================================
+    // 👤 USER MANAGEMENT
+    // ============================================
     saveUser(user) {
         const idx = this.getShardIndex(user.userId);
         this.shards[idx].users.set(user.userId, user);
@@ -527,7 +481,9 @@ class UltraShardedDatabase {
         return results;
     }
 
-    // ===== FOLLOW SYSTEM =====
+    // ============================================
+    // 👥 FOLLOW SYSTEM
+    // ============================================
     followUser(userId, targetId) {
         const userIdx = this.getShardIndex(userId);
         const targetIdx = this.getShardIndex(targetId);
@@ -614,7 +570,9 @@ class UltraShardedDatabase {
         return result;
     }
 
-    // ===== POSTS =====
+    // ============================================
+    // 📸 POSTS
+    // ============================================
     savePost(post) {
         const idx = this.getShardIndex(post.postId);
         this.shards[idx].posts.unshift(post);
@@ -723,7 +681,7 @@ class UltraShardedDatabase {
         
         const viewKey = `${postId}_${userId}`;
         if (!this.shards[idx].views.has(viewKey)) {
-            this.shards[idx].views.add(viewKey);
+            this.shards[idx].views.set(viewKey, true);
             post.views = (post.views || 0) + 1;
             this.setCache(`post:${postId}`, post);
             return true;
@@ -738,7 +696,7 @@ class UltraShardedDatabase {
         
         const shareKey = `${postId}_${userId}`;
         if (!this.shards[idx].shares.has(shareKey)) {
-            this.shards[idx].shares.add(shareKey);
+            this.shards[idx].shares.set(shareKey, true);
             post.shares = (post.shares || 0) + 1;
             this.setCache(`post:${postId}`, post);
             return true;
@@ -746,7 +704,9 @@ class UltraShardedDatabase {
         return false;
     }
 
-    // ===== COMMENTS =====
+    // ============================================
+    // 💬 COMMENTS
+    // ============================================
     addComment(postId, comment) {
         const idx = this.getShardIndex(postId);
         const post = this.shards[idx].posts.find(p => p.postId === postId);
@@ -789,7 +749,9 @@ class UltraShardedDatabase {
         return post.comments || [];
     }
 
-    // ===== STORIES =====
+    // ============================================
+    // 📸 STORIES
+    // ============================================
     saveStory(story) {
         const idx = this.getShardIndex(story.storyId);
         this.shards[idx].stories.push(story);
@@ -841,7 +803,9 @@ class UltraShardedDatabase {
         return false;
     }
 
-    // ===== MESSAGES =====
+    // ============================================
+    // 💬 MESSAGES
+    // ============================================
     saveMessage(roomId, message) {
         const idx = this.getShardIndex(roomId);
         if (!this.shards[idx].messages.has(roomId)) {
@@ -858,7 +822,9 @@ class UltraShardedDatabase {
         return this.shards[idx].messages.get(roomId).slice(-limit);
     }
 
-    // ===== BOOKMARKS =====
+    // ============================================
+    // 📑 BOOKMARKS
+    // ============================================
     bookmarkPost(postId, userId) {
         const idx = this.getShardIndex(userId);
         if (!this.shards[idx].bookmarks.has(userId)) {
@@ -886,7 +852,9 @@ class UltraShardedDatabase {
         return result;
     }
 
-    // ===== HASHTAGS =====
+    // ============================================
+    // #️⃣ HASHTAGS
+    // ============================================
     getTrendingHashtags(limit = 10) {
         const allHashtags = new Map();
         for (let i = 0; i < this.SHARD_COUNT; i++) {
@@ -901,7 +869,9 @@ class UltraShardedDatabase {
         return sorted.slice(0, limit).map(([tag, count]) => ({ tag, count }));
     }
 
-    // ===== NOTIFICATIONS =====
+    // ============================================
+    // 🔔 NOTIFICATIONS
+    // ============================================
     addNotification(notification) {
         const idx = this.getShardIndex(notification.userId);
         this.shards[idx].notifications.push(notification);
@@ -924,7 +894,9 @@ class UltraShardedDatabase {
         return false;
     }
 
-    // ===== LIVE STREAMS =====
+    // ============================================
+    // 🔴 LIVE STREAMS
+    // ============================================
     startLiveStream(userId, title) {
         const idx = this.getShardIndex(userId);
         const streamId = `live_${crypto.randomBytes(16).toString('hex')}`;
@@ -999,7 +971,9 @@ class UltraShardedDatabase {
         return false;
     }
 
-    // ===== STATS =====
+    // ============================================
+    // 📊 STATS
+    // ============================================
     getStats() {
         let totalUsers = 0, totalPosts = 0, totalStories = 0;
         let totalMessages = 0, totalLikes = 0, totalComments = 0;
@@ -1056,7 +1030,7 @@ function createAdminAccount() {
             email: ADMIN_EMAIL,
             fullName: 'مدیر ارشد سیستم',
             password: encryption.hashPassword(ADMIN_PASSWORD),
-            bio: 'مدیر ارشد پلتفرم سوشال مدیا | عاشق تکنولوژی 🚀',
+            bio: 'مدیر ارشد پلتفرم سوشال مدیا 🚀',
             avatar: 'https://i.pravatar.cc/150?img=12',
             followers: 0,
             following: 0,
@@ -1076,7 +1050,6 @@ function createAdminAccount() {
         console.log('═'.repeat(50));
         console.log(`📧 Email: ${ADMIN_EMAIL}`);
         console.log(`🔑 Password: ${ADMIN_PASSWORD}`);
-        console.log(`👤 Username: ${ADMIN_USERNAME}`);
         console.log('═'.repeat(50));
     }
 }
@@ -1409,7 +1382,6 @@ app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) =
         db.savePost(result);
         db.updateUser(req.user.userId, { postsCount: (req.user.postsCount || 0) + 1 });
 
-        // Notify followers
         const followers = db.getFollowers(req.user.userId);
         for (const follower of followers) {
             io.to(`user_${follower.userId}`).emit('new-post', {
@@ -1632,45 +1604,21 @@ app.get('/api/messages', authMiddleware, (req, res) => {
     res.json(messages);
 });
 
-// ============================================
-// 📡 API ROUTES - ADMIN
-// ============================================
-app.get('/api/admin/users', authMiddleware, adminMiddleware, (req, res) => {
-    const users = db.getAllUsers().map(u => ({ ...u, password: undefined }));
-    res.json(users);
-});
-
-app.put('/api/admin/users/:userId/ban', authMiddleware, adminMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const { banned } = req.body;
-    const user = db.getUser(userId);
-    if (!user) return res.status(404).json({ error: 'کاربر یافت نشد' });
-    if (user.isAdmin) return res.status(403).json({ error: 'نمی‌توان ادمین را مسدود کرد' });
-    db.updateUser(userId, { isBanned: banned });
-    if (banned) encryption.onlineUsers.delete(userId);
-    res.json({ success: true });
-});
-
-app.get('/api/admin/posts', authMiddleware, adminMiddleware, (req, res) => {
-    const result = db.getPosts(1, 10000);
-    res.json(result.posts);
-});
-
-app.delete('/api/admin/posts/:postId', authMiddleware, adminMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const deleted = db.deletePost(postId);
-    res.json({ success: deleted });
-});
-
-app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, (req, res) => {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'متن پیام الزامی است' });
-    io.emit('broadcast', { message, from: req.user.username, timestamp: new Date().toISOString() });
-    res.json({ success: true });
-});
-
-app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
-    res.json(db.getStats());
+app.post('/api/messages', authMiddleware, (req, res) => {
+    const { roomId, userId, message } = req.body;
+    if (!roomId || !userId || !message) {
+        return res.status(400).json({ error: 'همه فیلدها الزامی هستند' });
+    }
+    const msgData = {
+        messageId: db.generateId('msg'),
+        userId: userId,
+        username: req.user.username,
+        message: message,
+        timestamp: new Date().toISOString()
+    };
+    db.saveMessage(roomId, msgData);
+    io.to(roomId).emit('receive-message', msgData);
+    res.json({ success: true, message: msgData });
 });
 
 // ============================================
@@ -1710,6 +1658,66 @@ app.post('/api/live/leave', authMiddleware, (req, res) => {
     const left = db.leaveLiveStream(streamId, req.user.userId);
     if (!left) return res.status(404).json({ error: 'لایو یافت نشد' });
     io.to(`live_${streamId}`).emit('viewer-left', { userId: req.user.userId });
+    res.json({ success: true });
+});
+
+// ============================================
+// 📡 API ROUTES - ADMIN
+// ============================================
+app.get('/api/admin/users', authMiddleware, adminMiddleware, (req, res) => {
+    const users = db.getAllUsers().map(u => ({ ...u, password: undefined }));
+    res.json(users);
+});
+
+app.put('/api/admin/users/:userId/ban', authMiddleware, adminMiddleware, (req, res) => {
+    const { userId } = req.params;
+    const { banned } = req.body;
+    const user = db.getUser(userId);
+    if (!user) return res.status(404).json({ error: 'کاربر یافت نشد' });
+    if (user.isAdmin) return res.status(403).json({ error: 'نمی‌توان ادمین را مسدود کرد' });
+    db.updateUser(userId, { isBanned: banned });
+    if (banned) encryption.onlineUsers.delete(userId);
+    res.json({ success: true });
+});
+
+app.delete('/api/admin/users/:userId', authMiddleware, adminMiddleware, (req, res) => {
+    const { userId } = req.params;
+    const user = db.getUser(userId);
+    if (!user) return res.status(404).json({ error: 'کاربر یافت نشد' });
+    if (user.isAdmin) return res.status(403).json({ error: 'نمی‌توان ادمین را حذف کرد' });
+    
+    const posts = db.getPosts(1, 10000, null, userId);
+    for (const post of posts.posts) {
+        db.deletePost(post.postId);
+    }
+    const stories = db.getStories(userId);
+    for (const story of stories) {
+        db.deleteStory(story.storyId, userId);
+    }
+    db.deleteUser(userId);
+    res.json({ success: true });
+});
+
+app.get('/api/admin/posts', authMiddleware, adminMiddleware, (req, res) => {
+    const result = db.getPosts(1, 10000);
+    res.json(result.posts);
+});
+
+app.delete('/api/admin/posts/:postId', authMiddleware, adminMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const deleted = db.deletePost(postId);
+    res.json({ success: deleted });
+});
+
+app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
+    const stats = db.getStats();
+    res.json(stats);
+});
+
+app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, (req, res) => {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'متن پیام الزامی است' });
+    io.emit('broadcast', { message, from: req.user.username, timestamp: new Date().toISOString() });
     res.json({ success: true });
 });
 
@@ -1814,9 +1822,6 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('═'.repeat(60));
 });
 
-// ============================================
-// 📤 EXPORTS
-// ============================================
 module.exports = {
     app,
     server,

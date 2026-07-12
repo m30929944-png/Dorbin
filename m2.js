@@ -1,406 +1,417 @@
 // ============================================
-// 💬 m2.js - COMMENTS, LIKES, FOLLOWS & CHAT
+// 👥 m2.js - USER MANAGEMENT, FOLLOW, PROFILE
 // ============================================
 
-const { app, db, io, encryption, authMiddleware, adminMiddleware } = require('./m1.js');
+const { app, db, io, encryption, authMiddleware, adminMiddleware, avatarUpload } = require('./m1.js');
 
 // ============================================
-// 💬 CHAT SYSTEM
+// 👤 USER SERVICE
 // ============================================
-class ChatSystem {
+class UserService {
     constructor() {
-        this.rooms = new Map();
-        this.userRooms = new Map();
-        this.typingUsers = new Map();
-        this.readReceipts = new Map();
-        this.deliveryReceipts = new Map();
-        this.unreadCounts = new Map();
-        this.MAX_MESSAGES = 1000;
-        this.MAX_ROOMS = 10000;
-        this.messageQueue = [];
-        this.reactions = new Map();
-        this.pinnedMessages = new Map();
-        this.chatHistory = new Map();
+        this.userCache = new Map();
+        this.CACHE_TTL = 5 * 60 * 1000;
+        this.followRequests = new Map();
+        this.blockedUsers = new Map();
+        this.userReports = new Map();
     }
 
-    getRoomId(user1, user2) {
-        return [user1, user2].sort().join('_');
-    }
-
-    async createRoom(user1, user2) {
-        const roomId = this.getRoomId(user1, user2);
-        
-        if (this.rooms.size >= this.MAX_ROOMS) {
-            this.cleanup();
-        }
-
-        if (!this.rooms.has(roomId)) {
-            this.rooms.set(roomId, {
-                roomId,
-                participants: [user1, user2],
-                messages: [],
-                createdAt: new Date().toISOString(),
-                lastMessage: null,
-                unreadCount: new Map(),
-                isActive: true,
-                isGroup: false,
-                groupName: null,
-                groupAvatar: null,
-                admins: [],
-                pinnedMessages: []
-            });
-        }
-
-        for (const userId of [user1, user2]) {
-            if (!this.userRooms.has(userId)) {
-                this.userRooms.set(userId, new Set());
-            }
-            this.userRooms.get(userId).add(roomId);
-        }
-
-        return this.rooms.get(roomId);
-    }
-
-    getRoom(roomId) {
-        return this.rooms.get(roomId) || null;
-    }
-
-    getUserRooms(userId) {
-        if (!this.userRooms.has(userId)) {
-            this.userRooms.set(userId, new Set());
-        }
-        return Array.from(this.userRooms.get(userId));
-    }
-
-    async sendMessage(data) {
-        const { roomId, userId, username, message, messageType = 'text', replyTo = null, attachments = [] } = data;
-
+    // ===== GET USER PROFILE =====
+    getUserProfile(userId, viewerId = null) {
         const user = db.getUser(userId);
-        if (!user || user.isBanned) {
-            return { success: false, error: 'کاربر یافت نشد یا مسدود شده است' };
-        }
+        if (!user) return null;
 
-        const room = this.rooms.get(roomId);
-        if (!room) {
-            return { success: false, error: 'اتاق چت یافت نشد' };
-        }
-
-        if (!room.isGroup && !room.participants.includes(userId)) {
-            return { success: false, error: 'شما عضو این چت نیستید' };
-        }
-
-        const messageData = {
-            messageId: encryption.generateId('msg'),
-            userId: userId,
-            username: username || user.username,
-            fullName: user.fullName || user.username,
-            message: message,
-            messageType: messageType,
-            replyTo: replyTo,
-            attachments: attachments,
-            timestamp: new Date().toISOString(),
-            delivered: false,
-            read: false,
-            edited: false,
-            deleted: false,
-            reactions: [],
-            isPinned: false,
-            isForwarded: false,
-            forwardedFrom: null
-        };
-
-        db.saveMessage(roomId, messageData);
-
-        room.messages.push(messageData);
-        room.lastMessage = messageData;
-        
-        for (const participant of room.participants) {
-            if (participant !== userId) {
-                if (!room.unreadCount.has(participant)) {
-                    room.unreadCount.set(participant, 0);
-                }
-                room.unreadCount.set(participant, room.unreadCount.get(participant) + 1);
-                this.unreadCounts.set(`${participant}_${roomId}`, room.unreadCount.get(participant));
-            }
-        }
-
-        if (room.messages.length > this.MAX_MESSAGES) {
-            room.messages = room.messages.slice(-this.MAX_MESSAGES);
-        }
-
-        if (!this.chatHistory.has(roomId)) {
-            this.chatHistory.set(roomId, []);
-        }
-        this.chatHistory.get(roomId).push(messageData);
+        const isFollowing = viewerId ? this.isFollowing(viewerId, userId) : false;
+        const isBlocked = viewerId ? this.isBlocked(viewerId, userId) : false;
 
         return {
-            success: true,
-            message: messageData
+            userId: user.userId,
+            username: user.username,
+            fullName: user.fullName,
+            bio: user.bio,
+            avatar: user.avatar,
+            followers: user.followers || 0,
+            following: user.following || 0,
+            postsCount: user.postsCount || 0,
+            isOnline: user.isOnline || false,
+            isVerified: user.isVerified || false,
+            isAdmin: user.isAdmin || false,
+            isFollowing: isFollowing,
+            isBlocked: isBlocked,
+            createdAt: user.createdAt,
+            lastSeen: user.lastSeen
         };
     }
 
-    getMessages(roomId, limit = 50, before = null) {
-        const room = this.rooms.get(roomId);
-        if (!room) return [];
-
-        let messages = room.messages;
-
-        if (before) {
-            const index = messages.findIndex(m => m.messageId === before);
-            if (index !== -1) {
-                messages = messages.slice(0, index);
-            }
-        }
-
-        return messages.slice(-limit);
+    // ===== FOLLOW SYSTEM =====
+    isFollowing(userId, targetId) {
+        const idx = db.getShardIndex(userId);
+        if (!db.shards[idx].following.has(userId)) return false;
+        return db.shards[idx].following.get(userId).has(targetId);
     }
 
-    async markRead(roomId, userId, messageIds) {
-        const room = this.rooms.get(roomId);
-        if (!room) return false;
-
-        for (const messageId of messageIds) {
-            const msg = room.messages.find(m => m.messageId === messageId);
-            if (msg && msg.userId !== userId) {
-                msg.read = true;
-                this.readReceipts.set(messageId, {
-                    readAt: new Date().toISOString(),
-                    readBy: userId
-                });
-            }
+    async followUser(userId, targetId) {
+        if (userId === targetId) {
+            return { success: false, error: 'نمی‌توانید خودتان را دنبال کنید' };
         }
 
-        if (room.unreadCount.has(userId)) {
-            room.unreadCount.set(userId, 0);
-            this.unreadCounts.delete(`${userId}_${roomId}`);
+        if (this.isBlocked(targetId, userId)) {
+            return { success: false, error: 'این کاربر شما را مسدود کرده است' };
         }
 
+        const result = db.followUser(userId, targetId);
+        if (!result) {
+            return { success: false, error: 'از قبل دنبال می‌کنید' };
+        }
+
+        // Send notification
+        const notification = {
+            notificationId: db.generateId('notif'),
+            userId: targetId,
+            fromUserId: userId,
+            type: 'follow',
+            isRead: false,
+            createdAt: new Date().toISOString()
+        };
+        db.addNotification(notification);
+        io.to(`user_${targetId}`).emit('notification', {
+            type: 'follow',
+            fromUserId: userId
+        });
+
+        return { success: true };
+    }
+
+    async unfollowUser(userId, targetId) {
+        const result = db.unfollowUser(userId, targetId);
+        if (!result) {
+            return { success: false, error: 'دنبال نمی‌کنید' };
+        }
+        return { success: true };
+    }
+
+    getFollowers(userId) {
+        return db.getFollowers(userId);
+    }
+
+    getFollowing(userId) {
+        return db.getFollowing(userId);
+    }
+
+    getFollowerCount(userId) {
+        const user = db.getUser(userId);
+        return user ? user.followers || 0 : 0;
+    }
+
+    getFollowingCount(userId) {
+        const user = db.getUser(userId);
+        return user ? user.following || 0 : 0;
+    }
+
+    // ===== BLOCK SYSTEM =====
+    isBlocked(userId, targetId) {
+        if (!this.blockedUsers.has(userId)) return false;
+        return this.blockedUsers.get(userId).has(targetId);
+    }
+
+    async blockUser(userId, targetId) {
+        if (userId === targetId) {
+            return { success: false, error: 'نمی‌توانید خودتان را مسدود کنید' };
+        }
+
+        if (!this.blockedUsers.has(userId)) {
+            this.blockedUsers.set(userId, new Set());
+        }
+        this.blockedUsers.get(userId).add(targetId);
+
+        // Unfollow if following
+        if (this.isFollowing(userId, targetId)) {
+            db.unfollowUser(userId, targetId);
+        }
+        if (this.isFollowing(targetId, userId)) {
+            db.unfollowUser(targetId, userId);
+        }
+
+        return { success: true };
+    }
+
+    async unblockUser(userId, targetId) {
+        if (this.blockedUsers.has(userId)) {
+            this.blockedUsers.get(userId).delete(targetId);
+        }
+        return { success: true };
+    }
+
+    // ===== FOLLOW REQUESTS (Private Accounts) =====
+    async sendFollowRequest(userId, targetId) {
+        const key = `${targetId}_${userId}`;
+        if (!this.followRequests.has(targetId)) {
+            this.followRequests.set(targetId, new Map());
+        }
+        this.followRequests.get(targetId).set(userId, {
+            userId,
+            targetId,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        });
+        return { success: true };
+    }
+
+    async acceptFollowRequest(targetId, userId) {
+        if (!this.followRequests.has(targetId)) return false;
+        const requests = this.followRequests.get(targetId);
+        if (!requests.has(userId)) return false;
+        requests.delete(userId);
+        return db.followUser(userId, targetId);
+    }
+
+    async rejectFollowRequest(targetId, userId) {
+        if (!this.followRequests.has(targetId)) return false;
+        const requests = this.followRequests.get(targetId);
+        if (!requests.has(userId)) return false;
+        requests.delete(userId);
         return true;
     }
 
-    async markAllRead(roomId, userId) {
-        const room = this.rooms.get(roomId);
-        if (!room) return false;
+    // ===== SUGGESTIONS =====
+    getFollowSuggestions(userId, limit = 10) {
+        const allUsers = db.getAllUsers();
+        const following = new Set(db.getFollowing(userId).map(u => u.userId));
+        const blocked = this.blockedUsers.get(userId) || new Set();
+        
+        const suggestions = allUsers
+            .filter(u => 
+                u.userId !== userId && 
+                !following.has(u.userId) && 
+                !blocked.has(u.userId) &&
+                !u.isBanned
+            )
+            .sort((a, b) => (b.followers || 0) - (a.followers || 0))
+            .slice(0, limit);
 
-        const unreadMessages = room.messages.filter(m => 
-            m.userId !== userId && !m.read
-        );
-
-        const messageIds = unreadMessages.map(m => m.messageId);
-        return this.markRead(roomId, userId, messageIds);
+        return suggestions.map(u => ({
+            userId: u.userId,
+            username: u.username,
+            fullName: u.fullName,
+            avatar: u.avatar,
+            followers: u.followers || 0,
+            isVerified: u.isVerified || false
+        }));
     }
 
-    getUnreadCount(roomId, userId) {
-        const key = `${userId}_${roomId}`;
-        if (this.unreadCounts.has(key)) {
-            return this.unreadCounts.get(key);
-        }
-        return 0;
+    // ===== USER SEARCH =====
+    searchUsers(query, limit = 20) {
+        if (!query || query.length < 2) return [];
+        const results = db.searchUsers(query, limit);
+        return results.map(u => ({
+            userId: u.userId,
+            username: u.username,
+            fullName: u.fullName,
+            avatar: u.avatar,
+            bio: u.bio,
+            followers: u.followers || 0,
+            isVerified: u.isVerified || false,
+            isOnline: u.isOnline || false
+        }));
     }
 
-    getTotalUnread(userId) {
-        let total = 0;
-        for (const [key, count] of this.unreadCounts) {
-            if (key.startsWith(`${userId}_`)) {
-                total += count;
+    // ===== UPDATE PROFILE =====
+    async updateProfile(userId, data) {
+        const user = db.getUser(userId);
+        if (!user) return { success: false, error: 'کاربر یافت نشد' };
+
+        const updates = {};
+        if (data.bio !== undefined) updates.bio = data.bio;
+        if (data.fullName !== undefined) updates.fullName = data.fullName;
+        if (data.username !== undefined) {
+            const existing = db.getUserByUsername(data.username);
+            if (existing && existing.userId !== userId) {
+                return { success: false, error: 'این نام کاربری قبلاً ثبت شده است' };
             }
+            updates.username = data.username;
         }
-        return total;
+
+        const updated = db.updateUser(userId, updates);
+        return { success: true, user: { ...updated, password: undefined } };
     }
 
-    setTyping(roomId, userId, isTyping) {
-        const key = `${roomId}_${userId}`;
-        if (isTyping) {
-            this.typingUsers.set(key, {
-                userId,
-                roomId,
-                startedAt: new Date().toISOString()
-            });
-        } else {
-            this.typingUsers.delete(key);
+    // ===== USER REPORT =====
+    async reportUser(userId, reporterId, reason) {
+        if (!this.userReports.has(userId)) {
+            this.userReports.set(userId, []);
         }
-        return true;
+        this.userReports.get(userId).push({
+            reporterId,
+            reason,
+            createdAt: new Date().toISOString()
+        });
+        return { success: true };
     }
 
-    getTypingUsers(roomId) {
-        const result = [];
-        for (const [key, data] of this.typingUsers) {
-            if (data.roomId === roomId) {
-                result.push(data.userId);
-            }
-        }
-        return result;
+    getUserReports(userId) {
+        return this.userReports.get(userId) || [];
     }
 
+    // ===== CLEANUP =====
     cleanup() {
         const now = Date.now();
         const oneDay = 24 * 60 * 60 * 1000;
-        const oneMinute = 60 * 1000;
 
-        for (const [key, data] of this.typingUsers) {
-            if (now - new Date(data.startedAt).getTime() > oneMinute) {
-                this.typingUsers.delete(key);
-            }
-        }
-
-        for (const [roomId, room] of this.rooms) {
-            if (!room.isActive) {
-                const age = now - new Date(room.createdAt).getTime();
-                if (age > 7 * oneDay) {
-                    this.rooms.delete(roomId);
+        // Clean follow requests
+        for (const [targetId, requests] of this.followRequests) {
+            for (const [userId, data] of requests) {
+                if (now - new Date(data.createdAt).getTime() > 7 * oneDay) {
+                    requests.delete(userId);
                 }
-            }
-        }
-
-        for (const [key, count] of this.unreadCounts) {
-            if (count === 0) {
-                this.unreadCounts.delete(key);
             }
         }
     }
 
-    getStats() {
+    // ===== GET USER STATS =====
+    getUserStats(userId) {
+        const user = db.getUser(userId);
+        if (!user) return null;
+
         return {
-            totalRooms: this.rooms.size,
-            totalMessages: Array.from(this.rooms.values())
-                .reduce((acc, room) => acc + room.messages.length, 0),
-            totalUnread: this.unreadCounts.size,
-            totalTyping: this.typingUsers.size,
-            totalReadReceipts: this.readReceipts.size,
-            totalDeliveryReceipts: this.deliveryReceipts.size,
-            totalPinned: Array.from(this.rooms.values())
-                .reduce((acc, room) => acc + room.pinnedMessages.length, 0)
+            userId: user.userId,
+            username: user.username,
+            followers: user.followers || 0,
+            following: user.following || 0,
+            postsCount: user.postsCount || 0,
+            isOnline: user.isOnline || false,
+            isVerified: user.isVerified || false,
+            isAdmin: user.isAdmin || false,
+            createdAt: user.createdAt,
+            lastSeen: user.lastSeen
         };
     }
 }
 
-const chatSystem = new ChatSystem();
+const userService = new UserService();
 
 // ============================================
-// 💬 CHAT ROUTES
+// 📡 USER ROUTES
 // ============================================
-app.get('/api/chat/rooms', authMiddleware, (req, res) => {
-    const rooms = chatSystem.getUserRooms(req.user.userId);
-    const roomDetails = rooms.map(roomId => {
-        const room = chatSystem.getRoom(roomId);
-        if (!room) return null;
-        return {
-            roomId: room.roomId,
-            isGroup: room.isGroup,
-            groupName: room.groupName,
-            participants: room.participants,
-            lastMessage: room.lastMessage,
-            unreadCount: chatSystem.getUnreadCount(roomId, req.user.userId)
-        };
-    }).filter(r => r !== null);
-    res.json(roomDetails);
+
+// ===== GET USER PROFILE =====
+app.get('/api/users/profile/:userId', authMiddleware, (req, res) => {
+    const profile = userService.getUserProfile(req.params.userId, req.user.userId);
+    if (!profile) return res.status(404).json({ error: 'کاربر یافت نشد' });
+    res.json(profile);
 });
 
-app.get('/api/chat/messages', authMiddleware, (req, res) => {
-    const { roomId, limit = 50, before } = req.query;
-    if (!roomId) {
-        return res.status(400).json({ error: 'roomId الزامی است' });
+app.get('/api/users/me', authMiddleware, (req, res) => {
+    const profile = userService.getUserProfile(req.user.userId);
+    res.json(profile);
+});
+
+// ===== FOLLOW =====
+app.post('/api/users/:userId/follow', authMiddleware, async (req, res) => {
+    const { userId } = req.params;
+    const result = await userService.followUser(req.user.userId, userId);
+    if (result.success) {
+        const target = db.getUser(userId);
+        io.emit('follow-update', { 
+            userId: target.userId, 
+            followers: target.followers 
+        });
+        res.json({ success: true, followers: target.followers });
+    } else {
+        res.status(400).json(result);
     }
-    const messages = chatSystem.getMessages(roomId, parseInt(limit), before);
-    res.json(messages);
 });
 
-app.get('/api/chat/unread', authMiddleware, (req, res) => {
-    const unread = chatSystem.getTotalUnread(req.user.userId);
-    res.json({ unread });
-});
-
-app.post('/api/chat/messages/read', authMiddleware, (req, res) => {
-    const { roomId, messageIds } = req.body;
-    if (!roomId || !messageIds) {
-        return res.status(400).json({ error: 'roomId و messageIds الزامی هستند' });
+app.post('/api/users/:userId/unfollow', authMiddleware, async (req, res) => {
+    const { userId } = req.params;
+    const result = await userService.unfollowUser(req.user.userId, userId);
+    if (result.success) {
+        const target = db.getUser(userId);
+        res.json({ success: true, followers: target.followers });
+    } else {
+        res.status(400).json(result);
     }
-    chatSystem.markRead(roomId, req.user.userId, messageIds);
+});
+
+app.get('/api/users/:userId/followers', authMiddleware, (req, res) => {
+    const followers = userService.getFollowers(req.params.userId);
+    res.json(followers.map(u => ({ ...u, password: undefined })));
+});
+
+app.get('/api/users/:userId/following', authMiddleware, (req, res) => {
+    const following = userService.getFollowing(req.params.userId);
+    res.json(following.map(u => ({ ...u, password: undefined })));
+});
+
+app.get('/api/users/:userId/follow-status', authMiddleware, (req, res) => {
+    const { userId } = req.params;
+    const isFollowing = userService.isFollowing(req.user.userId, userId);
+    const isBlocked = userService.isBlocked(userId, req.user.userId);
+    res.json({ isFollowing, isBlocked });
+});
+
+// ===== BLOCK =====
+app.post('/api/users/:userId/block', authMiddleware, async (req, res) => {
+    const { userId } = req.params;
+    const result = await userService.blockUser(req.user.userId, userId);
+    if (result.success) {
+        res.json({ success: true });
+    } else {
+        res.status(400).json(result);
+    }
+});
+
+app.post('/api/users/:userId/unblock', authMiddleware, async (req, res) => {
+    const { userId } = req.params;
+    const result = await userService.unblockUser(req.user.userId, userId);
     res.json({ success: true });
 });
 
-app.post('/api/chat/messages/read-all', authMiddleware, (req, res) => {
-    const { roomId } = req.body;
-    if (!roomId) {
-        return res.status(400).json({ error: 'roomId الزامی است' });
-    }
-    chatSystem.markAllRead(roomId, req.user.userId);
-    res.json({ success: true });
+// ===== SUGGESTIONS =====
+app.get('/api/users/suggestions', authMiddleware, (req, res) => {
+    const limit = parseInt(req.query.limit) || 10;
+    const suggestions = userService.getFollowSuggestions(req.user.userId, limit);
+    res.json(suggestions);
 });
 
-// ============================================
-// 💬 WEBSOCKET CHAT EVENTS
-// ============================================
-io.on('connection', (socket) => {
-    socket.on('join-room', (data) => {
-        const { roomId, userId } = data;
-        socket.join(roomId);
-        socket.roomId = roomId;
-        const messages = chatSystem.getMessages(roomId, 50);
-        socket.emit('history', messages);
-        chatSystem.markAllRead(roomId, userId);
-    });
+// ===== SEARCH =====
+app.get('/api/users/search', authMiddleware, (req, res) => {
+    const { q, limit = 20 } = req.query;
+    if (!q || q.length < 2) return res.json([]);
+    const results = userService.searchUsers(q, parseInt(limit));
+    res.json(results);
+});
 
-    socket.on('send-message', async (data) => {
-        const { roomId, userId, username, message, messageType, replyTo, attachments } = data;
-        const result = await chatSystem.sendMessage({
-            roomId,
-            userId,
-            username,
-            message,
-            messageType,
-            replyTo,
-            attachments
-        });
+// ===== PROFILE UPDATE =====
+app.put('/api/users/profile', authMiddleware, async (req, res) => {
+    const { bio, fullName, username } = req.body;
+    const result = await userService.updateProfile(req.user.userId, { bio, fullName, username });
+    if (result.success) {
+        res.json(result);
+    } else {
+        res.status(400).json(result);
+    }
+});
 
-        if (result.success) {
-            io.to(roomId).emit('receive-message', result.message);
-            socket.emit('message-delivered', {
-                messageId: result.message.messageId,
-                roomId
-            });
+// ===== AVATAR UPDATE =====
+app.post('/api/users/avatar', authMiddleware, avatarUpload.single('avatar'), async (req, res) => {
+    const file = req.file;
+    if (!file) {
+        return res.status(400).json({ error: 'فایل الزامی است' });
+    }
 
-            const room = chatSystem.getRoom(roomId);
-            if (room) {
-                for (const participant of room.participants) {
-                    if (participant !== userId) {
-                        io.to(`user_${participant}`).emit('new-message', {
-                            roomId,
-                            fromUserId: userId,
-                            messageId: result.message.messageId
-                        });
-                    }
-                }
-            }
-        } else {
-            socket.emit('error', { message: result.error });
-        }
-    });
+    const avatarPath = '/uploads/avatars/' + file.filename;
+    db.updateUser(req.user.userId, { avatar: avatarPath });
 
-    socket.on('typing', (data) => {
-        const { roomId, userId, isTyping } = data;
-        chatSystem.setTyping(roomId, userId, isTyping);
-        socket.to(roomId).emit('user-typing', {
-            userId,
-            isTyping
-        });
-    });
+    res.json({ success: true, avatar: avatarPath });
+});
 
-    socket.on('mark-read', (data) => {
-        const { roomId, userId, messageIds } = data;
-        chatSystem.markRead(roomId, userId, messageIds);
-        socket.to(roomId).emit('messages-read', {
-            userId,
-            messageIds
-        });
-    });
-
-    socket.on('leave-room', (data) => {
-        const { roomId } = data;
-        socket.leave(roomId);
-    });
+// ===== STATS =====
+app.get('/api/users/:userId/stats', authMiddleware, (req, res) => {
+    const stats = userService.getUserStats(req.params.userId);
+    if (!stats) return res.status(404).json({ error: 'کاربر یافت نشد' });
+    res.json(stats);
 });
 
 module.exports = {
-    chatSystem
+    userService
 };
