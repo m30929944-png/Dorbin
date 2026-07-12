@@ -995,8 +995,12 @@ class CoreEngine {
     }
 }
 
-const core = new CoreEngine();
+const const core = new CoreEngine();
 const { app, server, io, db, encryption, onlineUsers } = core.start();
+
+// ===== IMPORT API GATEWAY =====
+const apiGateway = require('./m10.js');
+apiGateway.init();
 
 module.exports = { 
     app, 
