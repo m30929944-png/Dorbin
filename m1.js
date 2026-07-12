@@ -1973,21 +1973,10 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-// 🚀 START SERVER
+// 📤 EXPORTS
+// (server.listen عمداً اینجا صدا زده نمیشه — تو server.js صدا زده میشه
+// تا مسیرهای m2/m3/m4 هم قبل از بالا اومدن سرور ثبت بشن)
 // ============================================
-server.listen(PORT, '0.0.0.0', () => {
-    console.log('═'.repeat(60));
-    console.log('🚀 ULTIMATE SOCIAL MEDIA ENGINE');
-    console.log('═'.repeat(60));
-    console.log(`📍 http://localhost:${PORT}`);
-    console.log(`💾 ${SHARD_COUNT} Shards`);
-    console.log(`⚡ ${numCPUs} CPU Cores`);
-    console.log(`🔐 AES-256-GCM Encryption`);
-    console.log(`📦 2GB Max Payload Size`);
-    console.log(`👑 Admin: ${ADMIN_EMAIL}`);
-    console.log('═'.repeat(60));
-});
-
 module.exports = {
     app,
     server,
