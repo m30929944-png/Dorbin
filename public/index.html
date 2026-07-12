@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ساده‌گرام</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- صفحه لاگین -->
+    <div id="loginPage" class="page active">
+        <div class="login-box">
+            <div class="logo">📸 ساده‌گرام</div>
+            <h2>به شبکه اجتماعی بپیوندید</h2>
+            <input type="text" id="loginUsername" placeholder="نام کاربری">
+            <input type="password" id="loginPassword" placeholder="رمز عبور">
+            <button onclick="login()">ورود</button>
+            <p>ثبت نام نکرده‌اید؟ <span onclick="showRegister()">ثبت نام</span></p>
+            <div id="loginError" class="error"></div>
+        </div>
+    </div>
+
+    <!-- صفحه ثبت نام -->
+    <div id="registerPage" class="page">
+        <div class="login-box">
+            <div class="logo">📸 ساده‌گرام</div>
+            <h2>ساخت حساب کاربری</h2>
+            <input type="text" id="regUsername" placeholder="نام کاربری">
+            <input type="text" id="regName" placeholder="نام و نام خانوادگی">
+            <input type="password" id="regPassword" placeholder="رمز عبور">
+            <button onclick="register()">ثبت نام</button>
+            <p>حساب دارید؟ <span onclick="showLogin()">ورود</span></p>
+            <div id="regError" class="error"></div>
+        </div>
+    </div>
+
+    <!-- صفحه اصلی -->
+    <div id="appPage" class="page">
+        <!-- نوار بالا -->
+        <div class="top-bar">
+            <div class="logo">📸</div>
+            <input type="text" id="searchInput" placeholder="جستجو..." oninput="search(this.value)">
+            <div class="top-actions">
+                <i class="fas fa-comment" onclick="toggleChat()"></i>
+                <i class="fas fa-sign-out-alt" onclick="logout()"></i>
+            </div>
+        </div>
+
+        <!-- استوری‌ها -->
+        <div class="stories" id="storiesContainer">
+            <div class="story-add" onclick="addStory()">
+                <i class="fas fa-plus"></i>
+                <span>استوری</span>
+            </div>
+        </div>
+
+        <!-- محتوای اصلی -->
+        <div class="main-content" id="mainContent">
+            <!-- پست‌ها اینجا قرار می‌گیرند -->
+        </div>
+
+        <!-- نوار پایین -->
+        <div class="bottom-nav">
+            <div class="nav-item active" onclick="loadPosts()">
+                <i class="fas fa-home"></i>
+                <span>خانه</span>
+            </div>
+            <div class="nav-item" onclick="openUpload()">
+                <i class="fas fa-plus-circle"></i>
+                <span>آپلود</span>
+            </div>
+            <div class="nav-item" onclick="loadProfile()">
+                <i class="fas fa-user"></i>
+                <span>پروفایل</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- مودال آپلود -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content">
+            <h2>آپلود پست جدید</h2>
+            <input type="file" id="fileInput" accept="image/*,video/*">
+            <textarea id="captionInput" placeholder="توضیحات..."></textarea>
+            <input type="text" id="hashtagInput" placeholder="هشتگ‌ها (با کاما جدا کنید)">
+            <button onclick="uploadPost()">ارسال</button>
+            <button onclick="closeModal('uploadModal')">انصراف</button>
+        </div>
+    </div>
+
+    <!-- مودال کامنت -->
+    <div class="modal" id="commentModal">
+        <div class="modal-content">
+            <h2>کامنت‌ها</h2>
+            <div id="commentsList"></div>
+            <input type="text" id="commentInput" placeholder="نظر خود را بنویسید...">
+            <button onclick="sendComment()">ارسال</button>
+            <button onclick="closeModal('commentModal')">بستن</button>
+        </div>
+    </div>
+
+    <!-- مودال چت -->
+    <div class="modal" id="chatModal">
+        <div class="modal-content">
+            <h2>پیام‌ها</h2>
+            <div id="chatMessages"></div>
+            <input type="text" id="chatInput" placeholder="پیام...">
+            <button onclick="sendMessage()">ارسال</button>
+            <button onclick="closeModal('chatModal')">بستن</button>
+        </div>
+    </div>
+
+    <!-- مودال پروفایل -->
+    <div class="modal" id="profileModal">
+        <div class="modal-content" id="profileContent">
+            <!-- توسط JS پر می‌شود -->
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
