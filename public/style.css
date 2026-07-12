@@ -1,0 +1,438 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background: #fafafa;
+    direction: rtl;
+}
+
+/* ========== لاگین ========== */
+.page {
+    display: none;
+    min-height: 100vh;
+}
+.page.active {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #405DE6, #E1306C);
+}
+
+.login-box {
+    background: white;
+    padding: 40px;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 400px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    text-align: center;
+}
+
+.login-box .logo {
+    font-size: 40px;
+    margin-bottom: 10px;
+}
+
+.login-box h2 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.login-box input {
+    width: 100%;
+    padding: 12px 16px;
+    margin: 8px 0;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    font-size: 16px;
+}
+
+.login-box button {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(45deg, #405DE6, #E1306C);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    margin: 10px 0;
+}
+
+.login-box button:hover {
+    transform: scale(1.02);
+    opacity: 0.9;
+}
+
+.login-box p {
+    color: #666;
+}
+
+.login-box p span {
+    color: #405DE6;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.error {
+    color: #E1306C;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+/* ========== نوار بالا ========== */
+.top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: white;
+    border-bottom: 1px solid #dbdbdb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 100;
+}
+
+.top-bar .logo {
+    font-size: 28px;
+}
+
+.top-bar input {
+    padding: 8px 16px;
+    border: 1px solid #dbdbdb;
+    border-radius: 20px;
+    width: 40%;
+    outline: none;
+    background: #fafafa;
+}
+
+.top-bar .top-actions {
+    display: flex;
+    gap: 20px;
+    font-size: 22px;
+    cursor: pointer;
+}
+
+.top-bar .top-actions i:hover {
+    color: #405DE6;
+}
+
+/* ========== استوری‌ها ========== */
+.stories {
+    margin-top: 70px;
+    padding: 10px 20px;
+    background: white;
+    border-bottom: 1px solid #dbdbdb;
+    display: flex;
+    gap: 15px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+}
+
+.stories::-webkit-scrollbar {
+    display: none;
+}
+
+.story-add, .story-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    min-width: 70px;
+}
+
+.story-add .story-avatar, .story-item .story-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 3px solid #E1306C;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    overflow: hidden;
+}
+
+.story-add .story-avatar {
+    border: 2px dashed #dbdbdb;
+    background: #fafafa;
+    font-size: 24px;
+    color: #405DE6;
+}
+
+.story-item .story-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.story-item span, .story-add span {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
+
+/* ========== محتوای اصلی ========== */
+.main-content {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 10px 0 80px;
+}
+
+.post-card {
+    background: white;
+    border-radius: 15px;
+    border: 1px solid #dbdbdb;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.post-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+}
+
+.post-header .avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+}
+
+.post-header .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.post-header .username {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.post-header .time {
+    margin-right: auto;
+    color: #999;
+    font-size: 12px;
+}
+
+.post-image {
+    width: 100%;
+    max-height: 500px;
+    object-fit: contain;
+    background: #f0f0f0;
+}
+
+.post-actions {
+    display: flex;
+    padding: 8px 16px;
+    gap: 18px;
+    font-size: 24px;
+}
+
+.post-actions i {
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.post-actions i:hover {
+    transform: scale(1.2);
+}
+
+.post-actions .liked {
+    color: #E1306C;
+}
+
+.post-likes {
+    padding: 0 16px;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.post-caption {
+    padding: 4px 16px;
+    font-size: 14px;
+}
+
+.post-caption strong {
+    margin-left: 6px;
+}
+
+.post-caption .hashtag {
+    color: #405DE6;
+    cursor: pointer;
+}
+
+.post-comments {
+    padding: 4px 16px 12px;
+    font-size: 13px;
+    color: #666;
+}
+
+.post-comments .comment-item {
+    margin: 4px 0;
+}
+
+.post-comments .comment-item strong {
+    color: #222;
+    margin-left: 6px;
+}
+
+.post-comments .reply-btn {
+    color: #405DE6;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.comment-input-wrap {
+    display: flex;
+    padding: 8px 16px 12px;
+    border-top: 1px solid #efefef;
+    gap: 10px;
+}
+
+.comment-input-wrap input {
+    flex: 1;
+    border: none;
+    outline: none;
+    padding: 8px;
+    border-radius: 20px;
+    background: #fafafa;
+}
+
+.comment-input-wrap button {
+    background: #405DE6;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+}
+
+/* ========== نوار پایین ========== */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 65px;
+    background: white;
+    border-top: 1px solid #dbdbdb;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    font-size: 28px;
+    z-index: 100;
+}
+
+.bottom-nav .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    color: #999;
+    font-size: 12px;
+}
+
+.bottom-nav .nav-item i {
+    font-size: 26px;
+}
+
+.bottom-nav .nav-item.active {
+    color: #405DE6;
+}
+
+/* ========== مودال ========== */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-content h2 {
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.modal-content input, .modal-content textarea {
+    width: 100%;
+    padding: 10px 14px;
+    margin: 8px 0;
+    border: 1px solid #dbdbdb;
+    border-radius: 10px;
+    font-size: 14px;
+}
+
+.modal-content textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.modal-content button {
+    width: 100%;
+    padding: 10px;
+    margin: 5px 0;
+    border: none;
+    border-radius: 10px;
+    background: #405DE6;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.modal-content button:hover {
+    opacity: 0.9;
+}
+
+.modal-content .comment-item {
+    padding: 8px 0;
+    border-bottom: 1px solid #efefef;
+}
+
+/* ========== ریسپانسیو ========== */
+@media (max-width: 600px) {
+    .top-bar input {
+        width: 30%;
+    }
+    .login-box {
+        padding: 20px;
+        margin: 20px;
+    }
+    .modal-content {
+        padding: 20px;
+        margin: 10px;
+    }
+}
