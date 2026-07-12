@@ -1,932 +1,476 @@
-// ============================================
-// 👥 m2.js - USER MANAGEMENT, FOLLOW, PROFILE, CHAT
-// ============================================
+// ============================================================
+// m2.js - سرویس پست‌ها با شاردینگ و کش
+// ============================================================
 
-const { app, db, io, encryption, authMiddleware, adminMiddleware } = require('./m1.js');
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
+const { PrismaClient } = require('@prisma/client');
+const Redis = require('ioredis');
+const jwt = require('jsonwebtoken');
 
-// ============================================
-// 👤 USER SERVICE
-// ============================================
-class UserService {
-    constructor() {
-        this.userCache = new Map();
-        this.CACHE_TTL = 5 * 60 * 1000;
-        this.followRequests = new Map();
-        this.blockedUsers = new Map();
-        this.userReports = new Map();
-        this.chatRooms = new Map();
-        this.userChats = new Map();
-        this.lastSeen = new Map();
-        this.typingUsers = new Map();
-        this.profileViews = new Map();
-        this.userAnalytics = new Map();
+const app = express();
+const PORT = process.env.POST_SERVICE_PORT || 3001;
+
+// ===== تنظیمات =====
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-min-32-chars-here!!!';
+const UPLOAD_DIR = './uploads';
+const CACHE_TTL = 300; // 5 دقیقه
+
+// ===== Redis برای کش =====
+const redis = new Redis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+    password: process.env.REDIS_PASSWORD || '',
+    retryStrategy: (times) => Math.min(times * 50, 2000)
+});
+
+redis.on('connect', () => console.log('✅ Redis متصل شد'));
+redis.on('error', (err) => console.error('❌ Redis error:', err));
+
+// ===== Prisma =====
+const prisma = new PrismaClient();
+
+// ===== میدلورها =====
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ===== میدلور احراز هویت =====
+function authenticate(req, res, next) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ error: 'لطفاً وارد شوید' });
     }
 
-    // ===== GET USER PROFILE =====
-    getUserProfile(userId, viewerId = null) {
-        const user = db.getUser(userId);
-        if (!user) return null;
-
-        const isFollowing = viewerId ? this.isFollowing(viewerId, userId) : false;
-        const isBlocked = viewerId ? this.isBlocked(viewerId, userId) : false;
-        const isOnline = encryption.isOnline(userId);
-
-        // Track profile view
-        if (viewerId && viewerId !== userId) {
-            this.trackProfileView(userId, viewerId);
-        }
-
-        return {
-            userId: user.userId,
-            username: user.username,
-            fullName: user.fullName,
-            bio: user.bio,
-            avatar: user.avatar,
-            followers: user.followers || 0,
-            following: user.following || 0,
-            postsCount: user.postsCount || 0,
-            isOnline: isOnline,
-            isVerified: user.isVerified || false,
-            isAdmin: user.isAdmin || false,
-            isFollowing: isFollowing,
-            isBlocked: isBlocked,
-            createdAt: user.createdAt,
-            lastSeen: user.lastSeen,
-            profileViews: this.getProfileViews(userId)
-        };
-    }
-
-    // ===== PROFILE VIEWS =====
-    trackProfileView(userId, viewerId) {
-        const key = `${userId}_${viewerId}`;
-        if (!this.profileViews.has(key)) {
-            this.profileViews.set(key, {
-                userId,
-                viewerId,
-                count: 0,
-                lastView: null
-            });
-        }
-        const view = this.profileViews.get(key);
-        view.count += 1;
-        view.lastView = new Date().toISOString();
-    }
-
-    getProfileViews(userId) {
-        let total = 0;
-        for (const [key, view] of this.profileViews) {
-            if (view.userId === userId) {
-                total += view.count;
-            }
-        }
-        return total;
-    }
-
-    getProfileViewers(userId, limit = 10) {
-        const viewers = [];
-        for (const [key, view] of this.profileViews) {
-            if (view.userId === userId) {
-                const user = db.getUser(view.viewerId);
-                if (user) {
-                    viewers.push({
-                        userId: user.userId,
-                        username: user.username,
-                        fullName: user.fullName,
-                        avatar: user.avatar,
-                        lastView: view.lastView,
-                        count: view.count
-                    });
-                }
-            }
-        }
-        return viewers.slice(0, limit);
-    }
-
-    // ===== FOLLOW SYSTEM =====
-    isFollowing(userId, targetId) {
-        const idx = db.getShardIndex(userId);
-        if (!db.shards[idx].following.has(userId)) return false;
-        return db.shards[idx].following.get(userId).has(targetId);
-    }
-
-    async followUser(userId, targetId) {
-        if (userId === targetId) {
-            return { success: false, error: 'نمی‌توانید خودتان را دنبال کنید' };
-        }
-
-        if (this.isBlocked(targetId, userId)) {
-            return { success: false, error: 'این کاربر شما را مسدود کرده است' };
-        }
-
-        const result = db.followUser(userId, targetId);
-        if (!result) {
-            return { success: false, error: 'از قبل دنبال می‌کنید' };
-        }
-
-        // Send notification
-        const notification = {
-            notificationId: db.generateId('notif'),
-            userId: targetId,
-            fromUserId: userId,
-            type: 'follow',
-            isRead: false,
-            createdAt: new Date().toISOString()
-        };
-        db.addNotification(notification);
-        const socketId = encryption.getUserSocket(targetId);
-        if (socketId) {
-            io.to(socketId).emit('notification', {
-                type: 'follow',
-                fromUserId: userId,
-                fromUsername: db.getUser(userId)?.username || 'کاربر'
-            });
-        }
-
-        // Track analytics
-        this.trackUserAction(userId, 'follow');
-
-        return { success: true };
-    }
-
-    async unfollowUser(userId, targetId) {
-        const result = db.unfollowUser(userId, targetId);
-        if (!result) {
-            return { success: false, error: 'دنبال نمی‌کنید' };
-        }
-        return { success: true };
-    }
-
-    getFollowers(userId) {
-        return db.getFollowers(userId);
-    }
-
-    getFollowing(userId) {
-        return db.getFollowing(userId);
-    }
-
-    getFollowerCount(userId) {
-        const user = db.getUser(userId);
-        return user ? user.followers || 0 : 0;
-    }
-
-    getFollowingCount(userId) {
-        const user = db.getUser(userId);
-        return user ? user.following || 0 : 0;
-    }
-
-    // ===== BLOCK SYSTEM =====
-    isBlocked(userId, targetId) {
-        if (!this.blockedUsers.has(userId)) return false;
-        return this.blockedUsers.get(userId).has(targetId);
-    }
-
-    async blockUser(userId, targetId) {
-        if (userId === targetId) {
-            return { success: false, error: 'نمی‌توانید خودتان را مسدود کنید' };
-        }
-
-        if (!this.blockedUsers.has(userId)) {
-            this.blockedUsers.set(userId, new Set());
-        }
-        this.blockedUsers.get(userId).add(targetId);
-
-        if (this.isFollowing(userId, targetId)) {
-            db.unfollowUser(userId, targetId);
-        }
-        if (this.isFollowing(targetId, userId)) {
-            db.unfollowUser(targetId, userId);
-        }
-
-        return { success: true };
-    }
-
-    async unblockUser(userId, targetId) {
-        if (this.blockedUsers.has(userId)) {
-            this.blockedUsers.get(userId).delete(targetId);
-        }
-        return { success: true };
-    }
-
-    // ===== SUGGESTIONS =====
-    getFollowSuggestions(userId, limit = 10) {
-        const allUsers = db.getAllUsers();
-        const following = new Set(db.getFollowing(userId).map(u => u.userId));
-        const blocked = this.blockedUsers.get(userId) || new Set();
-        
-        const suggestions = allUsers
-            .filter(u => 
-                u.userId !== userId && 
-                !following.has(u.userId) && 
-                !blocked.has(u.userId) &&
-                !u.isBanned
-            )
-            .sort((a, b) => (b.followers || 0) - (a.followers || 0))
-            .slice(0, limit);
-
-        return suggestions.map(u => ({
-            userId: u.userId,
-            username: u.username,
-            fullName: u.fullName,
-            avatar: u.avatar,
-            followers: u.followers || 0,
-            isVerified: u.isVerified || false,
-            isOnline: encryption.isOnline(u.userId)
-        }));
-    }
-
-    // ===== USER SEARCH =====
-    searchUsers(query, limit = 20) {
-        if (!query || query.length < 2) return [];
-        const results = db.searchUsers(query, limit);
-        return results.map(u => ({
-            userId: u.userId,
-            username: u.username,
-            fullName: u.fullName,
-            avatar: u.avatar,
-            bio: u.bio,
-            followers: u.followers || 0,
-            isVerified: u.isVerified || false,
-            isOnline: encryption.isOnline(u.userId)
-        }));
-    }
-
-    // ===== UPDATE PROFILE =====
-    async updateProfile(userId, data) {
-        const user = db.getUser(userId);
-        if (!user) return { success: false, error: 'کاربر یافت نشد' };
-
-        const updates = {};
-        if (data.bio !== undefined) updates.bio = data.bio;
-        if (data.fullName !== undefined) updates.fullName = data.fullName;
-        if (data.username !== undefined) {
-            const existing = db.getUserByUsername(data.username);
-            if (existing && existing.userId !== userId) {
-                return { success: false, error: 'این نام کاربری قبلاً ثبت شده است' };
-            }
-            updates.username = data.username;
-        }
-
-        const updated = db.updateUser(userId, updates);
-        return { success: true, user: { ...updated, password: undefined } };
-    }
-
-    // ===== USER STATS =====
-    getUserStats(userId) {
-        const user = db.getUser(userId);
-        if (!user) return null;
-
-        return {
-            userId: user.userId,
-            username: user.username,
-            followers: user.followers || 0,
-            following: user.following || 0,
-            postsCount: user.postsCount || 0,
-            isOnline: encryption.isOnline(userId),
-            isVerified: user.isVerified || false,
-            isAdmin: user.isAdmin || false,
-            createdAt: user.createdAt,
-            lastSeen: user.lastSeen,
-            profileViews: this.getProfileViews(userId)
-        };
-    }
-
-    // ===== USER ANALYTICS =====
-    trackUserAction(userId, action) {
-        if (!this.userAnalytics.has(userId)) {
-            this.userAnalytics.set(userId, {
-                likes: 0,
-                comments: 0,
-                shares: 0,
-                follows: 0,
-                posts: 0,
-                totalActions: 0,
-                lastActive: new Date().toISOString()
-            });
-        }
-        const stats = this.userAnalytics.get(userId);
-        if (action === 'like') stats.likes += 1;
-        else if (action === 'comment') stats.comments += 1;
-        else if (action === 'share') stats.shares += 1;
-        else if (action === 'follow') stats.follows += 1;
-        else if (action === 'post') stats.posts += 1;
-        stats.totalActions += 1;
-        stats.lastActive = new Date().toISOString();
-    }
-
-    getUserAnalytics(userId) {
-        return this.userAnalytics.get(userId) || {
-            likes: 0,
-            comments: 0,
-            shares: 0,
-            follows: 0,
-            posts: 0,
-            totalActions: 0,
-            lastActive: null
-        };
-    }
-
-    // ============================================
-    // 💬 CHAT SYSTEM
-    // ============================================
-    getChatRooms(userId) {
-        if (!this.userChats.has(userId)) {
-            this.userChats.set(userId, new Set());
-        }
-        return Array.from(this.userChats.get(userId));
-    }
-
-    async getChatUsers(userId) {
-        const rooms = this.getChatRooms(userId);
-        const users = [];
-        
-        for (const roomId of rooms) {
-            const room = this.chatRooms.get(roomId);
-            if (room) {
-                const otherId = room.participants.find(id => id !== userId);
-                if (otherId) {
-                    const user = db.getUser(otherId);
-                    if (user && !user.isBanned) {
-                        const lastMessage = room.messages && room.messages.length > 0 ? room.messages[room.messages.length - 1] : null;
-                        users.push({
-                            userId: user.userId,
-                            username: user.username,
-                            fullName: user.fullName || user.username,
-                            avatar: user.avatar || '',
-                            isOnline: encryption.isOnline(user.userId),
-                            lastMessage: lastMessage,
-                            unreadCount: room.unreadCount?.get(userId) || 0
-                        });
-                    }
-                }
-            }
-        }
-        
-        // Sort by last message
-        users.sort((a, b) => {
-            const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0;
-            const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0;
-            return timeB - timeA;
-        });
-        
-        return users;
-    }
-
-    async createChatRoom(user1, user2) {
-        const roomId = encryption.generateRoomId(user1, user2);
-        
-        if (!this.chatRooms.has(roomId)) {
-            this.chatRooms.set(roomId, {
-                roomId,
-                participants: [user1, user2],
-                messages: [],
-                createdAt: new Date().toISOString(),
-                lastMessage: null,
-                unreadCount: new Map()
-            });
-            
-            // Add to user chats
-            for (const userId of [user1, user2]) {
-                if (!this.userChats.has(userId)) {
-                    this.userChats.set(userId, new Set());
-                }
-                this.userChats.get(userId).add(roomId);
-            }
-        }
-        
-        return this.chatRooms.get(roomId);
-    }
-
-    async sendChatMessage(roomId, userId, username, message) {
-        const room = this.chatRooms.get(roomId);
-        if (!room) {
-            return { success: false, error: 'اتاق چت یافت نشد' };
-        }
-
-        const msgData = {
-            messageId: db.generateId('msg'),
-            userId: userId,
-            username: username,
-            message: message,
-            timestamp: new Date().toISOString(),
-            read: false
-        };
-
-        room.messages.push(msgData);
-        room.lastMessage = msgData;
-
-        // Update unread count for other participants
-        for (const participant of room.participants) {
-            if (participant !== userId) {
-                if (!room.unreadCount.has(participant)) {
-                    room.unreadCount.set(participant, 0);
-                }
-                room.unreadCount.set(participant, room.unreadCount.get(participant) + 1);
-            }
-        }
-
-        // Save to database
-        db.saveMessage(roomId, msgData);
-
-        return { success: true, message: msgData };
-    }
-
-    getChatMessages(roomId, limit = 50) {
-        const room = this.chatRooms.get(roomId);
-        if (!room) return [];
-        return room.messages.slice(-limit);
-    }
-
-    markMessagesRead(roomId, userId) {
-        const room = this.chatRooms.get(roomId);
-        if (!room) return false;
-        if (room.unreadCount.has(userId)) {
-            room.unreadCount.set(userId, 0);
-        }
-        return true;
-    }
-
-    getUnreadCount(userId) {
-        let total = 0;
-        for (const [roomId, room] of this.chatRooms) {
-            if (room.participants.includes(userId)) {
-                total += room.unreadCount.get(userId) || 0;
-            }
-        }
-        return total;
-    }
-
-    // ===== TYPING INDICATOR =====
-    setTyping(roomId, userId, isTyping) {
-        const key = `${roomId}_${userId}`;
-        if (isTyping) {
-            this.typingUsers.set(key, {
-                userId,
-                roomId,
-                startedAt: new Date().toISOString()
-            });
-        } else {
-            this.typingUsers.delete(key);
-        }
-        return true;
-    }
-
-    getTypingUsers(roomId) {
-        const result = [];
-        for (const [key, data] of this.typingUsers) {
-            if (data.roomId === roomId) {
-                result.push(data.userId);
-            }
-        }
-        return result;
-    }
-
-    // ============================================
-    // 🧹 CLEANUP
-    // ============================================
-    cleanup() {
-        const now = Date.now();
-        const oneDay = 24 * 60 * 60 * 1000;
-        const oneMinute = 60 * 1000;
-        const oneWeek = 7 * oneDay;
-
-        // Clean typing indicators
-        for (const [key, data] of this.typingUsers) {
-            if (now - new Date(data.startedAt).getTime() > oneMinute) {
-                this.typingUsers.delete(key);
-            }
-        }
-
-        // Clean old chat rooms (inactive for 30 days)
-        for (const [roomId, room] of this.chatRooms) {
-            const lastMessage = room.messages.length > 0 ? room.messages[room.messages.length - 1] : null;
-            if (lastMessage) {
-                const age = now - new Date(lastMessage.timestamp).getTime();
-                if (age > 30 * oneDay) {
-                    this.chatRooms.delete(roomId);
-                }
-            } else {
-                const age = now - new Date(room.createdAt).getTime();
-                if (age > oneWeek) {
-                    this.chatRooms.delete(roomId);
-                }
-            }
-        }
-
-        // Clean profile views older than 30 days
-        for (const [key, view] of this.profileViews) {
-            if (view.lastView) {
-                const age = now - new Date(view.lastView).getTime();
-                if (age > 30 * oneDay) {
-                    this.profileViews.delete(key);
-                }
-            }
-        }
-    }
-
-    // ============================================
-    // 📊 STATS
-    // ============================================
-    getStats() {
-        return {
-            totalUsers: db.getAllUsers().length,
-            totalChatRooms: this.chatRooms.size,
-            totalChatMessages: Array.from(this.chatRooms.values())
-                .reduce((acc, room) => acc + room.messages.length, 0),
-            totalProfileViews: this.profileViews.size,
-            totalBlockedUsers: this.blockedUsers.size,
-            totalFollowRequests: this.followRequests.size,
-            totalUserAnalytics: this.userAnalytics.size
-        };
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.userId = decoded.userId;
+        next();
+    } catch {
+        return res.status(401).json({ error: 'توکن نامعتبر' });
     }
 }
 
-const userService = new UserService();
+// ===== تنظیمات آپلود =====
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
-// ============================================
-// 📡 USER ROUTES
-// ============================================
-
-// ===== GET USER PROFILE =====
-app.get('/api/users/profile/:userId', authMiddleware, (req, res) => {
-    try {
-        const profile = userService.getUserProfile(req.params.userId, req.user.userId);
-        if (!profile) return res.status(404).json({ error: 'کاربر یافت نشد' });
-        res.json(profile);
-    } catch (error) {
-        console.error('Get profile error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+    filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + crypto.randomBytes(8).toString('hex');
+        cb(null, unique + path.extname(file.originalname));
     }
 });
 
-app.get('/api/users/me', authMiddleware, (req, res) => {
-    try {
-        const profile = userService.getUserProfile(req.user.userId);
-        res.json(profile);
-    } catch (error) {
-        console.error('Get me error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
+const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4'];
+        cb(null, allowed.includes(file.mimetype));
     }
 });
 
-// ===== FOLLOW =====
-app.post('/api/users/:userId/follow', authMiddleware, async (req, res) => {
+// ===== توابع شاردینگ =====
+function getShardId(userId) {
+    // Consistent Hashing با ۴ شارد
+    const hash = crypto.createHash('md5').update(userId.toString()).digest('readUInt32BE', 0);
+    return (hash % 4) + 1;
+}
+
+async function getShardConnection(shardId) {
+    // در محیط واقعی، به دیتابیس شارد مربوطه متصل می‌شویم
+    // اینجا از Prisma با connection string متفاوت استفاده می‌کنیم
+    // برای سادگی، از همان Prisma استفاده می‌کنیم و شارد را در فیلد ذخیره می‌کنیم
+    return prisma;
+}
+
+// ===== کش کردن =====
+async function cachePost(postId, data) {
+    await redis.setex(`post:${postId}`, CACHE_TTL, JSON.stringify(data));
+}
+
+async function getCachedPost(postId) {
+    const cached = await redis.get(`post:${postId}`);
+    return cached ? JSON.parse(cached) : null;
+}
+
+async function invalidateCache(postId) {
+    await redis.del(`post:${postId}`);
+    await redis.del('feed:popular');
+}
+
+// ============================================================
+//  API: پست‌ها
+// ============================================================
+
+// دریافت پست‌ها با شاردینگ
+app.get('/api/posts', authenticate, async (req, res) => {
     try {
-        const { userId } = req.params;
-        const result = await userService.followUser(req.user.userId, userId);
-        if (result.success) {
-            const target = db.getUser(userId);
-            io.emit('follow-update', { 
-                userId: target.userId, 
-                followers: target.followers 
-            });
-            res.json({ success: true, followers: target.followers });
-        } else {
-            res.status(400).json(result);
+        const userId = req.userId;
+        const shardId = getShardId(userId);
+        const db = await getShardConnection(shardId);
+
+        // ابتدا از کش
+        const cacheKey = `feed:user:${userId}`;
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
         }
-    } catch (error) {
-        console.error('Follow error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
 
-app.post('/api/users/:userId/unfollow', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const result = await userService.unfollowUser(req.user.userId, userId);
-        if (result.success) {
-            const target = db.getUser(userId);
-            res.json({ success: true, followers: target.followers });
-        } else {
-            res.status(400).json(result);
-        }
-    } catch (error) {
-        console.error('Unfollow error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-app.get('/api/users/:userId/followers', authMiddleware, (req, res) => {
-    try {
-        const followers = userService.getFollowers(req.params.userId);
-        res.json(followers.map(u => ({ ...u, password: undefined })));
-    } catch (error) {
-        console.error('Get followers error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-app.get('/api/users/:userId/following', authMiddleware, (req, res) => {
-    try {
-        const following = userService.getFollowing(req.params.userId);
-        res.json(following.map(u => ({ ...u, password: undefined })));
-    } catch (error) {
-        console.error('Get following error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-app.get('/api/users/:userId/follow-status', authMiddleware, (req, res) => {
-    try {
-        const { userId } = req.params;
-        const isFollowing = userService.isFollowing(req.user.userId, userId);
-        const isBlocked = userService.isBlocked(userId, req.user.userId);
-        res.json({ isFollowing, isBlocked });
-    } catch (error) {
-        console.error('Follow status error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== BLOCK =====
-app.post('/api/users/:userId/block', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const result = await userService.blockUser(req.user.userId, userId);
-        if (result.success) {
-            res.json({ success: true });
-        } else {
-            res.status(400).json(result);
-        }
-    } catch (error) {
-        console.error('Block error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-app.post('/api/users/:userId/unblock', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const result = await userService.unblockUser(req.user.userId, userId);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Unblock error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== SUGGESTIONS =====
-app.get('/api/users/suggestions', authMiddleware, (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit) || 10;
-        const suggestions = userService.getFollowSuggestions(req.user.userId, limit);
-        res.json(suggestions);
-    } catch (error) {
-        console.error('Suggestions error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== SEARCH =====
-app.get('/api/users/search', authMiddleware, (req, res) => {
-    try {
-        const { q, limit = 20 } = req.query;
-        if (!q || q.length < 2) return res.json([]);
-        const results = userService.searchUsers(q, parseInt(limit));
-        res.json(results);
-    } catch (error) {
-        console.error('Search error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== PROFILE UPDATE =====
-app.put('/api/users/profile', authMiddleware, async (req, res) => {
-    try {
-        const { bio, fullName, username } = req.body;
-        const result = await userService.updateProfile(req.user.userId, { bio, fullName, username });
-        if (result.success) {
-            res.json(result);
-        } else {
-            res.status(400).json(result);
-        }
-    } catch (error) {
-        console.error('Update profile error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== USER STATS =====
-app.get('/api/users/:userId/stats', authMiddleware, (req, res) => {
-    try {
-        const stats = userService.getUserStats(req.params.userId);
-        if (!stats) return res.status(404).json({ error: 'کاربر یافت نشد' });
-        res.json(stats);
-    } catch (error) {
-        console.error('User stats error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== USER ANALYTICS =====
-app.get('/api/users/:userId/analytics', authMiddleware, (req, res) => {
-    try {
-        const analytics = userService.getUserAnalytics(req.params.userId);
-        res.json(analytics);
-    } catch (error) {
-        console.error('Analytics error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== PROFILE VIEWERS =====
-app.get('/api/users/:userId/viewers', authMiddleware, (req, res) => {
-    try {
-        const limit = parseInt(req.query.limit) || 10;
-        const viewers = userService.getProfileViewers(req.params.userId, limit);
-        res.json(viewers);
-    } catch (error) {
-        console.error('Viewers error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ============================================
-// 📡 CHAT ROUTES
-// ============================================
-
-// ===== GET CHAT USERS =====
-app.get('/api/chat/users', authMiddleware, async (req, res) => {
-    try {
-        const users = await userService.getChatUsers(req.user.userId);
-        res.json(users);
-    } catch (error) {
-        console.error('Get chat users error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== GET CHAT ROOMS =====
-app.get('/api/chat/rooms', authMiddleware, (req, res) => {
-    try {
-        const rooms = userService.getChatRooms(req.user.userId);
-        res.json(rooms);
-    } catch (error) {
-        console.error('Get chat rooms error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== GET ROOM MESSAGES =====
-app.get('/api/chat/messages/room', authMiddleware, (req, res) => {
-    try {
-        const { roomId, limit = 50 } = req.query;
-        if (!roomId) {
-            return res.status(400).json({ error: 'roomId الزامی است' });
-        }
-        const messages = userService.getChatMessages(roomId, parseInt(limit));
-        res.json(messages);
-    } catch (error) {
-        console.error('Get messages error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== CREATE CHAT ROOM =====
-app.post('/api/chat/room', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.body;
-        if (!userId) {
-            return res.status(400).json({ error: 'userId الزامی است' });
-        }
-        const room = await userService.createChatRoom(req.user.userId, userId);
-        res.json(room);
-    } catch (error) {
-        console.error('Create room error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== SEND MESSAGE =====
-app.post('/api/chat/message', authMiddleware, async (req, res) => {
-    try {
-        const { targetUserId, message } = req.body;
-        if (!targetUserId || !message) {
-            return res.status(400).json({ error: 'targetUserId و message الزامی هستند' });
-        }
-        
-        const roomId = encryption.generateRoomId(req.user.userId, targetUserId);
-        const room = await userService.createChatRoom(req.user.userId, targetUserId);
-        
-        const result = await userService.sendChatMessage(
-            roomId,
-            req.user.userId,
-            req.user.fullName || req.user.username,
-            message
-        );
-        
-        if (result.success) {
-            // Send to receiver via socket
-            const socketId = encryption.getUserSocket(targetUserId);
-            if (socketId) {
-                io.to(socketId).emit('receive-chat-message', {
-                    ...result.message,
-                    roomId: roomId
-                });
-            }
-            res.json(result);
-        } else {
-            res.status(400).json(result);
-        }
-    } catch (error) {
-        console.error('Send message error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== MARK MESSAGES AS READ =====
-app.post('/api/chat/messages/read', authMiddleware, (req, res) => {
-    try {
-        const { roomId } = req.body;
-        if (!roomId) {
-            return res.status(400).json({ error: 'roomId الزامی است' });
-        }
-        const result = userService.markMessagesRead(roomId, req.user.userId);
-        res.json({ success: result });
-    } catch (error) {
-        console.error('Mark read error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ===== GET UNREAD COUNT =====
-app.get('/api/chat/unread', authMiddleware, (req, res) => {
-    try {
-        const unread = userService.getUnreadCount(req.user.userId);
-        res.json({ unread });
-    } catch (error) {
-        console.error('Get unread error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ============================================
-// 💬 WEBSOCKET CHAT EVENTS
-// ============================================
-io.on('connection', (socket) => {
-    // ===== JOIN CHAT ROOM =====
-    socket.on('join-chat', async (data) => {
-        try {
-            const { userId, targetUserId } = data;
-            const room = await userService.createChatRoom(userId, targetUserId);
-            socket.join(room.roomId);
-            socket.roomId = room.roomId;
-            const messages = userService.getChatMessages(room.roomId, 50);
-            socket.emit('chat-history', messages);
-            userService.markMessagesRead(room.roomId, userId);
-        } catch (error) {
-            console.error('Join chat error:', error);
-        }
-    });
-
-    // ===== SEND CHAT MESSAGE =====
-    socket.on('send-chat-message', async (data) => {
-        try {
-            const { roomId, userId, username, message } = data;
-            const result = await userService.sendChatMessage(roomId, userId, username, message);
-            if (result.success) {
-                io.to(roomId).emit('receive-chat-message', result.message);
-                
-                // Notify other participants
-                const room = userService.chatRooms.get(roomId);
-                if (room) {
-                    for (const participant of room.participants) {
-                        if (participant !== userId) {
-                            const socketId = encryption.getUserSocket(participant);
-                            if (socketId) {
-                                io.to(socketId).emit('new-chat-message', {
-                                    roomId,
-                                    fromUserId: userId,
-                                    message: result.message
-                                });
-                            }
+        // دریافت پست‌ها از دیتابیس شارد
+        const posts = await db.post.findMany({
+            where: {
+                // در اینجا می‌توانیم فیلتر بر اساس فالوها داشته باشیم
+            },
+            include: {
+                user: {
+                    select: { id: true, username: true, avatar: true }
+                },
+                likes: true,
+                comments: {
+                    include: {
+                        user: {
+                            select: { username: true }
                         }
-                    }
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    take: 10
                 }
-            } else {
-                socket.emit('error', { message: result.error });
-            }
-        } catch (error) {
-            console.error('Send chat message error:', error);
-            socket.emit('error', { message: 'خطا در ارسال پیام' });
-        }
-    });
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 50
+        });
 
-    // ===== TYPING INDICATOR =====
-    socket.on('chat-typing', (data) => {
-        const { roomId, userId, isTyping } = data;
-        userService.setTyping(roomId, userId, isTyping);
-        socket.to(roomId).emit('chat-typing', { userId, isTyping });
-    });
+        // بررسی لایک و فالو
+        const formattedPosts = await Promise.all(posts.map(async (post) => {
+            const liked = await db.like.findFirst({
+                where: { postId: post.id, userId }
+            });
 
-    // ===== LEAVE CHAT =====
-    socket.on('leave-chat', (data) => {
-        const { roomId } = data;
-        socket.leave(roomId);
-    });
+            const isFollowing = await db.follow.findFirst({
+                where: { followerId: userId, followingId: post.userId }
+            });
+
+            return {
+                id: post.id,
+                image: post.image,
+                caption: post.caption,
+                username: post.user.username,
+                userAvatar: post.user.avatar,
+                userId: post.user.id,
+                likes: post.likes.length,
+                liked: !!liked,
+                isFollowing: !!isFollowing,
+                comments: post.comments.map(c => ({
+                    id: c.id,
+                    user: c.user.username,
+                    text: c.text,
+                    createdAt: c.createdAt
+                })),
+                createdAt: post.createdAt,
+                shardId: post.shardId || shardId
+            };
+        }));
+
+        const result = { posts: formattedPosts };
+
+        // کش کردن برای ۵ دقیقه
+        await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+
+        res.json(result);
+    } catch (error) {
+        console.error('❌ خطا در دریافت پست‌ها:', error);
+        res.status(500).json({ error: 'خطا در دریافت پست‌ها' });
+    }
 });
 
-module.exports = {
-    userService
-};
+// آپلود پست جدید (با شاردینگ)
+app.post('/api/posts', authenticate, upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'تصویر الزامی است' });
+        }
+
+        const { caption } = req.body;
+        const userId = req.userId;
+        const shardId = getShardId(userId);
+        const db = await getShardConnection(shardId);
+
+        const imageUrl = `/uploads/${req.file.filename}`;
+
+        const post = await db.post.create({
+            data: {
+                image: imageUrl,
+                caption: caption || '',
+                userId,
+                shardId
+            },
+            include: {
+                user: {
+                    select: { id: true, username: true, avatar: true }
+                }
+            }
+        });
+
+        // Invalid کردن کش
+        await invalidateCache(post.id);
+        await redis.del(`feed:user:${userId}`);
+        await redis.del('feed:popular');
+
+        res.json({
+            post: {
+                id: post.id,
+                image: post.image,
+                caption: post.caption,
+                username: post.user.username,
+                userAvatar: post.user.avatar,
+                userId: post.user.id,
+                likes: 0,
+                liked: false,
+                isFollowing: false,
+                comments: [],
+                createdAt: post.createdAt,
+                shardId: post.shardId
+            }
+        });
+    } catch (error) {
+        console.error('❌ خطا در آپلود:', error);
+        res.status(500).json({ error: 'خطا در آپلود پست' });
+    }
+});
+
+// دریافت یک پست (با کش)
+app.get('/api/posts/:postId', authenticate, async (req, res) => {
+    try {
+        const postId = parseInt(req.params.postId);
+        const userId = req.userId;
+
+        // بررسی کش
+        const cached = await getCachedPost(postId);
+        if (cached) {
+            return res.json(cached);
+        }
+
+        // پیدا کردن شارد پست
+        const post = await prisma.post.findUnique({
+            where: { id: postId },
+            include: {
+                user: {
+                    select: { id: true, username: true, avatar: true }
+                },
+                likes: true,
+                comments: {
+                    include: {
+                        user: {
+                            select: { username: true }
+                        }
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    take: 20
+                }
+            }
+        });
+
+        if (!post) {
+            return res.status(404).json({ error: 'پست یافت نشد' });
+        }
+
+        const liked = await prisma.like.findFirst({
+            where: { postId, userId }
+        });
+
+        const isFollowing = await prisma.follow.findFirst({
+            where: { followerId: userId, followingId: post.userId }
+        });
+
+        const result = {
+            id: post.id,
+            image: post.image,
+            caption: post.caption,
+            username: post.user.username,
+            userAvatar: post.user.avatar,
+            userId: post.user.id,
+            likes: post.likes.length,
+            liked: !!liked,
+            isFollowing: !!isFollowing,
+            comments: post.comments.map(c => ({
+                id: c.id,
+                user: c.user.username,
+                text: c.text,
+                createdAt: c.createdAt
+            })),
+            createdAt: post.createdAt,
+            shardId: post.shardId
+        };
+
+        await cachePost(postId, result);
+        res.json(result);
+    } catch (error) {
+        console.error('❌ خطا در دریافت پست:', error);
+        res.status(500).json({ error: 'خطا در دریافت پست' });
+    }
+});
+
+// لایک کردن (با شاردینگ)
+app.post('/api/posts/:postId/like', authenticate, async (req, res) => {
+    try {
+        const postId = parseInt(req.params.postId);
+        const userId = req.userId;
+        const shardId = getShardId(userId);
+        const db = await getShardConnection(shardId);
+
+        const existing = await db.like.findFirst({
+            where: { postId, userId }
+        });
+
+        let liked;
+        if (existing) {
+            await db.like.delete({ where: { id: existing.id } });
+            liked = false;
+        } else {
+            await db.like.create({ data: { postId, userId } });
+            liked = true;
+        }
+
+        const likeCount = await db.like.count({ where: { postId } });
+
+        // Invalid کردن کش
+        await invalidateCache(postId);
+        await redis.del(`feed:user:${userId}`);
+
+        res.json({ liked, likes: likeCount });
+    } catch (error) {
+        console.error('❌ خطا در لایک:', error);
+        res.status(500).json({ error: 'خطا در لایک' });
+    }
+});
+
+// کامنت گذاشتن
+app.post('/api/posts/:postId/comment', authenticate, async (req, res) => {
+    try {
+        const postId = parseInt(req.params.postId);
+        const userId = req.userId;
+        const { text } = req.body;
+
+        if (!text || text.trim().length === 0) {
+            return res.status(400).json({ error: 'متن کامنت الزامی است' });
+        }
+
+        const shardId = getShardId(userId);
+        const db = await getShardConnection(shardId);
+
+        const comment = await db.comment.create({
+            data: {
+                text: text.trim(),
+                postId,
+                userId
+            },
+            include: {
+                user: {
+                    select: { username: true }
+                }
+            }
+        });
+
+        await invalidateCache(postId);
+
+        res.json({
+            comment: {
+                id: comment.id,
+                user: comment.user.username,
+                text: comment.text,
+                createdAt: comment.createdAt
+            }
+        });
+    } catch (error) {
+        console.error('❌ خطا در کامنت:', error);
+        res.status(500).json({ error: 'خطا در ارسال کامنت' });
+    }
+});
+
+// ===== محبوب‌ترین پست‌ها (برای اکسپلور) =====
+app.get('/api/posts/popular', authenticate, async (req, res) => {
+    try {
+        const cacheKey = 'feed:popular';
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+            return res.json(JSON.parse(cached));
+        }
+
+        // دریافت از همه شاردها (در محیط واقعی باید از همه شاردها جمع‌آوری شود)
+        const posts = await prisma.post.findMany({
+            include: {
+                user: {
+                    select: { id: true, username: true, avatar: true }
+                },
+                likes: true,
+                comments: {
+                    include: {
+                        user: {
+                            select: { username: true }
+                        }
+                    },
+                    take: 3
+                }
+            },
+            orderBy: {
+                likes: { _count: 'desc' }
+            },
+            take: 30
+        });
+
+        const result = {
+            posts: posts.map(p => ({
+                id: p.id,
+                image: p.image,
+                caption: p.caption,
+                username: p.user.username,
+                userAvatar: p.user.avatar,
+                userId: p.user.id,
+                likes: p.likes.length,
+                comments: p.comments.map(c => ({
+                    id: c.id,
+                    user: c.user.username,
+                    text: c.text
+                })),
+                createdAt: p.createdAt
+            }))
+        };
+
+        await redis.setex(cacheKey, 600, JSON.stringify(result)); // 10 دقیقه
+        res.json(result);
+    } catch (error) {
+        console.error('❌ خطا در دریافت پست‌های محبوب:', error);
+        res.status(500).json({ error: 'خطا در دریافت پست‌های محبوب' });
+    }
+});
+
+// ============================================================
+//  راه‌اندازی
+// ============================================================
+
+app.listen(PORT, () => {
+    console.log(`📸 سرویس پست‌ها روی پورت ${PORT} اجرا شد`);
+    console.log(`📊 شاردینگ: ۴ شارد با Consistent Hashing`);
+    console.log(`💾 کش: Redis با TTL ${CACHE_TTL} ثانیه`);
+    console.log(`📁 آپلود: ${UPLOAD_DIR}`);
+});
+
+process.on('uncaughtException', async (err) => {
+    console.error('❌ خطا در سرویس پست:', err);
+});
+
+process.on('SIGINT', async () => {
+    await prisma.$disconnect();
+    await redis.quit();
+    console.log('👋 سرویس پست متوقف شد');
+    process.exit(0);
+});
