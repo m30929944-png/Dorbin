@@ -13,6 +13,7 @@ const os = require('os');
 const compression = require('compression');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const multer = require('multer');
 
 const numCPUs = os.cpus().length;
 const app = express();
@@ -194,6 +195,7 @@ class UltraShardedDatabase {
 
         this.startAutoBackup();
         this.startCleanupScheduler();
+        this.createSampleData();
     }
 
     getShardIndex(key) {
@@ -316,8 +318,132 @@ class UltraShardedDatabase {
     }
 
     // ============================================
-    // 👤 USER MANAGEMENT
+    // 📊 CREATE SAMPLE DATA FOR MILLIONS OF USERS
     // ============================================
+    createSampleData() {
+        // Sample users
+        const sampleUsers = [
+            { username: 'milad_admin', fullName: 'مدیر سیستم', email: ADMIN_EMAIL, password: ADMIN_PASSWORD, isAdmin: true, isVerified: true },
+            { username: 'ali_reza', fullName: 'علی رضایی', email: 'ali@test.com', password: 'Test123456' },
+            { username: 'sara_kh', fullName: 'سارا خانی', email: 'sara@test.com', password: 'Test123456' },
+            { username: 'mohammad_n', fullName: 'محمد نوری', email: 'mohammad@test.com', password: 'Test123456' },
+            { username: 'fatemeh_z', fullName: 'فاطمه زارع', email: 'fatemeh@test.com', password: 'Test123456' }
+        ];
+
+        const createdUsers = [];
+        for (const data of sampleUsers) {
+            const existing = this.getUserByEmail(data.email);
+            if (!existing) {
+                const userId = encryption.generateId('user');
+                const user = {
+                    userId,
+                    username: data.username,
+                    email: data.email,
+                    fullName: data.fullName,
+                    password: encryption.hashPassword(data.password),
+                    bio: 'عاشق تکنولوژی و هنر 🎨',
+                    avatar: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`,
+                    followers: Math.floor(Math.random() * 1000),
+                    following: Math.floor(Math.random() * 500),
+                    postsCount: 0,
+                    language: 'fa',
+                    theme: 'dark',
+                    isOnline: false,
+                    isAdmin: data.isAdmin || false,
+                    isBanned: false,
+                    isVerified: data.isVerified || false,
+                    createdAt: new Date().toISOString(),
+                    lastSeen: new Date().toISOString()
+                };
+                this.saveUser(user);
+                createdUsers.push(user);
+                console.log(`👤 User created: ${data.username}`);
+            }
+        }
+
+        // Sample posts with images
+        const users = this.getAllUsers();
+        if (users.length > 0 && this.getPosts(1, 1).total === 0) {
+            const samplePosts = [
+                { caption: 'سلام به دنیای جدید! 🚀', hashtags: ['خوش_آمدید', 'سوشال_مدیا'], image: 'https://picsum.photos/seed/1/600/600' },
+                { caption: 'منظره زیبای غروب 🌅', hashtags: ['طبیعت', 'غروب'], image: 'https://picsum.photos/seed/2/600/600' },
+                { caption: 'لحظات خوش با دوستان 🎉', hashtags: ['دوستی', 'خوشحالی'], image: 'https://picsum.photos/seed/3/600/600' },
+                { caption: 'قهوه صبحگاهی ☕', hashtags: ['قهوه', 'صبح'], image: 'https://picsum.photos/seed/4/600/600' },
+                { caption: 'سفر به شمال 🌲', hashtags: ['سفر', 'شمال'], image: 'https://picsum.photos/seed/5/600/600' },
+                { caption: 'کتاب جدید 📚', hashtags: ['کتاب', 'مطالعه'], image: 'https://picsum.photos/seed/6/600/600' },
+                { caption: 'ورزش صبحگاهی 🏃', hashtags: ['ورزش', 'سلامتی'], image: 'https://picsum.photos/seed/7/600/600' },
+                { caption: 'موسیقی آرامش بخش 🎵', hashtags: ['موسیقی', 'آرامش'], image: 'https://picsum.photos/seed/8/600/600' }
+            ];
+
+            for (let i = 0; i < samplePosts.length; i++) {
+                const user = users[i % users.length];
+                const post = {
+                    postId: this.generateId('post'),
+                    userId: user.userId,
+                    username: user.username,
+                    fullName: user.fullName,
+                    image: samplePosts[i].image,
+                    caption: samplePosts[i].caption,
+                    hashtags: samplePosts[i].hashtags,
+                    likes: Math.floor(Math.random() * 50) + 5,
+                    comments: [
+                        { commentId: this.generateId('cmt'), userId: users[(i+1) % users.length].userId, username: users[(i+1) % users.length].username, text: 'عالی! 😍', createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString() },
+                        { commentId: this.generateId('cmt'), userId: users[(i+2) % users.length].userId, username: users[(i+2) % users.length].username, text: 'قشنگ بود 👍', createdAt: new Date(Date.now() - Math.random() * 86400000).toISOString() }
+                    ],
+                    shares: Math.floor(Math.random() * 10),
+                    views: Math.floor(Math.random() * 100) + 20,
+                    isVideo: false,
+                    createdAt: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString()
+                };
+                this.savePost(post);
+                this.updateUser(user.userId, { postsCount: (user.postsCount || 0) + 1 });
+            }
+            console.log(`📸 ${samplePosts.length} sample posts created!`);
+        }
+
+        // Sample stories
+        if (this.getStories().length === 0) {
+            const usersList = this.getAllUsers();
+            for (let i = 0; i < Math.min(3, usersList.length); i++) {
+                const user = usersList[i];
+                const story = {
+                    storyId: this.generateId('story'),
+                    userId: user.userId,
+                    username: user.username,
+                    fullName: user.fullName,
+                    image: `https://picsum.photos/seed/story${i}/300/500`,
+                    isVideo: false,
+                    views: Math.floor(Math.random() * 30) + 5,
+                    viewers: [],
+                    createdAt: new Date(Date.now() - Math.random() * 12 * 3600000).toISOString(),
+                    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+                };
+                this.saveStory(story);
+            }
+            console.log('📸 Sample stories created!');
+        }
+
+        // Sample follows
+        const allUsers = this.getAllUsers();
+        for (let i = 0; i < allUsers.length; i++) {
+            for (let j = 0; j < Math.min(2, allUsers.length - 1); j++) {
+                const targetIdx = (i + j + 1) % allUsers.length;
+                if (i !== targetIdx) {
+                    this.followUser(allUsers[i].userId, allUsers[targetIdx].userId);
+                }
+            }
+        }
+
+        console.log('═'.repeat(50));
+        console.log('📊 DATABASE STATUS');
+        console.log('═'.repeat(50));
+        console.log(`👥 Users: ${this.getAllUsers().length}`);
+        console.log(`📸 Posts: ${this.getPosts(1, 1000).total}`);
+        console.log(`📸 Stories: ${this.getStories().length}`);
+        console.log('═'.repeat(50));
+    }
+
+    // ===== USER MANAGEMENT =====
     saveUser(user) {
         const idx = this.getShardIndex(user.userId);
         this.shards[idx].users.set(user.userId, user);
@@ -930,8 +1056,8 @@ function createAdminAccount() {
             email: ADMIN_EMAIL,
             fullName: 'مدیر ارشد سیستم',
             password: encryption.hashPassword(ADMIN_PASSWORD),
-            bio: 'مدیر ارشد پلتفرم سوشال مدیا',
-            avatar: '',
+            bio: 'مدیر ارشد پلتفرم سوشال مدیا | عاشق تکنولوژی 🚀',
+            avatar: 'https://i.pravatar.cc/150?img=12',
             followers: 0,
             following: 0,
             postsCount: 0,
@@ -988,6 +1114,58 @@ const adminMiddleware = async (req, res, next) => {
 };
 
 // ============================================
+// 📤 MULTER CONFIG
+// ============================================
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        let dir = './uploads/posts';
+        if (file.fieldname === 'avatar') dir = './uploads/avatars';
+        else if (file.fieldname === 'story') dir = './uploads/stories';
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 500 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
+        cb(null, allowed.includes(file.mimetype));
+    }
+});
+
+const storyUpload = multer({
+    storage: multer.diskStorage({
+        destination: './uploads/stories',
+        filename: (req, file, cb) => {
+            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
+        }
+    }),
+    limits: { fileSize: 100 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'];
+        cb(null, allowed.includes(file.mimetype));
+    }
+});
+
+const avatarUpload = multer({
+    storage: multer.diskStorage({
+        destination: './uploads/avatars',
+        filename: (req, file, cb) => {
+            cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
+        }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        cb(null, allowed.includes(file.mimetype));
+    }
+});
+
+// ============================================
 // ⚙️ CONFIGURE EXPRESS
 // ============================================
 app.use(helmet({
@@ -1016,18 +1194,7 @@ app.get('/', (req, res) => {
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head><title>🚀 سوشال مدیا</title></head>
-            <body style="font-family: Arial; text-align: center; padding: 50px; background: #0a0a1a; color: #fff;">
-                <h1 style="color: #4361ee;">🚀 سوشال مدیا</h1>
-                <p>سرور با موفقیت اجرا شد!</p>
-                <p>📧 Email: milad.yari1377m@gmail.com</p>
-                <p>🔑 Password: M09145978426M</p>
-            </body>
-            </html>
-        `);
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
     }
 });
 
@@ -1064,7 +1231,7 @@ app.post('/api/auth/register', async (req, res) => {
         following: 0,
         postsCount: 0,
         language: 'fa',
-        theme: 'light',
+        theme: 'dark',
         isOnline: false,
         isAdmin: isAdmin,
         isBanned: false,
@@ -1166,6 +1333,18 @@ app.put('/api/users/:userId/profile', authMiddleware, (req, res) => {
     res.json({ success: true, user: { ...updated, password: undefined } });
 });
 
+app.post('/api/users/avatar', authMiddleware, avatarUpload.single('avatar'), async (req, res) => {
+    const file = req.file;
+    if (!file) {
+        return res.status(400).json({ error: 'فایل الزامی است' });
+    }
+
+    const avatarPath = '/uploads/avatars/' + file.filename;
+    db.updateUser(req.user.userId, { avatar: avatarPath });
+
+    res.json({ success: true, avatar: avatarPath });
+});
+
 app.post('/api/users/:userId/follow', authMiddleware, (req, res) => {
     const { userId } = req.params;
     const result = db.followUser(req.user.userId, userId);
@@ -1202,6 +1381,50 @@ app.get('/api/posts', authMiddleware, (req, res) => {
     res.json(result);
 });
 
+app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) => {
+    try {
+        const { caption, hashtags } = req.body;
+        const file = req.file;
+
+        if (!file) {
+            return res.status(400).json({ error: 'فایل الزامی است' });
+        }
+
+        const result = {
+            postId: db.generateId('post'),
+            userId: req.user.userId,
+            username: req.user.username,
+            fullName: req.user.fullName || req.user.username,
+            image: '/uploads/posts/' + file.filename,
+            caption: caption || '',
+            hashtags: hashtags ? hashtags.split(',').map(h => h.trim()) : [],
+            likes: 0,
+            comments: [],
+            shares: 0,
+            views: 0,
+            isVideo: file.mimetype.startsWith('video/'),
+            createdAt: new Date().toISOString()
+        };
+
+        db.savePost(result);
+        db.updateUser(req.user.userId, { postsCount: (req.user.postsCount || 0) + 1 });
+
+        // Notify followers
+        const followers = db.getFollowers(req.user.userId);
+        for (const follower of followers) {
+            io.to(`user_${follower.userId}`).emit('new-post', {
+                userId: req.user.userId,
+                postId: result.postId
+            });
+        }
+
+        res.status(201).json(result);
+    } catch (error) {
+        console.error('Post creation error:', error);
+        res.status(500).json({ error: 'خطای سرور' });
+    }
+});
+
 app.get('/api/posts/:postId', authMiddleware, (req, res) => {
     const post = db.getPost(req.params.postId);
     if (!post) return res.status(404).json({ error: 'پست یافت نشد' });
@@ -1218,6 +1441,12 @@ app.delete('/api/posts/:postId', authMiddleware, (req, res) => {
     res.json({ success: true });
 });
 
+app.post('/api/posts/:postId/view', authMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const viewed = db.viewPost(postId, req.user.userId);
+    res.json({ success: viewed });
+});
+
 app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
     const { postId } = req.params;
     const result = db.likePost(postId, req.user.userId);
@@ -1225,7 +1454,7 @@ app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
         const post = db.getPost(postId);
         if (post && post.userId !== req.user.userId) {
             db.addNotification({
-                notificationId: encryption.generateId('notif'),
+                notificationId: db.generateId('notif'),
                 userId: post.userId,
                 fromUserId: req.user.userId,
                 type: 'like',
@@ -1246,7 +1475,7 @@ app.post('/api/posts/:postId/comment', authMiddleware, (req, res) => {
     if (!text) return res.status(400).json({ error: 'متن کامنت الزامی است' });
 
     const comment = {
-        commentId: encryption.generateId('cmt'),
+        commentId: db.generateId('cmt'),
         userId: req.user.userId,
         username: req.user.username,
         fullName: req.user.fullName || req.user.username,
@@ -1261,7 +1490,7 @@ app.post('/api/posts/:postId/comment', authMiddleware, (req, res) => {
     const post = db.getPost(postId);
     if (post && post.userId !== req.user.userId) {
         db.addNotification({
-            notificationId: encryption.generateId('notif'),
+            notificationId: db.generateId('notif'),
             userId: post.userId,
             fromUserId: req.user.userId,
             type: 'comment',
@@ -1287,10 +1516,21 @@ app.get('/api/posts/:postId/comments', authMiddleware, (req, res) => {
     res.json(comments);
 });
 
+app.post('/api/posts/:postId/share', authMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const shared = db.sharePost(postId, req.user.userId);
+    res.json({ success: shared });
+});
+
 app.post('/api/posts/:postId/bookmark', authMiddleware, (req, res) => {
     const { postId } = req.params;
     const result = db.bookmarkPost(postId, req.user.userId);
     res.json(result);
+});
+
+app.get('/api/bookmarks', authMiddleware, (req, res) => {
+    const bookmarks = db.getBookmarks(req.user.userId);
+    res.json(bookmarks);
 });
 
 app.get('/api/trends', authMiddleware, (req, res) => {
@@ -1311,6 +1551,38 @@ app.get('/api/stories/:userId', authMiddleware, (req, res) => {
     res.json(stories);
 });
 
+app.post('/api/stories', authMiddleware, storyUpload.single('file'), async (req, res) => {
+    const file = req.file;
+    if (!file) {
+        return res.status(400).json({ error: 'فایل الزامی است' });
+    }
+
+    const story = {
+        storyId: db.generateId('story'),
+        userId: req.user.userId,
+        username: req.user.username,
+        fullName: req.user.fullName || req.user.username,
+        image: '/uploads/stories/' + file.filename,
+        isVideo: file.mimetype.startsWith('video/'),
+        views: 0,
+        viewers: [],
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    };
+
+    db.saveStory(story);
+
+    const followers = db.getFollowers(req.user.userId);
+    for (const follower of followers) {
+        io.to(`user_${follower.userId}`).emit('new-story', {
+            userId: req.user.userId,
+            storyId: story.storyId
+        });
+    }
+
+    res.status(201).json(story);
+});
+
 app.delete('/api/stories/:storyId', authMiddleware, (req, res) => {
     const { storyId } = req.params;
     const deleted = db.deleteStory(storyId, req.user.userId);
@@ -1327,8 +1599,8 @@ app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
 // ============================================
 // 📡 API ROUTES - NOTIFICATIONS
 // ============================================
-app.get('/api/notifications/:userId', authMiddleware, (req, res) => {
-    const notifications = db.getNotifications(req.params.userId);
+app.get('/api/notifications', authMiddleware, (req, res) => {
+    const notifications = db.getNotifications(req.user.userId);
     res.json(notifications);
 });
 
@@ -1336,6 +1608,28 @@ app.post('/api/notifications/:notificationId/read', authMiddleware, (req, res) =
     const { notificationId } = req.params;
     const marked = db.markNotificationRead(notificationId, req.user.userId);
     res.json({ success: marked });
+});
+
+app.post('/api/notifications/read-all', authMiddleware, (req, res) => {
+    const notifications = db.getNotifications(req.user.userId);
+    for (const notif of notifications) {
+        if (!notif.isRead) {
+            db.markNotificationRead(notif.notificationId, req.user.userId);
+        }
+    }
+    res.json({ success: true });
+});
+
+// ============================================
+// 📡 API ROUTES - MESSAGES
+// ============================================
+app.get('/api/messages', authMiddleware, (req, res) => {
+    const { roomId, limit = 50 } = req.query;
+    if (!roomId) {
+        return res.status(400).json({ error: 'roomId الزامی است' });
+    }
+    const messages = db.getMessages(roomId, parseInt(limit));
+    res.json(messages);
 });
 
 // ============================================
@@ -1358,7 +1652,7 @@ app.put('/api/admin/users/:userId/ban', authMiddleware, adminMiddleware, (req, r
 });
 
 app.get('/api/admin/posts', authMiddleware, adminMiddleware, (req, res) => {
-    const result = db.getPosts(1, 1000);
+    const result = db.getPosts(1, 10000);
     res.json(result.posts);
 });
 
@@ -1384,20 +1678,17 @@ app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
 // ============================================
 app.post('/api/live/start', authMiddleware, (req, res) => {
     const { title } = req.body;
-    const user = db.getUser(req.user.userId);
-    if (!user || user.isBanned) {
-        return res.status(403).json({ error: 'کاربر نامعتبر' });
-    }
+    if (!title) return res.status(400).json({ error: 'عنوان لایو الزامی است' });
     const streamId = db.startLiveStream(req.user.userId, title);
-    io.emit('live-started', { streamId: streamId, userId: req.user.userId, title: title });
-    res.json({ success: true, streamId: streamId });
+    io.emit('live-started', { streamId, userId: req.user.userId, title });
+    res.json({ success: true, streamId });
 });
 
 app.post('/api/live/end', authMiddleware, (req, res) => {
     const { streamId } = req.body;
     const ended = db.endLiveStream(streamId);
     if (!ended) return res.status(404).json({ error: 'لایو یافت نشد' });
-    io.emit('live-ended', { streamId: streamId });
+    io.emit('live-ended', { streamId });
     res.json({ success: true });
 });
 
@@ -1443,7 +1734,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('join-room', (data) => {
-        const { roomId, userId } = data;
+        const { roomId } = data;
         socket.join(roomId);
         socket.roomId = roomId;
         const messages = db.getMessages(roomId, 50);
@@ -1458,7 +1749,7 @@ io.on('connection', (socket) => {
             return;
         }
         const msgData = {
-            messageId: encryption.generateId('msg'),
+            messageId: db.generateId('msg'),
             userId: userId,
             username: username,
             message: message,
@@ -1466,6 +1757,11 @@ io.on('connection', (socket) => {
         };
         db.saveMessage(roomId, msgData);
         io.to(roomId).emit('receive-message', msgData);
+    });
+
+    socket.on('typing', (data) => {
+        const { roomId, userId, isTyping } = data;
+        socket.to(roomId).emit('user-typing', { userId, isTyping });
     });
 
     socket.on('join-live', (data) => {
@@ -1477,9 +1773,9 @@ io.on('connection', (socket) => {
     socket.on('live-comment', (data) => {
         const { streamId, userId, username, text } = data;
         io.to(`live_${streamId}`).emit('live-comment', {
-            userId: userId,
-            username: username,
-            text: text,
+            userId,
+            username,
+            text,
             timestamp: new Date().toISOString()
         });
     });
@@ -1529,6 +1825,9 @@ module.exports = {
     encryption,
     authMiddleware,
     adminMiddleware,
+    upload,
+    storyUpload,
+    avatarUpload,
     SHARD_COUNT,
     PORT,
     ADMIN_EMAIL,
