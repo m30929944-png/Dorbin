@@ -1282,23 +1282,6 @@ app.get('/api/users/:userId', authMiddleware, (req, res) => {
     res.json({ ...user, password: undefined });
 });
 
-app.put('/api/users/profile', authMiddleware, async (req, res) => {
-    const { bio, fullName, username } = req.body;
-    const updates = {};
-    if (bio !== undefined) updates.bio = bio;
-    if (fullName !== undefined) updates.fullName = fullName;
-    if (username !== undefined) {
-        const existing = db.getUserByUsername(username);
-        if (existing && existing.userId !== req.user.userId) {
-            return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است' });
-        }
-        updates.username = username;
-    }
-
-    const updated = db.updateUser(req.user.userId, updates);
-    res.json({ success: true, user: { ...updated, password: undefined } });
-});
-
 app.post('/api/users/avatar', authMiddleware, (req, res) => {
     const multer = require('multer');
     const upload = multer({
@@ -1329,52 +1312,6 @@ app.post('/api/users/avatar', authMiddleware, (req, res) => {
 
         res.json({ success: true, avatar: avatarPath });
     });
-});
-
-app.post('/api/users/:userId/follow', authMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const result = db.followUser(req.user.userId, userId);
-    if (!result) return res.status(400).json({ error: 'از قبل دنبال می‌کنید' });
-    const target = db.getUser(userId);
-    io.emit('follow-update', { userId: target.userId, followers: target.followers });
-    res.json({ success: true, followers: target.followers });
-});
-
-app.post('/api/users/:userId/unfollow', authMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const result = db.unfollowUser(req.user.userId, userId);
-    if (!result) return res.status(400).json({ error: 'دنبال نمی‌کنید' });
-    const target = db.getUser(userId);
-    res.json({ success: true, followers: target.followers });
-});
-
-app.get('/api/users/search', authMiddleware, (req, res) => {
-    const { q } = req.query;
-    if (!q) return res.json([]);
-    const results = db.searchUsers(q);
-    res.json(results.map(u => ({ ...u, password: undefined })));
-});
-
-app.get('/api/users/:userId/followers', authMiddleware, (req, res) => {
-    const followers = db.getFollowers(req.params.userId);
-    res.json(followers.map(u => ({ ...u, password: undefined })));
-});
-
-app.get('/api/users/:userId/following', authMiddleware, (req, res) => {
-    const following = db.getFollowing(req.params.userId);
-    res.json(following.map(u => ({ ...u, password: undefined })));
-});
-
-// ============================================
-// 📡 API ROUTES - POSTS
-// ============================================
-app.get('/api/posts', authMiddleware, (req, res) => {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const hashtag = req.query.hashtag || null;
-    const userId = req.query.userId || null;
-    const result = db.getPosts(page, limit, hashtag, userId);
-    res.json(result);
 });
 
 app.post('/api/posts', authMiddleware, (req, res) => {
@@ -1449,12 +1386,6 @@ app.post('/api/posts', authMiddleware, (req, res) => {
     });
 });
 
-app.get('/api/posts/:postId', authMiddleware, (req, res) => {
-    const post = db.getPost(req.params.postId);
-    if (!post) return res.status(404).json({ error: 'پست یافت نشد' });
-    res.json(post);
-});
-
 app.delete('/api/posts/:postId', authMiddleware, (req, res) => {
     const post = db.getPost(req.params.postId);
     if (!post) return res.status(404).json({ error: 'پست یافت نشد' });
@@ -1463,134 +1394,6 @@ app.delete('/api/posts/:postId', authMiddleware, (req, res) => {
     }
     db.deletePost(req.params.postId);
     res.json({ success: true });
-});
-
-app.post('/api/posts/:postId/view', authMiddleware, (req, res) => {
-    const { postId } = req.params;
-    try {
-        const viewed = db.viewPost(postId, req.user.userId);
-        res.json({ success: viewed });
-    } catch (error) {
-        res.json({ success: false });
-    }
-});
-
-app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const result = db.likePost(postId, req.user.userId);
-    if (result.liked) {
-        const post = db.getPost(postId);
-        if (post && post.userId !== req.user.userId) {
-            db.addNotification({
-                notificationId: db.generateId('notif'),
-                userId: post.userId,
-                fromUserId: req.user.userId,
-                type: 'like',
-                postId: postId,
-                isRead: false,
-                createdAt: new Date().toISOString()
-            });
-            const socketId = encryption.getUserSocket(post.userId);
-            if (socketId) {
-                io.to(socketId).emit('notification', { type: 'like', fromUserId: req.user.userId, postId: postId });
-            }
-        }
-    }
-    res.json(result);
-});
-
-app.post('/api/posts/:postId/comment', authMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const { text } = req.body;
-
-    if (!text) return res.status(400).json({ error: 'متن کامنت الزامی است' });
-
-    const comment = {
-        commentId: db.generateId('cmt'),
-        userId: req.user.userId,
-        username: req.user.username,
-        fullName: req.user.fullName || req.user.username,
-        text: text,
-        createdAt: new Date().toISOString(),
-        likes: 0
-    };
-
-    const added = db.addComment(postId, comment);
-    if (!added) return res.status(404).json({ error: 'پست یافت نشد' });
-
-    const post = db.getPost(postId);
-    if (post && post.userId !== req.user.userId) {
-        db.addNotification({
-            notificationId: db.generateId('notif'),
-            userId: post.userId,
-            fromUserId: req.user.userId,
-            type: 'comment',
-            postId: postId,
-            isRead: false,
-            createdAt: new Date().toISOString()
-        });
-        const socketId = encryption.getUserSocket(post.userId);
-        if (socketId) {
-            io.to(socketId).emit('notification', { type: 'comment', fromUserId: req.user.userId, postId: postId });
-        }
-    }
-
-    res.status(201).json(comment);
-});
-
-app.delete('/api/posts/:postId/comments/:commentId', authMiddleware, (req, res) => {
-    const { postId, commentId } = req.params;
-    const deleted = db.deleteComment(postId, commentId, req.user.userId);
-    if (!deleted) return res.status(404).json({ error: 'کامنت یافت نشد' });
-    res.json({ success: true });
-});
-
-app.get('/api/posts/:postId/comments', authMiddleware, (req, res) => {
-    const comments = db.getComments(req.params.postId);
-    res.json(comments);
-});
-
-app.post('/api/posts/:postId/share', authMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const shared = db.sharePost(postId, req.user.userId);
-    res.json({ success: shared });
-});
-
-app.post('/api/posts/:postId/bookmark', authMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const result = db.bookmarkPost(postId, req.user.userId);
-    res.json(result);
-});
-
-app.get('/api/bookmarks', authMiddleware, (req, res) => {
-    const bookmarks = db.getBookmarks(req.user.userId);
-    res.json(bookmarks);
-});
-
-app.get('/api/trends', authMiddleware, (req, res) => {
-    const trends = db.getTrendingHashtags(10);
-    res.json(trends);
-});
-
-// ============================================
-// 📡 API ROUTES - STORIES
-// ============================================
-app.get('/api/stories', authMiddleware, (req, res) => {
-    const stories = db.getStories();
-    res.json(stories);
-});
-
-app.get('/api/stories/:userId', authMiddleware, (req, res) => {
-    const stories = db.getStories(req.params.userId);
-    res.json(stories);
-});
-
-app.get('/api/stories/:storyId', authMiddleware, (req, res) => {
-    const { storyId } = req.params;
-    const idx = db.getShardIndex(storyId);
-    const story = db.shards[idx].stories.find(s => s.storyId === storyId);
-    if (!story) return res.status(404).json({ error: 'استوری یافت نشد' });
-    res.json(story);
 });
 
 app.post('/api/stories', authMiddleware, (req, res) => {
@@ -1666,25 +1469,6 @@ app.delete('/api/stories/:storyId', authMiddleware, (req, res) => {
     res.json({ success: true });
 });
 
-app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
-    const { storyId } = req.params;
-    try {
-        const viewed = db.viewStory(storyId, req.user.userId);
-        if (viewed) {
-            const idx = db.getShardIndex(storyId);
-            const story = db.shards[idx].stories.find(s => s.storyId === storyId);
-            res.json({ success: true, views: story?.views || 0, viewers: story?.viewers || [] });
-        } else {
-            res.json({ success: false });
-        }
-    } catch (error) {
-        res.json({ success: false });
-    }
-});
-
-// ============================================
-// 📡 API ROUTES - MESSAGES & CHAT
-// ============================================
 app.get('/api/messages', authMiddleware, (req, res) => {
     const { roomId, limit = 50 } = req.query;
     if (!roomId) {
@@ -1711,54 +1495,6 @@ app.post('/api/messages', authMiddleware, (req, res) => {
     res.json({ success: true, message: msgData });
 });
 
-app.get('/api/chat/users', authMiddleware, (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const rooms = [];
-        const chatUsers = [];
-        
-        // Get all rooms from database
-        for (let i = 0; i < db.SHARD_COUNT; i++) {
-            for (const [roomId, messages] of db.shards[i].messages) {
-                if (roomId.includes(userId)) {
-                    const participants = roomId.split('_');
-                    const otherId = participants.find(id => id !== userId);
-                    if (otherId) {
-                        const user = db.getUser(otherId);
-                        if (user && !user.isBanned) {
-                            const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-                            chatUsers.push({
-                                userId: user.userId,
-                                username: user.username,
-                                fullName: user.fullName || user.username,
-                                avatar: user.avatar || '',
-                                isOnline: encryption.isOnline(user.userId),
-                                lastMessage: lastMsg,
-                                unreadCount: 0
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Sort by last message
-        chatUsers.sort((a, b) => {
-            const timeA = a.lastMessage ? new Date(a.lastMessage.timestamp).getTime() : 0;
-            const timeB = b.lastMessage ? new Date(b.lastMessage.timestamp).getTime() : 0;
-            return timeB - timeA;
-        });
-        
-        res.json(chatUsers);
-    } catch (error) {
-        console.error('Get chat users error:', error);
-        res.status(500).json({ error: 'خطای سرور' });
-    }
-});
-
-// ============================================
-// 📡 API ROUTES - NOTIFICATIONS
-// ============================================
 app.get('/api/notifications', authMiddleware, (req, res) => {
     const notifications = db.getNotifications(req.user.userId);
     res.json(notifications);
@@ -1823,68 +1559,6 @@ app.post('/api/live/leave', authMiddleware, (req, res) => {
 // ============================================
 // 📡 API ROUTES - ADMIN
 // ============================================
-app.get('/api/admin/users', authMiddleware, adminMiddleware, (req, res) => {
-    const users = db.getAllUsers().map(u => ({ ...u, password: undefined }));
-    res.json(users);
-});
-
-app.put('/api/admin/users/:userId/ban', authMiddleware, adminMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const { banned } = req.body;
-    const user = db.getUser(userId);
-    if (!user) return res.status(404).json({ error: 'کاربر یافت نشد' });
-    if (user.isAdmin) return res.status(403).json({ error: 'نمی‌توان ادمین را مسدود کرد' });
-    db.updateUser(userId, { isBanned: banned });
-    if (banned) encryption.onlineUsers.delete(userId);
-    res.json({ success: true });
-});
-
-app.delete('/api/admin/users/:userId', authMiddleware, adminMiddleware, (req, res) => {
-    const { userId } = req.params;
-    const user = db.getUser(userId);
-    if (!user) return res.status(404).json({ error: 'کاربر یافت نشد' });
-    if (user.isAdmin) return res.status(403).json({ error: 'نمی‌توان ادمین را حذف کرد' });
-    
-    const posts = db.getPosts(1, 10000, null, userId);
-    for (const post of posts.posts) {
-        db.deletePost(post.postId);
-    }
-    const stories = db.getStories(userId);
-    for (const story of stories) {
-        db.deleteStory(story.storyId, userId);
-    }
-    db.deleteUser(userId);
-    res.json({ success: true });
-});
-
-app.get('/api/admin/posts', authMiddleware, adminMiddleware, (req, res) => {
-    const result = db.getPosts(1, 10000);
-    res.json(result.posts);
-});
-
-app.delete('/api/admin/posts/:postId', authMiddleware, adminMiddleware, (req, res) => {
-    const { postId } = req.params;
-    const deleted = db.deletePost(postId);
-    res.json({ success: deleted });
-});
-
-app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
-    const stats = db.getStats();
-    res.json(stats);
-});
-
-app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, (req, res) => {
-    const { message } = req.body;
-    if (!message) return res.status(400).json({ error: 'متن پیام الزامی است' });
-    io.emit('broadcast', { message, from: req.user.username, timestamp: new Date().toISOString() });
-    res.json({ success: true });
-});
-
-app.post('/api/admin/cleanup', authMiddleware, adminMiddleware, (req, res) => {
-    db.cleanup();
-    res.json({ success: true });
-});
-
 // ============================================
 // 💬 WEBSOCKET
 // ============================================
