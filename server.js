@@ -48,10 +48,10 @@ function log(message, type = 'INFO') {
 }
 
 // ============================================
-// 🔐 رمزنگاری نظامی درجه 1
+// 🔐 رمزنگاری نظامی
 // ============================================
 const SECRET_KEY = crypto.randomBytes(64).toString('hex');
-const MASTER_KEY = crypto.createHash('sha512').update(SECRET_KEY + 'SOCIAL_MEDIA_2026').digest();
+const MASTER_KEY = crypto.createHash('sha512').update(SECRET_KEY + 'SOCIAL_MEDIA_2026_SUPER_SECURE').digest();
 
 function hashPassword(password) {
     return crypto.createHash('sha512').update(password + SECRET_KEY + MASTER_KEY.toString('hex')).digest('hex');
@@ -791,7 +791,7 @@ app.post('/api/admin/add-shard', adminAuth, (req, res) => {
 });
 
 // ============================================
-// 📸 POSTS (User Routes)
+// 📸 POSTS
 // ============================================
 
 const storage = multer.diskStorage({
@@ -808,7 +808,7 @@ const upload = multer({
     }
 });
 
-app.get('/api/posts', async (req, res) => {
+app.get('/api/posts', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const hashtag = req.query.hashtag || null;
@@ -818,7 +818,7 @@ app.get('/api/posts', async (req, res) => {
     res.json(result);
 });
 
-app.get('/api/posts/:postId', async (req, res) => {
+app.get('/api/posts/:postId', (req, res) => {
     const post = db.getPost(req.params.postId);
     if (!post) return res.status(404).json({ error: 'Post not found' });
     db.incrementView(req.params.postId);
@@ -1100,7 +1100,6 @@ app.get('/', (req, res) => {
         :root {
             --primary: #6C63FF;
             --primary-dark: #5A52D5;
-            --primary-light: #8B83FF;
             --secondary: #FF6B6B;
             --success: #2ECC71;
             --danger: #E74C3C;
@@ -1124,7 +1123,7 @@ app.get('/', (req, res) => {
             --glass-bg: rgba(26,26,46,0.85);
             --glass-border: rgba(108,99,255,0.2);
         }
-        body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; overflow: hidden; display: flex; flex-direction: column; transition: var(--transition); -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; overflow: hidden; display: flex; flex-direction: column; transition: var(--transition); }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
@@ -1138,12 +1137,11 @@ app.get('/', (req, res) => {
         .login-box .subtitle { text-align: center; color: var(--text-secondary); font-size: 14px; margin-bottom: 25px; }
         .login-box input { width: 100%; padding: 14px 18px; margin: 8px 0; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 15px; background: var(--bg); color: var(--text); direction: rtl; transition: var(--transition); font-family: var(--font); }
         .login-box input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 4px rgba(108,99,255,0.15); }
-        .login-box .btn-primary { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 700; cursor: pointer; transition: var(--transition); margin-top: 12px; font-family: var(--font); position: relative; overflow: hidden; }
+        .login-box .btn-primary { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 700; cursor: pointer; transition: var(--transition); margin-top: 12px; font-family: var(--font); }
         .login-box .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(108,99,255,0.4); }
         .login-box .toggle-link { color: var(--primary); cursor: pointer; text-align: center; margin-top: 16px; font-size: 14px; font-weight: 500; transition: var(--transition); }
         .login-box .toggle-link:hover { color: var(--primary-light); text-decoration: underline; }
         .login-box .error { color: var(--danger); font-size: 13px; margin: 8px 0; text-align: center; }
-        .login-box .info { color: var(--text-secondary); font-size: 12px; margin: 4px 0; text-align: center; }
         #mainApp { display: none; flex-direction: column; height: 100vh; background: var(--bg); }
         .header { background: var(--glass-bg); backdrop-filter: blur(20px); border-bottom: 1px solid var(--glass-border); padding: 0 20px; height: var(--header-height); display: flex; align-items: center; gap: 16px; flex-shrink: 0; position: sticky; top: 0; z-index: 100; }
         .header .logo { font-size: 22px; font-weight: 900; color: var(--text); display: flex; align-items: center; gap: 8px; }
@@ -1152,7 +1150,6 @@ app.get('/', (req, res) => {
         .search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(108,99,255,0.1); }
         .search-box input { border: none; background: transparent; outline: none; width: 100%; font-size: 14px; color: var(--text); font-family: var(--font); }
         .search-box input::placeholder { color: var(--text-muted); }
-        .search-box i { color: var(--text-muted); }
         .header-right { display: flex; gap: 18px; font-size: 22px; color: var(--text); }
         .header-right i { cursor: pointer; transition: var(--transition); padding: 8px; border-radius: 50%; }
         .header-right i:hover { background: var(--bg-hover); color: var(--primary); transform: scale(1.05); }
@@ -1199,7 +1196,7 @@ app.get('/', (req, res) => {
         .modal-footer input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(108,99,255,0.1); }
         .modal-footer button { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; border: none; padding: 12px 28px; border-radius: 30px; font-weight: 700; cursor: pointer; transition: var(--transition); font-family: var(--font); }
         .modal-footer button:hover { transform: scale(1.02); box-shadow: 0 4px 16px rgba(108,99,255,0.3); }
-        .comment-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); animation: fadeIn 0.3s ease; }
+        .comment-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--border); }
         .comment-item:last-child { border-bottom: none; }
         .comment-avatar { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: var(--border); }
         .comment-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -1305,7 +1302,6 @@ app.get('/', (req, res) => {
         .admin-card h4 i { color: var(--primary); margin-left: 8px; }
         .admin-card .admin-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
         .admin-card .admin-item:last-child { border-bottom: none; }
-        .admin-card .admin-item .value { font-weight: 700; color: var(--primary); }
         .admin-btn { padding: 6px 16px; border: none; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 700; transition: var(--transition); font-family: var(--font); }
         .admin-btn.danger { background: var(--danger); color: white; }
         .admin-btn.success { background: var(--success); color: white; }
@@ -1445,7 +1441,7 @@ app.get('/', (req, res) => {
         </div>
     </div>
 
-    <!-- Admin Panel (Separate) -->
+    <!-- Admin Panel -->
     <div class="admin-panel" id="adminPanel">
         <div class="admin-header"><h2><i class="fas fa-crown"></i> پنل مدیریت</h2><button class="close-admin" id="closeAdmin">&times;</button></div>
         <div class="admin-card">
@@ -1496,9 +1492,6 @@ app.get('/', (req, res) => {
 </div>
 
 <script>
-// ============================================
-// 🌐 STATE
-// ============================================
 const STATE = {
     token: localStorage.getItem('token') || null,
     user: null,
@@ -1542,9 +1535,6 @@ function formatNumber(num) {
     return num;
 }
 
-// ============================================
-// 🔐 AUTH
-// ============================================
 async function registerUser(username, fullName, email, password) {
     const res = await fetch('/api/auth/register', {
         method: 'POST',
@@ -1589,9 +1579,6 @@ async function getCurrentUser() {
     } catch { return null; }
 }
 
-// ============================================
-// 📡 API
-// ============================================
 async function getPosts(page = 1, hashtag = null) {
     let url = '/api/posts?page=' + page + '&limit=20';
     if (hashtag) url += '&hashtag=' + encodeURIComponent(hashtag);
@@ -1742,9 +1729,6 @@ async function addShard() {
     return await res.json();
 }
 
-// ============================================
-// 💬 SOCKET
-// ============================================
 function connectSocket() {
     if (STATE.socket) return;
     STATE.socket = io();
@@ -1784,9 +1768,6 @@ function connectSocket() {
     STATE.socket.on('error', (data) => { showToast('❌ ' + data.message); });
 }
 
-// ============================================
-// 📋 RENDER FUNCTIONS
-// ============================================
 function createPostElement(post) {
     const div = document.createElement('div');
     div.className = 'post-item';
@@ -1875,9 +1856,6 @@ function createChatUserElement(user) {
     return div;
 }
 
-// ============================================
-// 📥 LOAD FUNCTIONS
-// ============================================
 async function loadPosts(page = 1, hashtag = null) {
     const gallery = $('#gallery');
     const loading = $('#loadingIndicator');
@@ -1996,9 +1974,6 @@ async function renderChatUsers() {
     }
 }
 
-// ============================================
-// 🎯 ACTION FUNCTIONS
-// ============================================
 async function handleLike(postId) {
     if (STATE.user?.isBanned) { showToast('❌ شما مسدود شده‌اید'); return; }
     const result = await likePost(postId);
@@ -2100,9 +2075,6 @@ window.deletePostAdmin = async function(postId) {
     if (result.success) { showToast('✅ پست حذف شد'); loadAdminPanel(); loadPosts(1); }
 };
 
-// ============================================
-// 💬 CHAT
-// ============================================
 function startChat(userId, username) {
     if (STATE.user?.isBanned) { showToast('❌ شما مسدود شده‌اید'); return; }
     STATE.currentChatUser = userId;
@@ -2140,9 +2112,6 @@ function displayChatMessage(userId, username, message, timestamp) {
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// ============================================
-// 🎬 EVENT LISTENERS
-// ============================================
 $('#loginBtn').addEventListener('click', async () => {
     clearError();
     const username = $('#loginUsername').value.trim();
@@ -2186,7 +2155,12 @@ $('#loginBtn').addEventListener('click', async () => {
 
 $('#toggleAuth').addEventListener('click', () => {
     STATE.isLogin = !STATE.isLogin;
-    $('#loginTitle').textContent = STATE.isLogin ? '🔐 ورود' : '📝 ثبت نام';
+    document.querySelector('.login-box h2')?.remove();
+    const loginBox = document.querySelector('.login-box');
+    const title = document.createElement('div');
+    title.className = 'logo';
+    title.innerHTML = STATE.isLogin ? '🔐 <span>ورود</span>' : '📝 <span>ثبت نام</span>';
+    loginBox.insertBefore(title, loginBox.firstChild);
     $('#loginBtn').textContent = STATE.isLogin ? 'ورود' : 'ثبت نام';
     $('#toggleAuth').textContent = STATE.isLogin ? 'ثبت نام ندارید؟ ثبت نام کنید' : 'حساب دارید؟ وارد شوید';
     $('#loginUsername').style.display = STATE.isLogin ? 'none' : 'block';
@@ -2197,7 +2171,6 @@ $('#toggleAuth').addEventListener('click', () => {
 $('#loginPassword').addEventListener('keypress', (e) => { if (e.key === 'Enter') $('#loginBtn').click(); });
 $('#menuLogout').addEventListener('click', logoutUser);
 
-// Profile
 $('#profileNavBtn').addEventListener('click', () => { $('#profilePage').classList.add('active'); loadProfile(); });
 $('#closeProfile').addEventListener('click', () => { $('#profilePage').classList.remove('active'); });
 $('#profilePage').addEventListener('click', (e) => { if (e.target === e.currentTarget) $('#profilePage').classList.remove('active'); });
@@ -2218,7 +2191,6 @@ $('#saveUsernameBtn').addEventListener('click', async () => {
     if (result.success) { $('#profileUsername').textContent = username; $('#usernameInput').value = ''; STATE.user.username = username; showToast('✅ نام کاربری تغییر کرد!'); }
 });
 
-// Upload
 $('#uploadNavBtn').addEventListener('click', () => {
     if (STATE.user?.isBanned) { showToast('❌ شما مسدود شده‌اید'); return; }
     $('#uploadPage').classList.add('active');
@@ -2272,7 +2244,6 @@ function resetUpload() {
     $('#hashtagInput').value = '';
 }
 
-// Comments
 $('#modalSendComment').addEventListener('click', async () => {
     const input = $('#modalCommentInput');
     const text = input.value.trim();
@@ -2288,7 +2259,6 @@ $('#modalCommentInput').addEventListener('keypress', (e) => { if (e.key === 'Ent
 $('#closeModal').addEventListener('click', () => { $('#commentModal').classList.remove('active'); STATE.currentPostId = null; });
 $('#commentModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) { $('#commentModal').classList.remove('active'); STATE.currentPostId = null; } });
 
-// Chat
 $('#chatOpenBtn').addEventListener('click', () => { $('#chatInterface').classList.add('active'); renderChatUsers(); });
 $('#closeChatBtn').addEventListener('click', () => {
     $('#chatInterface').classList.remove('active');
@@ -2297,7 +2267,6 @@ $('#closeChatBtn').addEventListener('click', () => {
 $('#chatSendBtn').addEventListener('click', sendChatMessage);
 $('#chatInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendChatMessage(); });
 
-// Side Menu
 $('#menuIcon').addEventListener('click', () => { $('#sideMenu').classList.add('active'); $('#menuOverlay').classList.add('active'); });
 $('#closeMenu').addEventListener('click', () => { $('#sideMenu').classList.remove('active'); $('#menuOverlay').classList.remove('active'); });
 $('#menuOverlay').addEventListener('click', () => { $('#sideMenu').classList.remove('active'); $('#menuOverlay').classList.remove('active'); });
@@ -2307,7 +2276,6 @@ $('#menuTheme').addEventListener('click', () => { toggleTheme(); $('#sideMenu').
 $('#menuAdmin').addEventListener('click', () => { $('#sideMenu').classList.remove('active'); $('#menuOverlay').classList.remove('active'); $('#adminPanel').classList.add('active'); loadAdminPanel(); });
 $('#menuLogout').addEventListener('click', logoutUser);
 
-// Admin
 $('#adminNavBtn').addEventListener('click', () => { $('#adminPanel').classList.toggle('active'); if ($('#adminPanel').classList.contains('active')) loadAdminPanel(); });
 $('#closeAdmin').addEventListener('click', () => { $('#adminPanel').classList.remove('active'); });
 $('#adminPanel').addEventListener('click', (e) => { if (e.target === e.currentTarget) $('#adminPanel').classList.remove('active'); });
@@ -2323,10 +2291,8 @@ $('#addShardBtn').addEventListener('click', async () => {
     if (result.success) { showToast('✅ شارد جدید اضافه شد! تعداد: ' + result.shardCount); loadAdminPanel(); }
 });
 
-// Explore
 $('#exploreNavBtn').addEventListener('click', () => { $('#exploreNavBtn').classList.toggle('active'); loadPosts(1); });
 
-// Search
 $('#searchInput').addEventListener('input', () => {
     const query = $('#searchInput').value.trim();
     if (query.startsWith('#')) { loadPosts(1, query.substring(1)); } 
@@ -2342,7 +2308,6 @@ $('#searchInput').addEventListener('input', () => {
     }
 });
 
-// Theme
 function toggleTheme() {
     const isDark = document.documentElement.getAttribute('data-theme') !== 'dark';
     document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
@@ -2350,9 +2315,6 @@ function toggleTheme() {
     showToast(isDark ? '🌙 تم تاریک' : '☀️ تم روشن');
 }
 
-// ============================================
-// 🚀 INIT
-// ============================================
 document.addEventListener('DOMContentLoaded', async () => {
     if (localStorage.getItem('theme') === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
