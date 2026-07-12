@@ -1,8 +1,5 @@
 // ============================================
-// 🚀 ULTIMATE CORE ENGINE - m1.js
-// ============================================
-// این فایل شامل: سرور اصلی، دیتابیس ۱۰۰ شاردی،
-// رمزنگاری نظامی، مدیریت کاربران، احراز هویت
+// 🚀 ULTIMATE SOCIAL MEDIA - m1.js (COMPLETE)
 // ============================================
 
 const express = require('express');
@@ -34,7 +31,6 @@ const io = socketIo(server, {
 const PORT = process.env.PORT || 3000;
 const SHARD_COUNT = 100;
 const CACHE_TTL = 5 * 60 * 1000;
-const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
 const ADMIN_EMAIL = 'milad.yari1377m@gmail.com';
 const ADMIN_PASSWORD = 'M09145978426M';
 const ADMIN_USERNAME = 'milad_admin';
@@ -123,7 +119,6 @@ class MilitaryEncryption {
         return [user1, user2].sort().join('_');
     }
 
-    // ===== SESSION MANAGEMENT =====
     createSession(userId) {
         const token = this.generateToken();
         this.sessions.set(token, userId);
@@ -210,7 +205,6 @@ class UltraShardedDatabase {
         return `${prefix}_${crypto.randomBytes(16).toString('hex')}`;
     }
 
-    // ===== CACHE SYSTEM =====
     getCache(key) {
         const cached = this.cache.get(key);
         if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
@@ -246,7 +240,6 @@ class UltraShardedDatabase {
         return true;
     }
 
-    // ===== TRANSACTION LOGGING =====
     logTransaction(operation, data) {
         this.transactionLog.push({
             id: this.generateId('txn'),
@@ -259,7 +252,6 @@ class UltraShardedDatabase {
         }
     }
 
-    // ===== AUTO BACKUP =====
     startAutoBackup() {
         this.backupInterval = setInterval(() => {
             this.createBackup();
@@ -297,7 +289,6 @@ class UltraShardedDatabase {
         }
     }
 
-    // ===== CLEANUP =====
     startCleanupScheduler() {
         setInterval(() => this.cleanup(), 60 * 60 * 1000);
     }
@@ -408,6 +399,478 @@ class UltraShardedDatabase {
             }
         }
         return results;
+    }
+
+    // ===== FOLLOW SYSTEM =====
+    followUser(userId, targetId) {
+        const userIdx = this.getShardIndex(userId);
+        const targetIdx = this.getShardIndex(targetId);
+        
+        if (!this.shards[userIdx].users.has(userId) || !this.shards[targetIdx].users.has(targetId)) {
+            return false;
+        }
+
+        if (!this.shards[userIdx].following.has(userId)) {
+            this.shards[userIdx].following.set(userId, new Set());
+        }
+        if (!this.shards[targetIdx].followers.has(targetId)) {
+            this.shards[targetIdx].followers.set(targetId, new Set());
+        }
+
+        const following = this.shards[userIdx].following.get(userId);
+        const followers = this.shards[targetIdx].followers.get(targetId);
+
+        if (following.has(targetId)) return false;
+
+        following.add(targetId);
+        followers.add(userId);
+
+        const user = this.shards[userIdx].users.get(userId);
+        const target = this.shards[targetIdx].users.get(targetId);
+        user.following = (user.following || 0) + 1;
+        target.followers = (target.followers || 0) + 1;
+
+        this.setCache(`user:${userId}`, user);
+        this.setCache(`user:${targetId}`, target);
+        this.logTransaction('followUser', { userId, targetId });
+
+        return true;
+    }
+
+    unfollowUser(userId, targetId) {
+        const userIdx = this.getShardIndex(userId);
+        const targetIdx = this.getShardIndex(targetId);
+        
+        if (!this.shards[userIdx].following.has(userId)) return false;
+        
+        const following = this.shards[userIdx].following.get(userId);
+        if (!following.has(targetId)) return false;
+
+        following.delete(targetId);
+        
+        if (this.shards[targetIdx].followers.has(targetId)) {
+            this.shards[targetIdx].followers.get(targetId).delete(userId);
+        }
+
+        const user = this.shards[userIdx].users.get(userId);
+        const target = this.shards[targetIdx].users.get(targetId);
+        user.following = Math.max((user.following || 0) - 1, 0);
+        target.followers = Math.max((target.followers || 0) - 1, 0);
+
+        this.setCache(`user:${userId}`, user);
+        this.setCache(`user:${targetId}`, target);
+        this.logTransaction('unfollowUser', { userId, targetId });
+
+        return true;
+    }
+
+    getFollowers(userId) {
+        const idx = this.getShardIndex(userId);
+        if (!this.shards[idx].followers.has(userId)) return [];
+        const followers = this.shards[idx].followers.get(userId);
+        const result = [];
+        for (const id of followers) {
+            const user = this.getUser(id);
+            if (user) result.push(user);
+        }
+        return result;
+    }
+
+    getFollowing(userId) {
+        const idx = this.getShardIndex(userId);
+        if (!this.shards[idx].following.has(userId)) return [];
+        const following = this.shards[idx].following.get(userId);
+        const result = [];
+        for (const id of following) {
+            const user = this.getUser(id);
+            if (user) result.push(user);
+        }
+        return result;
+    }
+
+    // ===== POSTS =====
+    savePost(post) {
+        const idx = this.getShardIndex(post.postId);
+        this.shards[idx].posts.unshift(post);
+        this.setCache(`post:${post.postId}`, post);
+
+        if (post.hashtags && post.hashtags.length > 0) {
+            for (const tag of post.hashtags) {
+                const tagKey = tag.toLowerCase();
+                if (!this.shards[idx].hashtags.has(tagKey)) {
+                    this.shards[idx].hashtags.set(tagKey, new Set());
+                }
+                this.shards[idx].hashtags.get(tagKey).add(post.postId);
+            }
+        }
+        this.logTransaction('savePost', { postId: post.postId });
+        return post;
+    }
+
+    getPosts(page = 1, limit = 20, hashtag = null, userId = null) {
+        const cacheKey = `posts:${page}:${limit}:${hashtag || 'all'}:${userId || 'all'}`;
+        const cached = this.getCache(cacheKey);
+        if (cached) return cached;
+
+        let allPosts = [];
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            allPosts = allPosts.concat(this.shards[i].posts);
+        }
+
+        if (hashtag) {
+            const tag = hashtag.toLowerCase();
+            allPosts = allPosts.filter(p => 
+                p.hashtags && p.hashtags.some(h => h.toLowerCase() === tag)
+            );
+        }
+
+        if (userId) {
+            allPosts = allPosts.filter(p => p.userId === userId);
+        }
+
+        allPosts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        const start = (page - 1) * limit;
+        const result = {
+            posts: allPosts.slice(start, start + limit),
+            total: allPosts.length,
+            page: page,
+            totalPages: Math.ceil(allPosts.length / limit)
+        };
+        
+        this.setCache(cacheKey, result);
+        return result;
+    }
+
+    getPost(postId) {
+        const cached = this.getCache(`post:${postId}`);
+        if (cached) return cached;
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (post) this.setCache(`post:${postId}`, post);
+        return post || null;
+    }
+
+    deletePost(postId) {
+        const idx = this.getShardIndex(postId);
+        const index = this.shards[idx].posts.findIndex(p => p.postId === postId);
+        if (index !== -1) {
+            const post = this.shards[idx].posts[index];
+            if (post.hashtags) {
+                for (const tag of post.hashtags) {
+                    const tagKey = tag.toLowerCase();
+                    if (this.shards[idx].hashtags.has(tagKey)) {
+                        this.shards[idx].hashtags.get(tagKey).delete(postId);
+                    }
+                }
+            }
+            this.shards[idx].posts.splice(index, 1);
+            this.cache.delete(`post:${postId}`);
+            this.logTransaction('deletePost', { postId });
+            return true;
+        }
+        return false;
+    }
+
+    likePost(postId, userId) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post) return { liked: false, likes: 0 };
+        
+        const likeKey = `${postId}_${userId}`;
+        if (this.shards[idx].likes.has(likeKey)) {
+            this.shards[idx].likes.delete(likeKey);
+            post.likes = Math.max((post.likes || 0) - 1, 0);
+            this.setCache(`post:${postId}`, post);
+            return { liked: false, likes: post.likes };
+        } else {
+            this.shards[idx].likes.add(likeKey);
+            post.likes = (post.likes || 0) + 1;
+            this.setCache(`post:${postId}`, post);
+            return { liked: true, likes: post.likes };
+        }
+    }
+
+    viewPost(postId, userId) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post) return false;
+        
+        const viewKey = `${postId}_${userId}`;
+        if (!this.shards[idx].views.has(viewKey)) {
+            this.shards[idx].views.add(viewKey);
+            post.views = (post.views || 0) + 1;
+            this.setCache(`post:${postId}`, post);
+            return true;
+        }
+        return false;
+    }
+
+    sharePost(postId, userId) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post) return false;
+        
+        const shareKey = `${postId}_${userId}`;
+        if (!this.shards[idx].shares.has(shareKey)) {
+            this.shards[idx].shares.add(shareKey);
+            post.shares = (post.shares || 0) + 1;
+            this.setCache(`post:${postId}`, post);
+            return true;
+        }
+        return false;
+    }
+
+    // ===== COMMENTS =====
+    addComment(postId, comment) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post) return false;
+        if (!post.comments) post.comments = [];
+        post.comments.push(comment);
+        this.setCache(`post:${postId}`, post);
+        this.logTransaction('addComment', { postId, commentId: comment.commentId });
+        return true;
+    }
+
+    deleteComment(postId, commentId, userId) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post || !post.comments) return false;
+        const index = post.comments.findIndex(c => c.commentId === commentId && c.userId === userId);
+        if (index === -1) return false;
+        post.comments.splice(index, 1);
+        this.setCache(`post:${postId}`, post);
+        this.logTransaction('deleteComment', { postId, commentId });
+        return true;
+    }
+
+    editComment(postId, commentId, userId, newText) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post || !post.comments) return false;
+        const comment = post.comments.find(c => c.commentId === commentId && c.userId === userId);
+        if (!comment) return false;
+        comment.text = newText;
+        comment.editedAt = new Date().toISOString();
+        this.setCache(`post:${postId}`, post);
+        return true;
+    }
+
+    getComments(postId) {
+        const idx = this.getShardIndex(postId);
+        const post = this.shards[idx].posts.find(p => p.postId === postId);
+        if (!post) return [];
+        return post.comments || [];
+    }
+
+    // ===== STORIES =====
+    saveStory(story) {
+        const idx = this.getShardIndex(story.storyId);
+        this.shards[idx].stories.push(story);
+        this.setCache(`story:${story.storyId}`, story);
+        this.logTransaction('saveStory', { storyId: story.storyId });
+        return story;
+    }
+
+    getStories(userId = null) {
+        let allStories = [];
+        const now = Date.now();
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            let stories = this.shards[i].stories.filter(s => {
+                const age = now - new Date(s.createdAt).getTime();
+                return age < 24 * 60 * 60 * 1000;
+            });
+            if (userId) {
+                stories = stories.filter(s => s.userId === userId);
+            }
+            allStories = allStories.concat(stories);
+        }
+        return allStories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    }
+
+    deleteStory(storyId, userId) {
+        const idx = this.getShardIndex(storyId);
+        const index = this.shards[idx].stories.findIndex(s => s.storyId === storyId && s.userId === userId);
+        if (index !== -1) {
+            this.shards[idx].stories.splice(index, 1);
+            this.cache.delete(`story:${storyId}`);
+            this.logTransaction('deleteStory', { storyId });
+            return true;
+        }
+        return false;
+    }
+
+    viewStory(storyId, userId) {
+        const idx = this.getShardIndex(storyId);
+        const story = this.shards[idx].stories.find(s => s.storyId === storyId);
+        if (story && !story.viewers) {
+            story.viewers = [];
+        }
+        if (story && !story.viewers.includes(userId)) {
+            story.views = (story.views || 0) + 1;
+            story.viewers.push(userId);
+            this.setCache(`story:${storyId}`, story);
+            return true;
+        }
+        return false;
+    }
+
+    // ===== MESSAGES =====
+    saveMessage(roomId, message) {
+        const idx = this.getShardIndex(roomId);
+        if (!this.shards[idx].messages.has(roomId)) {
+            this.shards[idx].messages.set(roomId, []);
+        }
+        this.shards[idx].messages.get(roomId).push(message);
+        this.logTransaction('saveMessage', { roomId, messageId: message.messageId });
+        return message;
+    }
+
+    getMessages(roomId, limit = 50) {
+        const idx = this.getShardIndex(roomId);
+        if (!this.shards[idx].messages.has(roomId)) return [];
+        return this.shards[idx].messages.get(roomId).slice(-limit);
+    }
+
+    // ===== BOOKMARKS =====
+    bookmarkPost(postId, userId) {
+        const idx = this.getShardIndex(userId);
+        if (!this.shards[idx].bookmarks.has(userId)) {
+            this.shards[idx].bookmarks.set(userId, new Set());
+        }
+        const bookmarks = this.shards[idx].bookmarks.get(userId);
+        if (bookmarks.has(postId)) {
+            bookmarks.delete(postId);
+            return { bookmarked: false };
+        } else {
+            bookmarks.add(postId);
+            return { bookmarked: true };
+        }
+    }
+
+    getBookmarks(userId) {
+        const idx = this.getShardIndex(userId);
+        if (!this.shards[idx].bookmarks.has(userId)) return [];
+        const bookmarks = this.shards[idx].bookmarks.get(userId);
+        const result = [];
+        for (const id of bookmarks) {
+            const post = this.getPost(id);
+            if (post) result.push(post);
+        }
+        return result;
+    }
+
+    // ===== HASHTAGS =====
+    getTrendingHashtags(limit = 10) {
+        const allHashtags = new Map();
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            for (const [tag, posts] of this.shards[i].hashtags) {
+                if (!allHashtags.has(tag)) {
+                    allHashtags.set(tag, 0);
+                }
+                allHashtags.set(tag, allHashtags.get(tag) + posts.size);
+            }
+        }
+        const sorted = Array.from(allHashtags.entries()).sort((a, b) => b[1] - a[1]);
+        return sorted.slice(0, limit).map(([tag, count]) => ({ tag, count }));
+    }
+
+    // ===== NOTIFICATIONS =====
+    addNotification(notification) {
+        const idx = this.getShardIndex(notification.userId);
+        this.shards[idx].notifications.push(notification);
+        return notification;
+    }
+
+    getNotifications(userId, limit = 50) {
+        const idx = this.getShardIndex(userId);
+        const notifs = this.shards[idx].notifications || [];
+        return notifs.slice(-limit).reverse();
+    }
+
+    markNotificationRead(notificationId, userId) {
+        const idx = this.getShardIndex(userId);
+        const notif = this.shards[idx].notifications.find(n => n.notificationId === notificationId);
+        if (notif) {
+            notif.isRead = true;
+            return true;
+        }
+        return false;
+    }
+
+    // ===== LIVE STREAMS =====
+    startLiveStream(userId, title) {
+        const idx = this.getShardIndex(userId);
+        const streamId = `live_${crypto.randomBytes(16).toString('hex')}`;
+        const stream = {
+            streamId,
+            userId,
+            title,
+            viewers: new Set(),
+            isLive: true,
+            startedAt: new Date().toISOString(),
+            endedAt: null,
+            maxViewers: 0,
+            totalViewers: 0
+        };
+        this.shards[idx].liveStreams.set(streamId, stream);
+        this.logTransaction('startLiveStream', { streamId, userId });
+        return streamId;
+    }
+
+    endLiveStream(streamId) {
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            if (this.shards[i].liveStreams.has(streamId)) {
+                const stream = this.shards[i].liveStreams.get(streamId);
+                stream.isLive = false;
+                stream.endedAt = new Date().toISOString();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    getLiveStreams() {
+        const allStreams = [];
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            for (const [key, stream] of this.shards[i].liveStreams) {
+                if (stream.isLive) {
+                    allStreams.push({
+                        ...stream,
+                        viewers: Array.from(stream.viewers)
+                    });
+                }
+            }
+        }
+        return allStreams;
+    }
+
+    joinLiveStream(streamId, userId) {
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            if (this.shards[i].liveStreams.has(streamId)) {
+                const stream = this.shards[i].liveStreams.get(streamId);
+                if (stream.isLive && !stream.viewers.has(userId)) {
+                    stream.viewers.add(userId);
+                    stream.totalViewers++;
+                    if (stream.viewers.size > stream.maxViewers) {
+                        stream.maxViewers = stream.viewers.size;
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    leaveLiveStream(streamId, userId) {
+        for (let i = 0; i < this.SHARD_COUNT; i++) {
+            if (this.shards[i].liveStreams.has(streamId)) {
+                const stream = this.shards[i].liveStreams.get(streamId);
+                stream.viewers.delete(userId);
+                return true;
+            }
+        }
+        return false;
     }
 
     // ===== STATS =====
@@ -553,7 +1016,18 @@ app.get('/', (req, res) => {
     if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
     } else {
-        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>🚀 سوشال مدیا</title></head>
+            <body style="font-family: Arial; text-align: center; padding: 50px; background: #0a0a1a; color: #fff;">
+                <h1 style="color: #4361ee;">🚀 سوشال مدیا</h1>
+                <p>سرور با موفقیت اجرا شد!</p>
+                <p>📧 Email: milad.yari1377m@gmail.com</p>
+                <p>🔑 Password: M09145978426M</p>
+            </body>
+            </html>
+        `);
     }
 });
 
@@ -573,14 +1047,6 @@ app.post('/api/auth/register', async (req, res) => {
 
     if (db.getUserByUsername(username)) {
         return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است' });
-    }
-
-    if (username.length < 3 || username.length > 30) {
-        return res.status(400).json({ error: 'نام کاربری باید بین 3 تا 30 کاراکتر باشد' });
-    }
-
-    if (password.length < 8) {
-        return res.status(400).json({ error: 'رمز عبور باید حداقل 8 کاراکتر باشد' });
     }
 
     const userId = encryption.generateId('user');
@@ -683,13 +1149,11 @@ app.put('/api/users/:userId/profile', authMiddleware, (req, res) => {
         return res.status(403).json({ error: 'این پروفایل متعلق به شما نیست' });
     }
 
-    const { bio, avatar, fullName, username, theme, language } = req.body;
+    const { bio, avatar, fullName, username } = req.body;
     const updates = {};
     if (bio !== undefined) updates.bio = bio;
     if (avatar !== undefined) updates.avatar = avatar;
     if (fullName !== undefined) updates.fullName = fullName;
-    if (theme !== undefined) updates.theme = theme;
-    if (language !== undefined) updates.language = language;
     if (username !== undefined) {
         const existing = db.getUserByUsername(username);
         if (existing && existing.userId !== userId) {
@@ -702,11 +1166,176 @@ app.put('/api/users/:userId/profile', authMiddleware, (req, res) => {
     res.json({ success: true, user: { ...updated, password: undefined } });
 });
 
+app.post('/api/users/:userId/follow', authMiddleware, (req, res) => {
+    const { userId } = req.params;
+    const result = db.followUser(req.user.userId, userId);
+    if (!result) return res.status(400).json({ error: 'از قبل دنبال می‌کنید' });
+    const target = db.getUser(userId);
+    io.emit('follow-update', { userId: target.userId, followers: target.followers });
+    res.json({ success: true, followers: target.followers });
+});
+
+app.post('/api/users/:userId/unfollow', authMiddleware, (req, res) => {
+    const { userId } = req.params;
+    const result = db.unfollowUser(req.user.userId, userId);
+    if (!result) return res.status(400).json({ error: 'دنبال نمی‌کنید' });
+    const target = db.getUser(userId);
+    res.json({ success: true, followers: target.followers });
+});
+
 app.get('/api/users/search', authMiddleware, (req, res) => {
     const { q } = req.query;
-    if (!q || q.length < 2) return res.json([]);
+    if (!q) return res.json([]);
     const results = db.searchUsers(q);
     res.json(results.map(u => ({ ...u, password: undefined })));
+});
+
+// ============================================
+// 📡 API ROUTES - POSTS
+// ============================================
+app.get('/api/posts', authMiddleware, (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const hashtag = req.query.hashtag || null;
+    const userId = req.query.userId || null;
+    const result = db.getPosts(page, limit, hashtag, userId);
+    res.json(result);
+});
+
+app.get('/api/posts/:postId', authMiddleware, (req, res) => {
+    const post = db.getPost(req.params.postId);
+    if (!post) return res.status(404).json({ error: 'پست یافت نشد' });
+    res.json(post);
+});
+
+app.delete('/api/posts/:postId', authMiddleware, (req, res) => {
+    const post = db.getPost(req.params.postId);
+    if (!post) return res.status(404).json({ error: 'پست یافت نشد' });
+    if (post.userId !== req.user.userId) {
+        return res.status(403).json({ error: 'این پست متعلق به شما نیست' });
+    }
+    db.deletePost(req.params.postId);
+    res.json({ success: true });
+});
+
+app.put('/api/posts/:postId/like', authMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const result = db.likePost(postId, req.user.userId);
+    if (result.liked) {
+        const post = db.getPost(postId);
+        if (post && post.userId !== req.user.userId) {
+            db.addNotification({
+                notificationId: encryption.generateId('notif'),
+                userId: post.userId,
+                fromUserId: req.user.userId,
+                type: 'like',
+                postId: postId,
+                isRead: false,
+                createdAt: new Date().toISOString()
+            });
+            io.to(`user_${post.userId}`).emit('notification', { type: 'like', fromUserId: req.user.userId, postId: postId });
+        }
+    }
+    res.json(result);
+});
+
+app.post('/api/posts/:postId/comment', authMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const { text } = req.body;
+
+    if (!text) return res.status(400).json({ error: 'متن کامنت الزامی است' });
+
+    const comment = {
+        commentId: encryption.generateId('cmt'),
+        userId: req.user.userId,
+        username: req.user.username,
+        fullName: req.user.fullName || req.user.username,
+        text: text,
+        createdAt: new Date().toISOString(),
+        likes: 0
+    };
+
+    const added = db.addComment(postId, comment);
+    if (!added) return res.status(404).json({ error: 'پست یافت نشد' });
+
+    const post = db.getPost(postId);
+    if (post && post.userId !== req.user.userId) {
+        db.addNotification({
+            notificationId: encryption.generateId('notif'),
+            userId: post.userId,
+            fromUserId: req.user.userId,
+            type: 'comment',
+            postId: postId,
+            isRead: false,
+            createdAt: new Date().toISOString()
+        });
+        io.to(`user_${post.userId}`).emit('notification', { type: 'comment', fromUserId: req.user.userId, postId: postId });
+    }
+
+    res.status(201).json(comment);
+});
+
+app.delete('/api/posts/:postId/comments/:commentId', authMiddleware, (req, res) => {
+    const { postId, commentId } = req.params;
+    const deleted = db.deleteComment(postId, commentId, req.user.userId);
+    if (!deleted) return res.status(404).json({ error: 'کامنت یافت نشد' });
+    res.json({ success: true });
+});
+
+app.get('/api/posts/:postId/comments', authMiddleware, (req, res) => {
+    const comments = db.getComments(req.params.postId);
+    res.json(comments);
+});
+
+app.post('/api/posts/:postId/bookmark', authMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const result = db.bookmarkPost(postId, req.user.userId);
+    res.json(result);
+});
+
+app.get('/api/trends', authMiddleware, (req, res) => {
+    const trends = db.getTrendingHashtags(10);
+    res.json(trends);
+});
+
+// ============================================
+// 📡 API ROUTES - STORIES
+// ============================================
+app.get('/api/stories', authMiddleware, (req, res) => {
+    const stories = db.getStories();
+    res.json(stories);
+});
+
+app.get('/api/stories/:userId', authMiddleware, (req, res) => {
+    const stories = db.getStories(req.params.userId);
+    res.json(stories);
+});
+
+app.delete('/api/stories/:storyId', authMiddleware, (req, res) => {
+    const { storyId } = req.params;
+    const deleted = db.deleteStory(storyId, req.user.userId);
+    if (!deleted) return res.status(404).json({ error: 'استوری یافت نشد' });
+    res.json({ success: true });
+});
+
+app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
+    const { storyId } = req.params;
+    const viewed = db.viewStory(storyId, req.user.userId);
+    res.json({ success: viewed });
+});
+
+// ============================================
+// 📡 API ROUTES - NOTIFICATIONS
+// ============================================
+app.get('/api/notifications/:userId', authMiddleware, (req, res) => {
+    const notifications = db.getNotifications(req.params.userId);
+    res.json(notifications);
+});
+
+app.post('/api/notifications/:notificationId/read', authMiddleware, (req, res) => {
+    const { notificationId } = req.params;
+    const marked = db.markNotificationRead(notificationId, req.user.userId);
+    res.json({ success: marked });
 });
 
 // ============================================
@@ -728,14 +1357,68 @@ app.put('/api/admin/users/:userId/ban', authMiddleware, adminMiddleware, (req, r
     res.json({ success: true });
 });
 
-app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
-    res.json(db.getStats());
+app.get('/api/admin/posts', authMiddleware, adminMiddleware, (req, res) => {
+    const result = db.getPosts(1, 1000);
+    res.json(result.posts);
+});
+
+app.delete('/api/admin/posts/:postId', authMiddleware, adminMiddleware, (req, res) => {
+    const { postId } = req.params;
+    const deleted = db.deletePost(postId);
+    res.json({ success: deleted });
 });
 
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, (req, res) => {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: 'متن پیام الزامی است' });
     io.emit('broadcast', { message, from: req.user.username, timestamp: new Date().toISOString() });
+    res.json({ success: true });
+});
+
+app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
+    res.json(db.getStats());
+});
+
+// ============================================
+// 📡 API ROUTES - LIVE
+// ============================================
+app.post('/api/live/start', authMiddleware, (req, res) => {
+    const { title } = req.body;
+    const user = db.getUser(req.user.userId);
+    if (!user || user.isBanned) {
+        return res.status(403).json({ error: 'کاربر نامعتبر' });
+    }
+    const streamId = db.startLiveStream(req.user.userId, title);
+    io.emit('live-started', { streamId: streamId, userId: req.user.userId, title: title });
+    res.json({ success: true, streamId: streamId });
+});
+
+app.post('/api/live/end', authMiddleware, (req, res) => {
+    const { streamId } = req.body;
+    const ended = db.endLiveStream(streamId);
+    if (!ended) return res.status(404).json({ error: 'لایو یافت نشد' });
+    io.emit('live-ended', { streamId: streamId });
+    res.json({ success: true });
+});
+
+app.get('/api/live/streams', authMiddleware, (req, res) => {
+    const streams = db.getLiveStreams();
+    res.json(streams);
+});
+
+app.post('/api/live/join', authMiddleware, (req, res) => {
+    const { streamId } = req.body;
+    const joined = db.joinLiveStream(streamId, req.user.userId);
+    if (!joined) return res.status(404).json({ error: 'لایو یافت نشد' });
+    io.to(`live_${streamId}`).emit('viewer-joined', { userId: req.user.userId });
+    res.json({ success: true });
+});
+
+app.post('/api/live/leave', authMiddleware, (req, res) => {
+    const { streamId } = req.body;
+    const left = db.leaveLiveStream(streamId, req.user.userId);
+    if (!left) return res.status(404).json({ error: 'لایو یافت نشد' });
+    io.to(`live_${streamId}`).emit('viewer-left', { userId: req.user.userId });
     res.json({ success: true });
 });
 
@@ -757,6 +1440,53 @@ io.on('connection', (socket) => {
         db.updateUser(userId, { isOnline: true, lastSeen: new Date().toISOString() });
         io.emit('users-online', encryption.getOnlineUsers());
         console.log('👤 User online:', username);
+    });
+
+    socket.on('join-room', (data) => {
+        const { roomId, userId } = data;
+        socket.join(roomId);
+        socket.roomId = roomId;
+        const messages = db.getMessages(roomId, 50);
+        socket.emit('history', messages);
+    });
+
+    socket.on('send-message', (data) => {
+        const { roomId, userId, username, message } = data;
+        const user = db.getUser(userId);
+        if (user && user.isBanned) {
+            socket.emit('error', { message: 'شما مسدود شده‌اید' });
+            return;
+        }
+        const msgData = {
+            messageId: encryption.generateId('msg'),
+            userId: userId,
+            username: username,
+            message: message,
+            timestamp: new Date().toISOString()
+        };
+        db.saveMessage(roomId, msgData);
+        io.to(roomId).emit('receive-message', msgData);
+    });
+
+    socket.on('join-live', (data) => {
+        const { streamId } = data;
+        socket.join(`live_${streamId}`);
+        console.log('🔴 User joined live:', streamId);
+    });
+
+    socket.on('live-comment', (data) => {
+        const { streamId, userId, username, text } = data;
+        io.to(`live_${streamId}`).emit('live-comment', {
+            userId: userId,
+            username: username,
+            text: text,
+            timestamp: new Date().toISOString()
+        });
+    });
+
+    socket.on('leave-room', (data) => {
+        const { roomId } = data;
+        socket.leave(roomId);
     });
 
     socket.on('disconnect', () => {
