@@ -46,7 +46,6 @@ class AdminService {
         db.updateUser(userId, { isBanned: banned });
         if (banned) {
             encryption.onlineUsers.delete(userId);
-            // Remove all sessions
             for (const [token, id] of encryption.sessions) {
                 if (id === userId) {
                     encryption.destroySession(token);
@@ -62,13 +61,11 @@ class AdminService {
         if (!user) return { success: false, error: 'کاربر یافت نشد' };
         if (user.isAdmin) return { success: false, error: 'نمی‌توان ادمین را حذف کرد' };
 
-        // Delete all user posts
         const posts = db.getPosts(1, 10000, null, userId);
         for (const post of posts.posts) {
             db.deletePost(post.postId);
         }
 
-        // Delete all user stories
         const stories = db.getStories(userId);
         for (const story of stories) {
             db.deleteStory(story.storyId, userId);
@@ -87,28 +84,11 @@ class AdminService {
         return { success: true };
     }
 
-    async removeAdmin(userId, adminId) {
-        const user = db.getUser(userId);
-        if (!user) return { success: false, error: 'کاربر یافت نشد' };
-        if (user.userId === adminId) return { success: false, error: 'نمی‌توانید خودتان را حذف کنید' };
-        db.updateUser(userId, { isAdmin: false });
-        this.logAdminAction(adminId, 'remove_admin', { userId });
-        return { success: true };
-    }
-
     async verifyUser(userId, adminId) {
         const user = db.getUser(userId);
         if (!user) return { success: false, error: 'کاربر یافت نشد' };
         db.updateUser(userId, { isVerified: true });
         this.logAdminAction(adminId, 'verify_user', { userId });
-        return { success: true };
-    }
-
-    async unverifyUser(userId, adminId) {
-        const user = db.getUser(userId);
-        if (!user) return { success: false, error: 'کاربر یافت نشد' };
-        db.updateUser(userId, { isVerified: false });
-        this.logAdminAction(adminId, 'unverify_user', { userId });
         return { success: true };
     }
 
@@ -123,15 +103,6 @@ class AdminService {
         if (!post) return { success: false, error: 'پست یافت نشد' };
         db.deletePost(postId);
         this.logAdminAction(adminId, 'delete_post', { postId });
-        return { success: true };
-    }
-
-    async deleteAllUserPosts(userId, adminId) {
-        const posts = db.getPosts(1, 10000, null, userId);
-        for (const post of posts.posts) {
-            db.deletePost(post.postId);
-        }
-        this.logAdminAction(adminId, 'delete_all_user_posts', { userId });
         return { success: true };
     }
 
@@ -157,20 +128,19 @@ class AdminService {
     }
 
     // ===== BROADCAST =====
-    async broadcastMessage(message, adminId, ioInstance) {
+    async broadcastMessage(message, adminId) {
         if (!message || message.trim().length === 0) {
             return { success: false, error: 'متن پیام الزامی است' };
         }
 
         this.logAdminAction(adminId, 'broadcast', { message });
         
-        if (ioInstance) {
-            ioInstance.emit('broadcast', {
-                message: message.trim(),
-                from: 'ادمین',
-                timestamp: new Date().toISOString()
-            });
-        }
+        // Send to all connected users
+        io.emit('broadcast', {
+            message: message.trim(),
+            from: 'ادمین',
+            timestamp: new Date().toISOString()
+        });
 
         return { success: true, message: message.trim() };
     }
@@ -182,8 +152,7 @@ class AdminService {
             adminId,
             action,
             data,
-            timestamp: new Date().toISOString(),
-            ip: null
+            timestamp: new Date().toISOString()
         };
         this.adminLogs.push(log);
         this.auditTrail.push(log);
@@ -210,32 +179,9 @@ class AdminService {
         return logs;
     }
 
-    getAuditTrail(limit = 100) {
-        return this.auditTrail.slice(-limit).reverse();
-    }
-
     // ===== SYSTEM MAINTENANCE =====
     async cleanup() {
-        const now = Date.now();
-        const oneDay = 24 * 60 * 60 * 1000;
-
-        // Clean expired stories
-        const stories = db.getStories();
-        for (const story of stories) {
-            const age = now - new Date(story.createdAt).getTime();
-            if (age >= oneDay) {
-                db.deleteStory(story.storyId, story.userId);
-            }
-        }
-
-        // Clean old sessions
-        for (const [token, userId] of encryption.sessions) {
-            const user = db.getUser(userId);
-            if (!user || user.isBanned) {
-                encryption.destroySession(token);
-            }
-        }
-
+        db.cleanup();
         return { success: true, message: 'سیستم پاکسازی شد' };
     }
 
@@ -270,21 +216,6 @@ class AdminService {
     updateSettings(settings) {
         this.systemSettings = { ...this.systemSettings, ...settings };
         return this.systemSettings;
-    }
-
-    // ===== IP BANNING =====
-    banIP(ip) {
-        this.bannedIPs.add(ip);
-        return { success: true };
-    }
-
-    unbanIP(ip) {
-        this.bannedIPs.delete(ip);
-        return { success: true };
-    }
-
-    isIPBanned(ip) {
-        return this.bannedIPs.has(ip);
     }
 }
 
@@ -374,7 +305,7 @@ app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
 // ===== BROADCAST =====
 app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, async (req, res) => {
     const { message } = req.body;
-    const result = await adminService.broadcastMessage(message, req.user.userId, io);
+    const result = await adminService.broadcastMessage(message, req.user.userId);
     if (result.success) {
         res.json({ success: true });
     } else {
@@ -416,21 +347,6 @@ app.get('/api/admin/settings', authMiddleware, adminMiddleware, (req, res) => {
 app.put('/api/admin/settings', authMiddleware, adminMiddleware, (req, res) => {
     const settings = adminService.updateSettings(req.body);
     res.json(settings);
-});
-
-// ===== IP BANNING =====
-app.post('/api/admin/ban-ip', authMiddleware, adminMiddleware, (req, res) => {
-    const { ip } = req.body;
-    if (!ip) return res.status(400).json({ error: 'IP الزامی است' });
-    const result = adminService.banIP(ip);
-    res.json(result);
-});
-
-app.post('/api/admin/unban-ip', authMiddleware, adminMiddleware, (req, res) => {
-    const { ip } = req.body;
-    if (!ip) return res.status(400).json({ error: 'IP الزامی است' });
-    const result = adminService.unbanIP(ip);
-    res.json(result);
 });
 
 module.exports = {

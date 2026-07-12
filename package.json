@@ -1,11 +1,12 @@
 {
   "name": "ultimate-social-media",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Ultimate Social Media Platform with 100 Shards",
   "main": "m1.js",
   "scripts": {
     "start": "node m1.js",
-    "dev": "nodemon m1.js"
+    "dev": "nodemon m1.js",
+    "cluster": "node m1.js"
   },
   "dependencies": {
     "express": "^4.18.2",

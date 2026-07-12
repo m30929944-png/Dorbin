@@ -1,5 +1,5 @@
 // ============================================
-// 📸 m3.js - POSTS, STORIES, COMMENTS, LIKES
+// 📸 m3.js - POSTS, STORIES, LIKES, COMMENTS
 // ============================================
 
 const { app, db, io, encryption, authMiddleware, upload, storyUpload } = require('./m1.js');
@@ -16,7 +16,6 @@ class PostService {
         this.trendingCache = null;
         this.trendingCacheTime = 0;
         this.CACHE_TTL = 10 * 1000;
-        this.postAnalytics = new Map();
         this.postReports = new Map();
     }
 
@@ -90,9 +89,12 @@ class PostService {
 
         const isLiked = viewerId ? this.isLiked(postId, viewerId) : false;
         const isBookmarked = viewerId ? this.isBookmarked(postId, viewerId) : false;
+        const user = db.getUser(post.userId);
 
         return {
             ...post,
+            userAvatar: user?.avatar || '',
+            userFullName: user?.fullName || post.fullName,
             isLiked,
             isBookmarked,
             comments: post.comments || []
@@ -229,6 +231,11 @@ class PostService {
 
         db.savePost(post);
         return { success: true };
+    }
+
+    // ===== GET USER POSTS =====
+    getUserPosts(userId, page = 1, limit = 20) {
+        return db.getPosts(page, limit, null, userId);
     }
 }
 
@@ -382,10 +389,13 @@ app.post('/api/posts', authMiddleware, upload.single('file'), async (req, res) =
         if (result.success) {
             const followers = db.getFollowers(result.post.userId);
             for (const follower of followers) {
-                io.to(`user_${follower.userId}`).emit('new-post', {
-                    userId: result.post.userId,
-                    postId: result.post.postId
-                });
+                const socketId = encryption.getUserSocket(follower.userId);
+                if (socketId) {
+                    io.to(socketId).emit('new-post', {
+                        userId: result.post.userId,
+                        postId: result.post.postId
+                    });
+                }
             }
             res.status(201).json(result.post);
         } else {
@@ -430,11 +440,14 @@ app.put('/api/posts/:postId/like', authMiddleware, async (req, res) => {
                 createdAt: new Date().toISOString()
             };
             db.addNotification(notification);
-            io.to(`user_${post.userId}`).emit('notification', {
-                type: 'like',
-                fromUserId: req.user.userId,
-                postId: postId
-            });
+            const socketId = encryption.getUserSocket(post.userId);
+            if (socketId) {
+                io.to(socketId).emit('notification', {
+                    type: 'like',
+                    fromUserId: req.user.userId,
+                    postId: postId
+                });
+            }
         }
     }
     
@@ -465,11 +478,14 @@ app.post('/api/posts/:postId/comment', authMiddleware, async (req, res) => {
                 createdAt: new Date().toISOString()
             };
             db.addNotification(notification);
-            io.to(`user_${post.userId}`).emit('notification', {
-                type: 'comment',
-                fromUserId: req.user.userId,
-                postId: postId
-            });
+            const socketId = encryption.getUserSocket(post.userId);
+            if (socketId) {
+                io.to(socketId).emit('notification', {
+                    type: 'comment',
+                    fromUserId: req.user.userId,
+                    postId: postId
+                });
+            }
         }
         res.status(201).json(result.comment);
     } else {
@@ -528,6 +544,13 @@ app.post('/api/posts/:postId/report', authMiddleware, async (req, res) => {
     }
 });
 
+app.get('/api/users/:userId/posts', authMiddleware, (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const result = postService.getUserPosts(req.params.userId, page, limit);
+    res.json(result);
+});
+
 // ============================================
 // 📡 STORY ROUTES
 // ============================================
@@ -559,10 +582,13 @@ app.post('/api/stories', authMiddleware, storyUpload.single('file'), async (req,
     if (result.success) {
         const followers = db.getFollowers(result.story.userId);
         for (const follower of followers) {
-            io.to(`user_${follower.userId}`).emit('new-story', {
-                userId: result.story.userId,
-                storyId: result.story.storyId
-            });
+            const socketId = encryption.getUserSocket(follower.userId);
+            if (socketId) {
+                io.to(socketId).emit('new-story', {
+                    userId: result.story.userId,
+                    storyId: result.story.storyId
+                });
+            }
         }
         res.status(201).json(result.story);
     } else {

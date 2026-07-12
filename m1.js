@@ -1,6 +1,9 @@
 // ============================================
 // 🚀 ULTIMATE SOCIAL MEDIA ENGINE - m1.js
 // ============================================
+// این فایل شامل: سرور اصلی، دیتابیس ۱۰۰ شاردی،
+// رمزنگاری نظامی، مدیریت جلسات، WebSocket
+// ============================================
 
 const express = require('express');
 const http = require('http');
@@ -23,7 +26,8 @@ const io = socketIo(server, {
     transports: ['websocket', 'polling'],
     pingTimeout: 60000,
     pingInterval: 25000,
-    maxHttpBufferSize: 2e9
+    maxHttpBufferSize: 2e9,
+    allowEIO3: true
 });
 
 // ============================================
@@ -62,6 +66,7 @@ class MilitaryEncryption {
         this.sessions = new Map();
         this.tokenBlacklist = new Set();
         this.onlineUsers = new Map();
+        this.userSockets = new Map();
     }
 
     hashPassword(password) {
@@ -136,10 +141,23 @@ class MilitaryEncryption {
         const userId = this.sessions.get(token);
         if (userId) {
             this.onlineUsers.delete(userId);
+            this.userSockets.delete(userId);
         }
         this.sessions.delete(token);
         this.tokenBlacklist.add(token);
         return true;
+    }
+
+    setUserSocket(userId, socketId) {
+        const user = this.onlineUsers.get(userId);
+        if (user) {
+            user.socketId = socketId;
+            this.userSockets.set(userId, socketId);
+        }
+    }
+
+    getUserSocket(userId) {
+        return this.userSockets.get(userId) || null;
     }
 
     isOnline(userId) {
@@ -207,6 +225,7 @@ class UltraShardedDatabase {
         return `${prefix}_${crypto.randomBytes(16).toString('hex')}`;
     }
 
+    // ===== CACHE =====
     getCache(key) {
         const cached = this.cache.get(key);
         if (cached && Date.now() - cached.timestamp < this.cacheTTL) {
@@ -242,6 +261,7 @@ class UltraShardedDatabase {
         return true;
     }
 
+    // ===== TRANSACTION =====
     logTransaction(operation, data) {
         this.transactionLog.push({
             id: this.generateId('txn'),
@@ -254,6 +274,7 @@ class UltraShardedDatabase {
         }
     }
 
+    // ===== BACKUP =====
     startAutoBackup() {
         this.backupInterval = setInterval(() => {
             this.createBackup();
@@ -291,6 +312,7 @@ class UltraShardedDatabase {
         }
     }
 
+    // ===== CLEANUP =====
     startCleanupScheduler() {
         setInterval(() => this.cleanup(), 60 * 60 * 1000);
     }
@@ -317,9 +339,7 @@ class UltraShardedDatabase {
         this.clearCache();
     }
 
-    // ============================================
-    // 📊 CREATE SAMPLE DATA
-    // ============================================
+    // ===== SAMPLE DATA =====
     createSampleData() {
         const sampleUsers = [
             { username: 'milad_admin', fullName: 'مدیر سیستم', email: ADMIN_EMAIL, password: ADMIN_PASSWORD, isAdmin: true, isVerified: true },
@@ -1283,26 +1303,20 @@ app.get('/api/users/:userId', authMiddleware, (req, res) => {
     res.json({ ...user, password: undefined });
 });
 
-app.put('/api/users/:userId/profile', authMiddleware, (req, res) => {
-    const { userId } = req.params;
-    if (userId !== req.user.userId) {
-        return res.status(403).json({ error: 'این پروفایل متعلق به شما نیست' });
-    }
-
-    const { bio, avatar, fullName, username } = req.body;
+app.put('/api/users/profile', authMiddleware, async (req, res) => {
+    const { bio, fullName, username } = req.body;
     const updates = {};
     if (bio !== undefined) updates.bio = bio;
-    if (avatar !== undefined) updates.avatar = avatar;
     if (fullName !== undefined) updates.fullName = fullName;
     if (username !== undefined) {
         const existing = db.getUserByUsername(username);
-        if (existing && existing.userId !== userId) {
+        if (existing && existing.userId !== req.user.userId) {
             return res.status(400).json({ error: 'این نام کاربری قبلاً ثبت شده است' });
         }
         updates.username = username;
     }
 
-    const updated = db.updateUser(userId, updates);
+    const updated = db.updateUser(req.user.userId, updates);
     res.json({ success: true, user: { ...updated, password: undefined } });
 });
 
@@ -1340,6 +1354,16 @@ app.get('/api/users/search', authMiddleware, (req, res) => {
     if (!q) return res.json([]);
     const results = db.searchUsers(q);
     res.json(results.map(u => ({ ...u, password: undefined })));
+});
+
+app.get('/api/users/:userId/followers', authMiddleware, (req, res) => {
+    const followers = db.getFollowers(req.params.userId);
+    res.json(followers.map(u => ({ ...u, password: undefined })));
+});
+
+app.get('/api/users/:userId/following', authMiddleware, (req, res) => {
+    const following = db.getFollowing(req.params.userId);
+    res.json(following.map(u => ({ ...u, password: undefined })));
 });
 
 // ============================================
@@ -1569,30 +1593,6 @@ app.post('/api/stories/:storyId/view', authMiddleware, (req, res) => {
 });
 
 // ============================================
-// 📡 API ROUTES - NOTIFICATIONS
-// ============================================
-app.get('/api/notifications', authMiddleware, (req, res) => {
-    const notifications = db.getNotifications(req.user.userId);
-    res.json(notifications);
-});
-
-app.post('/api/notifications/:notificationId/read', authMiddleware, (req, res) => {
-    const { notificationId } = req.params;
-    const marked = db.markNotificationRead(notificationId, req.user.userId);
-    res.json({ success: marked });
-});
-
-app.post('/api/notifications/read-all', authMiddleware, (req, res) => {
-    const notifications = db.getNotifications(req.user.userId);
-    for (const notif of notifications) {
-        if (!notif.isRead) {
-            db.markNotificationRead(notif.notificationId, req.user.userId);
-        }
-    }
-    res.json({ success: true });
-});
-
-// ============================================
 // 📡 API ROUTES - MESSAGES
 // ============================================
 app.get('/api/messages', authMiddleware, (req, res) => {
@@ -1619,6 +1619,30 @@ app.post('/api/messages', authMiddleware, (req, res) => {
     db.saveMessage(roomId, msgData);
     io.to(roomId).emit('receive-message', msgData);
     res.json({ success: true, message: msgData });
+});
+
+// ============================================
+// 📡 API ROUTES - NOTIFICATIONS
+// ============================================
+app.get('/api/notifications', authMiddleware, (req, res) => {
+    const notifications = db.getNotifications(req.user.userId);
+    res.json(notifications);
+});
+
+app.post('/api/notifications/:notificationId/read', authMiddleware, (req, res) => {
+    const { notificationId } = req.params;
+    const marked = db.markNotificationRead(notificationId, req.user.userId);
+    res.json({ success: marked });
+});
+
+app.post('/api/notifications/read-all', authMiddleware, (req, res) => {
+    const notifications = db.getNotifications(req.user.userId);
+    for (const notif of notifications) {
+        if (!notif.isRead) {
+            db.markNotificationRead(notif.notificationId, req.user.userId);
+        }
+    }
+    res.json({ success: true });
 });
 
 // ============================================
@@ -1721,6 +1745,11 @@ app.post('/api/admin/broadcast', authMiddleware, adminMiddleware, (req, res) => 
     res.json({ success: true });
 });
 
+app.post('/api/admin/cleanup', authMiddleware, adminMiddleware, (req, res) => {
+    db.cleanup();
+    res.json({ success: true });
+});
+
 // ============================================
 // 💬 WEBSOCKET
 // ============================================
@@ -1729,6 +1758,7 @@ io.on('connection', (socket) => {
 
     socket.on('register', (data) => {
         const { userId, username } = data;
+        encryption.setUserSocket(userId, socket.id);
         const onlineUser = encryption.onlineUsers.get(userId);
         if (onlineUser) {
             onlineUser.socketId = socket.id;
@@ -1795,6 +1825,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         if (socket.userId) {
+            encryption.userSockets.delete(socket.userId);
             const onlineUser = encryption.onlineUsers.get(socket.userId);
             if (onlineUser && onlineUser.socketId === socket.id) {
                 encryption.onlineUsers.delete(socket.userId);

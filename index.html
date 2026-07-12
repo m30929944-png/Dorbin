@@ -8,9 +8,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        /* ============================================
-           🎨 ULTIMATE PREMIUM DESIGN - LIKE INSTAGRAM
-           ============================================ */
         * {
             margin: 0;
             padding: 0;
@@ -83,9 +80,7 @@
             border-radius: 4px;
         }
 
-        /* ============================================
-           🔄 LOADING SCREEN
-           ============================================ */
+        /* ===== LOADING ===== */
         .loading-screen {
             position: fixed;
             inset: 0;
@@ -194,9 +189,7 @@
             }
         }
 
-        /* ============================================
-           🔐 LOGIN PAGE
-           ============================================ */
+        /* ===== LOGIN ===== */
         .login-container {
             display: flex;
             justify-content: center;
@@ -406,9 +399,7 @@
             text-decoration: underline;
         }
 
-        /* ============================================
-           📱 HEADER
-           ============================================ */
+        /* ===== HEADER ===== */
         .header {
             background: var(--bg-glass);
             backdrop-filter: blur(20px);
@@ -517,9 +508,7 @@
             animation: pulse 2s ease-in-out infinite;
         }
 
-        /* ============================================
-           📸 STORIES
-           ============================================ */
+        /* ===== STORIES ===== */
         .stories-section {
             background: var(--bg-secondary);
             padding: 12px 16px;
@@ -597,9 +586,7 @@
             font-weight: 500;
         }
 
-        /* ============================================
-           🖼️ GALLERY
-           ============================================ */
+        /* ===== GALLERY ===== */
         .gallery-wrapper {
             flex: 1;
             overflow-y: auto;
@@ -699,9 +686,7 @@
             font-size: 14px;
         }
 
-        /* ============================================
-           🖼️ POST DETAIL MODAL
-           ============================================ */
+        /* ===== POST DETAIL ===== */
         .post-detail-modal {
             display: none;
             position: fixed;
@@ -824,6 +809,10 @@
             line-height: 1.7;
             color: var(--text-primary);
         }
+        .post-detail-caption .hashtag {
+            color: var(--primary);
+            cursor: pointer;
+        }
 
         .post-detail-stats {
             display: flex;
@@ -848,6 +837,7 @@
             display: flex;
             gap: 12px;
             padding: 12px 0 6px;
+            flex-wrap: wrap;
         }
         .post-detail-actions button {
             background: none;
@@ -896,6 +886,7 @@
             font-weight: 700;
             color: var(--primary);
             flex-shrink: 0;
+            cursor: pointer;
         }
         .post-detail-comments .comment .text {
             word-break: break-word;
@@ -941,9 +932,7 @@
             transform: scale(1.04);
         }
 
-        /* ============================================
-           👤 PROFILE PAGE
-           ============================================ */
+        /* ===== PROFILE ===== */
         .profile-page {
             display: none;
             position: fixed;
@@ -1217,9 +1206,7 @@
             font-size: 16px;
         }
 
-        /* ============================================
-           💬 CHAT INTERFACE
-           ============================================ */
+        /* ===== CHAT ===== */
         .chat-interface {
             display: none;
             position: fixed;
@@ -1280,6 +1267,9 @@
         .chat-header .chat-user-info .status {
             font-size: 11px;
             color: var(--text-secondary);
+        }
+        .chat-header .chat-user-info .status.online {
+            color: var(--success);
         }
 
         .chat-messages {
@@ -1369,9 +1359,58 @@
             transform: scale(1.04);
         }
 
-        /* ============================================
-           🔴 LIVE STREAM
-           ============================================ */
+        /* ===== CHAT USERS LIST ===== */
+        .chat-users-list {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            max-height: 200px;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .chat-user-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: var(--transition);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .chat-user-item:hover {
+            background: var(--bg-card);
+        }
+        .chat-user-item img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border-color);
+        }
+        .chat-user-item .user-info {
+            flex: 1;
+        }
+        .chat-user-item .user-info .name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .chat-user-item .user-info .last-msg {
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 150px;
+        }
+        .chat-user-item .unread-badge {
+            background: var(--primary);
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+
+        /* ===== LIVE ===== */
         .live-container {
             display: none;
             position: fixed;
@@ -1492,288 +1531,7 @@
             font-size: 13px;
         }
 
-        /* ============================================
-           📱 BOTTOM NAV
-           ============================================ */
-        .bottom-nav {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-glass);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-around;
-            padding: 6px 0 12px;
-            z-index: 100;
-            height: var(--bottom-nav-height);
-        }
-        .bottom-nav .nav-btn {
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 2px;
-            font-size: 9px;
-            color: var(--text-secondary);
-            padding: 4px 16px;
-            transition: var(--transition);
-            position: relative;
-            font-family: var(--font);
-            border-radius: 14px;
-            font-weight: 500;
-        }
-        .bottom-nav .nav-btn i {
-            font-size: 24px;
-            transition: var(--transition);
-        }
-        .bottom-nav .nav-btn:hover {
-            background: var(--bg-card);
-            transform: translateY(-3px);
-        }
-        .bottom-nav .nav-btn:active {
-            transform: scale(0.92);
-        }
-        .bottom-nav .nav-btn.active i {
-            color: var(--primary);
-            text-shadow: 0 0 30px var(--primary-glow);
-        }
-        .bottom-nav .nav-btn.active {
-            color: var(--primary);
-            font-weight: 700;
-        }
-        .bottom-nav .nav-btn .badge {
-            position: absolute;
-            top: 0;
-            right: 8px;
-            background: var(--danger);
-            color: #fff;
-            font-size: 10px;
-            padding: 1px 7px;
-            border-radius: 12px;
-            font-weight: 700;
-        }
-
-        /* ============================================
-           🍞 TOAST
-           ============================================ */
-        .toast {
-            position: fixed;
-            bottom: calc(var(--bottom-nav-height) + 24px);
-            left: 50%;
-            transform: translateX(-50%) translateY(20px);
-            background: var(--bg-glass);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            color: var(--text-primary);
-            padding: 14px 32px;
-            border-radius: 30px;
-            font-size: 14px;
-            z-index: 999;
-            opacity: 0;
-            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-            pointer-events: none;
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-card);
-            max-width: 92%;
-            text-align: center;
-            font-family: var(--font);
-            font-weight: 500;
-        }
-        .toast.show {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
-
-        /* ============================================
-           🎨 THEME TOGGLE
-           ============================================ */
-        .theme-toggle {
-            position: fixed;
-            bottom: calc(var(--bottom-nav-height) + 80px);
-            right: 16px;
-            background: var(--bg-glass);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--border-color);
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: var(--transition);
-            z-index: 50;
-            color: var(--text-primary);
-            font-size: 20px;
-            box-shadow: var(--shadow-card);
-        }
-        .theme-toggle:hover {
-            transform: scale(1.1) rotate(20deg);
-            border-color: var(--primary);
-        }
-        .theme-toggle:active {
-            transform: scale(0.92);
-        }
-
-        /* ============================================
-           📱 RESPONSIVE
-           ============================================ */
-        @media (max-width: 600px) {
-            .gallery {
-                gap: 3px;
-                padding: 3px;
-            }
-            .search-box {
-                max-width: 160px;
-                padding: 6px 12px;
-            }
-            .search-box input {
-                font-size: 12px;
-            }
-            .header-right {
-                gap: 8px;
-                font-size: 18px;
-            }
-            .header {
-                padding: 0 10px;
-                gap: 6px;
-            }
-            .logo {
-                font-size: 16px;
-            }
-            .logo i {
-                font-size: 20px;
-            }
-            .story-avatar {
-                width: 54px;
-                height: 54px;
-            }
-            .story-name {
-                font-size: 10px;
-                max-width: 54px;
-            }
-            .login-box {
-                padding: 30px 20px;
-            }
-            .post-detail-content {
-                max-height: 95vh;
-            }
-            .bottom-nav .nav-btn {
-                padding: 2px 10px;
-                font-size: 8px;
-            }
-            .bottom-nav .nav-btn i {
-                font-size: 20px;
-            }
-            .profile-avatar-large {
-                width: 80px;
-                height: 80px;
-            }
-            .post-detail-actions button {
-                font-size: 13px;
-                padding: 6px 12px;
-            }
-            .post-detail-actions button i {
-                font-size: 17px;
-            }
-            .theme-toggle {
-                width: 40px;
-                height: 40px;
-                font-size: 17px;
-                bottom: calc(var(--bottom-nav-height) + 70px);
-                right: 12px;
-            }
-            .chat-message {
-                max-width: 88%;
-            }
-        }
-
-        @media (max-width: 400px) {
-            .search-box {
-                max-width: 100px;
-            }
-            .header-right {
-                gap: 4px;
-                font-size: 16px;
-            }
-            .gallery {
-                gap: 2px;
-                padding: 2px;
-            }
-            .bottom-nav .nav-btn {
-                padding: 0 6px;
-            }
-            .bottom-nav .nav-btn i {
-                font-size: 17px;
-            }
-        }
-
-        @media (min-width: 601px) {
-            .gallery {
-                gap: 6px;
-                padding: 6px;
-            }
-            .stories-container {
-                gap: 20px;
-            }
-        }
-
-        /* ============================================
-           📸 UPLOAD PROGRESS
-           ============================================ */
-        .upload-progress {
-            display: none;
-            position: fixed;
-            bottom: calc(var(--bottom-nav-height) + 20px);
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--bg-glass);
-            backdrop-filter: blur(20px);
-            padding: 16px 24px;
-            border-radius: var(--radius);
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-card);
-            z-index: 300;
-            min-width: 280px;
-            text-align: center;
-        }
-        .upload-progress.active {
-            display: block;
-            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .upload-progress .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: var(--bg-secondary);
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-        .upload-progress .progress-bar .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--primary), var(--primary-light));
-            border-radius: 3px;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        .upload-progress .progress-text {
-            font-size: 14px;
-            font-weight: 600;
-        }
-        .upload-progress .progress-detail {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-
-        /* ============================================
-           📸 ADMIN PANEL
-           ============================================ */
+        /* ===== ADMIN ===== */
         .admin-panel {
             display: none;
             position: fixed;
@@ -1876,6 +1634,281 @@
             border-color: var(--primary);
             box-shadow: 0 0 0 5px var(--primary-glow);
         }
+
+        /* ===== BOTTOM NAV ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-around;
+            padding: 6px 0 12px;
+            z-index: 100;
+            height: var(--bottom-nav-height);
+        }
+        .bottom-nav .nav-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            font-size: 9px;
+            color: var(--text-secondary);
+            padding: 4px 16px;
+            transition: var(--transition);
+            position: relative;
+            font-family: var(--font);
+            border-radius: 14px;
+            font-weight: 500;
+        }
+        .bottom-nav .nav-btn i {
+            font-size: 24px;
+            transition: var(--transition);
+        }
+        .bottom-nav .nav-btn:hover {
+            background: var(--bg-card);
+            transform: translateY(-3px);
+        }
+        .bottom-nav .nav-btn:active {
+            transform: scale(0.92);
+        }
+        .bottom-nav .nav-btn.active i {
+            color: var(--primary);
+            text-shadow: 0 0 30px var(--primary-glow);
+        }
+        .bottom-nav .nav-btn.active {
+            color: var(--primary);
+            font-weight: 700;
+        }
+        .bottom-nav .nav-btn .badge {
+            position: absolute;
+            top: 0;
+            right: 8px;
+            background: var(--danger);
+            color: #fff;
+            font-size: 10px;
+            padding: 1px 7px;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+
+        /* ===== TOAST ===== */
+        .toast {
+            position: fixed;
+            bottom: calc(var(--bottom-nav-height) + 24px);
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            color: var(--text-primary);
+            padding: 14px 32px;
+            border-radius: 30px;
+            font-size: 14px;
+            z-index: 999;
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: none;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-card);
+            max-width: 92%;
+            text-align: center;
+            font-family: var(--font);
+            font-weight: 500;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* ===== UPLOAD PROGRESS ===== */
+        .upload-progress {
+            display: none;
+            position: fixed;
+            bottom: calc(var(--bottom-nav-height) + 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            padding: 16px 24px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-card);
+            z-index: 300;
+            min-width: 280px;
+            text-align: center;
+        }
+        .upload-progress.active {
+            display: block;
+            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .upload-progress .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-secondary);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .upload-progress .progress-bar .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), var(--primary-light));
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .upload-progress .progress-text {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .upload-progress .progress-detail {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* ===== THEME TOGGLE ===== */
+        .theme-toggle {
+            position: fixed;
+            bottom: calc(var(--bottom-nav-height) + 80px);
+            right: 16px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: var(--transition);
+            z-index: 50;
+            color: var(--text-primary);
+            font-size: 20px;
+            box-shadow: var(--shadow-card);
+        }
+        .theme-toggle:hover {
+            transform: scale(1.1) rotate(20deg);
+            border-color: var(--primary);
+        }
+        .theme-toggle:active {
+            transform: scale(0.92);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            .gallery {
+                gap: 3px;
+                padding: 3px;
+            }
+            .search-box {
+                max-width: 160px;
+                padding: 6px 12px;
+            }
+            .search-box input {
+                font-size: 12px;
+            }
+            .header-right {
+                gap: 8px;
+                font-size: 18px;
+            }
+            .header {
+                padding: 0 10px;
+                gap: 6px;
+            }
+            .logo {
+                font-size: 16px;
+            }
+            .logo i {
+                font-size: 20px;
+            }
+            .story-avatar {
+                width: 54px;
+                height: 54px;
+            }
+            .story-name {
+                font-size: 10px;
+                max-width: 54px;
+            }
+            .login-box {
+                padding: 30px 20px;
+            }
+            .post-detail-content {
+                max-height: 95vh;
+            }
+            .bottom-nav .nav-btn {
+                padding: 2px 10px;
+                font-size: 8px;
+            }
+            .bottom-nav .nav-btn i {
+                font-size: 20px;
+            }
+            .profile-avatar-large {
+                width: 80px;
+                height: 80px;
+            }
+            .post-detail-actions button {
+                font-size: 13px;
+                padding: 6px 12px;
+            }
+            .post-detail-actions button i {
+                font-size: 17px;
+            }
+            .theme-toggle {
+                width: 40px;
+                height: 40px;
+                font-size: 17px;
+                bottom: calc(var(--bottom-nav-height) + 70px);
+                right: 12px;
+            }
+            .chat-message {
+                max-width: 88%;
+            }
+            .chat-user-item .user-info .last-msg {
+                max-width: 100px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .search-box {
+                max-width: 100px;
+            }
+            .header-right {
+                gap: 4px;
+                font-size: 16px;
+            }
+            .gallery {
+                gap: 2px;
+                padding: 2px;
+            }
+            .bottom-nav .nav-btn {
+                padding: 0 6px;
+            }
+            .bottom-nav .nav-btn i {
+                font-size: 17px;
+            }
+            .chat-user-item .user-info .last-msg {
+                max-width: 70px;
+            }
+        }
+
+        @media (min-width: 601px) {
+            .gallery {
+                gap: 6px;
+                padding: 6px;
+            }
+            .stories-container {
+                gap: 20px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1930,7 +1963,7 @@
             <div class="logo"><i class="fab fa-instagram"></i> سوشال</div>
             <div class="search-box"><i class="fas fa-search"></i><input id="searchInput" placeholder="جستجو..."></div>
             <div class="header-right">
-                <button class="icon-btn" id="chatOpenBtn"><i class="fas fa-comment-dots"></i></button>
+                <button class="icon-btn" id="chatOpenBtn"><i class="fas fa-comment-dots"></i><span class="badge" id="chatBadge" style="display:none;">0</span></button>
                 <button class="icon-btn" id="liveOpenBtn"><i class="fas fa-video"></i><span class="badge-dot" id="liveDot" style="display:none;"></span></button>
             </div>
         </header>
@@ -2005,7 +2038,8 @@
                     <button id="detailCommentBtn"><i class="far fa-comment"></i> کامنت</button>
                     <button id="detailShareBtn"><i class="fas fa-share"></i> اشتراک</button>
                     <button id="detailBookmarkBtn"><i class="far fa-bookmark"></i></button>
-                    <button id="detailChatBtn"><i class="fas fa-comment-dots"></i></button>
+                    <button id="detailChatBtn"><i class="fas fa-comment-dots"></i> پیام</button>
+                    <button id="detailFollowBtn"><i class="fas fa-user-plus"></i> دنبال</button>
                 </div>
                 <div class="post-detail-comments" id="postDetailCommentsList"></div>
                 <div class="post-detail-comment-input">
@@ -2020,15 +2054,18 @@
     <div class="chat-interface" id="chatInterface">
         <div class="chat-header">
             <button class="back-btn" id="chatBackBtn"><i class="fas fa-arrow-right"></i></button>
-            <div class="chat-user-info">
+            <div class="chat-user-info" id="chatUserInfo">
                 <img id="chatUserAvatar" src="https://i.pravatar.cc/150?img=1" alt="user">
                 <div>
                     <div class="name" id="chatUserName">کاربر</div>
                     <div class="status" id="chatUserStatus">آنلاین</div>
                 </div>
             </div>
-            <button class="icon-btn" id="chatCallBtn"><i class="fas fa-phone"></i></button>
+            <button class="icon-btn" id="chatCallBtn" style="display:none;"><i class="fas fa-phone"></i></button>
         </div>
+        <!-- Chat Users List -->
+        <div class="chat-users-list" id="chatUsersList"></div>
+        <!-- Chat Messages -->
         <div class="chat-messages" id="chatMessages">
             <div style="text-align:center;padding:40px;color:var(--text-secondary);">
                 <i class="fas fa-comments" style="font-size:32px;display:block;margin-bottom:12px;"></i>
@@ -2072,6 +2109,7 @@
                 <input type="text" id="broadcastInput" placeholder="پیام به همه کاربران...">
                 <button class="admin-btn primary" id="broadcastBtn">ارسال</button>
             </div>
+            <div id="broadcastMessages" style="margin-top:8px;max-height:100px;overflow-y:auto;"></div>
         </div>
 
         <div class="admin-card">
@@ -2108,7 +2146,9 @@
             streamId: null,
             theme: localStorage.getItem('theme') || 'dark',
             isLoading: true,
-            onlineUsers: []
+            onlineUsers: [],
+            chatUsers: [],
+            unreadCount: 0
         };
 
         const $ = (s) => document.querySelector(s);
@@ -2424,13 +2464,29 @@
         }
 
         async function getMessages(roomId) {
-            const res = await fetch('/api/messages?roomId=' + roomId, {
+            const res = await fetch('/api/messages?roomId=' + roomId + '&limit=50', {
                 headers: { 'Authorization': 'Bearer ' + STATE.token }
             });
             return await res.json();
         }
 
-        // ===== SOCKET =====
+        async function getChatUsers() {
+            const res = await fetch('/api/chat/users', {
+                headers: { 'Authorization': 'Bearer ' + STATE.token }
+            });
+            return await res.json();
+        }
+
+        async function getUnreadCount() {
+            const res = await fetch('/api/chat/unread', {
+                headers: { 'Authorization': 'Bearer ' + STATE.token }
+            });
+            return await res.json();
+        }
+
+        // ============================================
+        // 💬 SOCKET
+        // ============================================
         function connectSocket() {
             if (STATE.socket) return;
             STATE.socket = io();
@@ -2448,6 +2504,7 @@
             STATE.socket.on('users-online', (users) => {
                 STATE.onlineUsers = users;
                 updateOnlineStatus();
+                updateChatUsers();
             });
 
             STATE.socket.on('receive-message', (data) => {
@@ -2465,10 +2522,49 @@
                     messagesDiv.innerHTML =
                         '<div style="text-align:center;padding:40px;color:var(--text-secondary);"><i class="fas fa-comments" style="font-size:32px;display:block;margin-bottom:12px;"></i>پیامی وجود ندارد</div>';
                 }
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+
+            STATE.socket.on('receive-chat-message', (data) => {
+                if (STATE.currentChatRoom) {
+                    displayChatMessage(data.userId, data.username, data.message, data.timestamp);
+                }
+                updateUnreadCount();
+                updateChatUsers();
+            });
+
+            STATE.socket.on('new-chat-message', (data) => {
+                showToast('💬 پیام جدید از ' + data.fromUserId);
+                updateUnreadCount();
+                updateChatUsers();
+            });
+
+            STATE.socket.on('chat-typing', (data) => {
+                if (data.userId === STATE.currentChatUser) {
+                    const status = $('#chatUserStatus');
+                    if (data.isTyping) {
+                        status.textContent = 'در حال تایپ...';
+                        status.style.color = 'var(--primary)';
+                    } else {
+                        status.textContent = isUserOnline(data.userId) ? 'آنلاین' : 'آفلاین';
+                        status.style.color = isUserOnline(data.userId) ? 'var(--success)' : 'var(--text-secondary)';
+                    }
+                }
             });
 
             STATE.socket.on('broadcast', (data) => {
                 showToast('📢 ' + data.message + ' (از ' + data.from + ')');
+                // Add to broadcast messages in admin panel
+                const container = $('#broadcastMessages');
+                const div = document.createElement('div');
+                div.style.cssText =
+                    'padding:6px 0;border-bottom:1px solid var(--border-color);font-size:13px;display:flex;justify-content:space-between;';
+                div.innerHTML =
+                    `<span>📢 ${data.message}</span><span style="color:var(--text-muted);font-size:11px;">${timeAgo(data.timestamp)}</span>`;
+                container.prepend(div);
+                if (container.children.length > 20) {
+                    container.removeChild(container.lastChild);
+                }
             });
 
             STATE.socket.on('notification', (data) => {
@@ -2505,17 +2601,6 @@
                 addLiveChatMessage(data.username, data.text);
             });
 
-            STATE.socket.on('user-typing', (data) => {
-                const status = $('#chatUserStatus');
-                if (data.isTyping) {
-                    status.textContent = 'در حال تایپ...';
-                    status.style.color = 'var(--primary)';
-                } else {
-                    status.textContent = isUserOnline(data.userId) ? 'آنلاین' : 'آفلاین';
-                    status.style.color = '';
-                }
-            });
-
             STATE.socket.on('error', (data) => {
                 showToast('❌ ' + data.message, 'error');
             });
@@ -2526,17 +2611,32 @@
         }
 
         function updateOnlineStatus() {
-            // Update chat user status
             if (STATE.currentChatUser) {
                 const status = $('#chatUserStatus');
                 if (isUserOnline(STATE.currentChatUser)) {
                     status.textContent = 'آنلاین';
                     status.style.color = 'var(--success)';
+                    status.className = 'status online';
                 } else {
                     status.textContent = 'آفلاین';
                     status.style.color = 'var(--text-secondary)';
+                    status.className = 'status';
                 }
             }
+        }
+
+        async function updateUnreadCount() {
+            try {
+                const data = await getUnreadCount();
+                STATE.unreadCount = data.unread || 0;
+                const badge = $('#chatBadge');
+                if (STATE.unreadCount > 0) {
+                    badge.style.display = 'block';
+                    badge.textContent = STATE.unreadCount > 99 ? '99+' : STATE.unreadCount;
+                } else {
+                    badge.style.display = 'none';
+                }
+            } catch (e) {}
         }
 
         // ============================================
@@ -2600,7 +2700,6 @@
             `;
             div.addEventListener('click', () => {
                 showToast('📸 استوری از ' + story.username);
-                // View story
                 fetch('/api/stories/' + story.storyId + '/view', {
                     method: 'POST',
                     headers: {
@@ -2624,6 +2723,24 @@
                 </div>
             `;
             div.addEventListener('click', () => openPostDetail(post.postId));
+            return div;
+        }
+
+        function createChatUserItem(user) {
+            const div = document.createElement('div');
+            div.className = 'chat-user-item';
+            const isOnline = isUserOnline(user.userId);
+            div.innerHTML = `
+                <img src="${user.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() * 70)}" alt="avatar">
+                <div class="user-info">
+                    <div class="name">${user.fullName || user.username} ${user.isOnline ? '🟢' : ''}</div>
+                    <div class="last-msg">${user.lastMessage ? user.lastMessage.message : 'شروع چت'}</div>
+                </div>
+                ${user.unreadCount > 0 ? `<span class="unread-badge">${user.unreadCount}</span>` : ''}
+            `;
+            div.addEventListener('click', () => {
+                openChat(user.userId, user.fullName || user.username, user.avatar);
+            });
             return div;
         }
 
@@ -2783,6 +2900,24 @@
             } catch (e) {}
         }
 
+        async function updateChatUsers() {
+            try {
+                const users = await getChatUsers();
+                STATE.chatUsers = users;
+                const list = $('#chatUsersList');
+                list.innerHTML = '';
+                if (users.length === 0) {
+                    list.innerHTML =
+                        '<div style="padding:12px 16px;color:var(--text-secondary);text-align:center;">هیچ کاربری برای چت وجود ندارد</div>';
+                } else {
+                    users.forEach(user => {
+                        list.appendChild(createChatUserItem(user));
+                    });
+                }
+                updateUnreadCount();
+            } catch (e) {}
+        }
+
         // ============================================
         // 🎯 ACTION FUNCTIONS
         // ============================================
@@ -2833,16 +2968,28 @@
                         'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%231a1a3a%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%235a5a7a%22 font-size=%2212%22>📸</text></svg>';
                 };
 
-                $('#postDetailAvatar').src = post.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() *
-                70);
-                $('#postDetailName').textContent = post.fullName || post.username || 'کاربر';
+                $('#postDetailAvatar').src = post.userAvatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math
+                .random() * 70);
+                $('#postDetailName').textContent = post.userFullName || post.fullName || post.username || 'کاربر';
                 $('#postDetailUsername').textContent = '@' + (post.username || 'کاربر');
                 if (post.isVerified) {
                     $('#postDetailVerified').style.display = 'inline';
                 } else {
                     $('#postDetailVerified').style.display = 'none';
                 }
-                $('#postDetailCaption').textContent = post.caption || '';
+
+                // Format caption with hashtags
+                let captionHtml = post.caption || '';
+                if (post.hashtags && post.hashtags.length > 0) {
+                    post.hashtags.forEach(tag => {
+                        captionHtml = captionHtml.replace(
+                            new RegExp('#' + tag, 'g'),
+                            `<span class="hashtag" onclick="loadPosts(1, '${tag}')">#${tag}</span>`
+                        );
+                    });
+                }
+                $('#postDetailCaption').innerHTML = captionHtml;
+
                 $('#postDetailViews').textContent = formatNumber(post.views || 0);
                 $('#postDetailLikes').textContent = formatNumber(post.likes || 0);
                 $('#postDetailComments').textContent = formatNumber((post.comments || []).length);
@@ -2864,6 +3011,28 @@
                 bookmarkBtn.innerHTML = isBookmarked ? '<i class="fas fa-bookmark"></i>' :
                     '<i class="far fa-bookmark"></i>';
 
+                // Follow status
+                const followBtn = $('#detailFollowBtn');
+                const isFollowing = post.isFollowing || false;
+                if (isFollowing) {
+                    followBtn.innerHTML = '<i class="fas fa-user-check"></i> دنبال می‌کنید';
+                    followBtn.style.color = 'var(--success)';
+                } else {
+                    followBtn.innerHTML = '<i class="fas fa-user-plus"></i> دنبال';
+                    followBtn.style.color = '';
+                }
+                followBtn.onclick = async () => {
+                    if (isFollowing) {
+                        await unfollowUser(post.userId);
+                        showToast('✅ آنفالو کردید');
+                    } else {
+                        await followUser(post.userId);
+                        showToast('✅ دنبال کردید');
+                    }
+                    openPostDetail(postId);
+                    loadPosts();
+                };
+
                 // Comments
                 const commentsList = $('#postDetailCommentsList');
                 commentsList.innerHTML = '';
@@ -2872,7 +3041,7 @@
                         const div = document.createElement('div');
                         div.className = 'comment';
                         div.innerHTML =
-                            `<span class="user">${comment.fullName || comment.username || 'کاربر'}:</span> <span class="text">${comment.text}</span>`;
+                            `<span class="user" onclick="openProfile('${comment.userId}')">${comment.fullName || comment.username || 'کاربر'}:</span> <span class="text">${comment.text}</span>`;
                         commentsList.appendChild(div);
                     });
                 } else {
@@ -2930,9 +3099,11 @@
             if (isUserOnline(userId)) {
                 $('#chatUserStatus').textContent = 'آنلاین';
                 $('#chatUserStatus').style.color = 'var(--success)';
+                $('#chatUserStatus').className = 'status online';
             } else {
                 $('#chatUserStatus').textContent = 'آفلاین';
                 $('#chatUserStatus').style.color = 'var(--text-secondary)';
+                $('#chatUserStatus').className = 'status';
             }
 
             $('#chatInterface').classList.add('active');
@@ -2954,6 +3125,18 @@
                         '<div style="text-align:center;padding:40px;color:var(--text-secondary);"><i class="fas fa-comments" style="font-size:32px;display:block;margin-bottom:12px;"></i>پیامی وجود ندارد</div>';
                 }
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+                // Mark messages as read
+                await fetch('/api/chat/messages/read', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + STATE.token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ roomId })
+                });
+                updateUnreadCount();
+                updateChatUsers();
             } catch (e) {}
         }
 
@@ -3121,6 +3304,8 @@
                 loadPosts();
                 loadStories();
                 loadProfile();
+                updateChatUsers();
+                updateUnreadCount();
                 hideLoading();
                 showToast('✅ خوش آمدید ' + (result.user.fullName || result.user.username), 'success');
             } else {
@@ -3217,7 +3402,6 @@
                     const detail = $('#progressDetail');
                     progress.classList.add('active');
 
-                    // Simulate progress
                     let progressValue = 0;
                     const interval = setInterval(() => {
                         progressValue += Math.random() * 10;
@@ -3362,6 +3546,24 @@
             }
         });
 
+        $('#detailFollowBtn').addEventListener('click', async function() {
+            if (STATE.currentPostId) {
+                const post = db.getPost(STATE.currentPostId);
+                if (post) {
+                    const isFollowing = this.textContent.includes('دنبال می‌کنید');
+                    if (isFollowing) {
+                        await unfollowUser(post.userId);
+                        showToast('✅ آنفالو کردید');
+                    } else {
+                        await followUser(post.userId);
+                        showToast('✅ دنبال کردید');
+                    }
+                    openPostDetail(STATE.currentPostId);
+                    loadPosts();
+                }
+            }
+        });
+
         $('#postDetailCommentSend').addEventListener('click', sendDetailComment);
         $('#postDetailCommentInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendDetailComment();
@@ -3369,19 +3571,12 @@
 
         // ===== CHAT =====
         $('#chatOpenBtn').addEventListener('click', async () => {
-            // Show user list to start chat
-            try {
-                const users = await getUsers();
-                const filtered = users.filter(u => u.userId !== STATE.user?.userId);
-                if (filtered.length === 0) {
-                    showToast('هیچ کاربری برای چت وجود ندارد');
-                    return;
-                }
-                // Open chat with first user
-                const user = filtered[0];
+            await updateChatUsers();
+            if (STATE.chatUsers.length > 0) {
+                const user = STATE.chatUsers[0];
                 openChat(user.userId, user.fullName || user.username, user.avatar);
-            } catch (e) {
-                showToast('❌ خطا در باز کردن چت', 'error');
+            } else {
+                showToast('هیچ کاربری برای چت وجود ندارد');
             }
         });
 
@@ -3397,7 +3592,6 @@
         $('#chatSendBtn').addEventListener('click', sendChatMessage);
         $('#chatMessageInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendChatMessage();
-            // Send typing indicator
             if (STATE.currentChatRoom && STATE.currentChatUser) {
                 STATE.socket.emit('typing', {
                     roomId: STATE.currentChatRoom,
@@ -3439,7 +3633,6 @@
                 if (query.startsWith('#')) {
                     loadPosts(1, query.substring(1));
                 } else if (query.length > 2) {
-                    // Search users
                     fetch('/api/users/search?q=' + encodeURIComponent(query), {
                         headers: { 'Authorization': 'Bearer ' + STATE.token }
                     }).then(res => res.json()).then(users => {
@@ -3455,15 +3648,14 @@
                                     <div style="display:flex;align-items:center;gap:12px;">
                                         <img src="${user.avatar || 'https://i.pravatar.cc/150?img=' + Math.floor(Math.random() * 70)}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid var(--primary);">
                                         <div>
-                                            <div style="font-weight:600;">${user.fullName || user.username}</div>
+                                            <div style="font-weight:600;cursor:pointer;" onclick="openProfile('${user.userId}')">${user.fullName || user.username}</div>
                                             <div style="color:var(--text-secondary);font-size:12px;">@${user.username}</div>
-                                            <div style="font-size:12px;color:var(--text-muted);">${user.followers || 0} دنبال‌کننده</div>
+                                            <div style="font-size:12px;color:var(--text-muted);">${user.followers || 0} دنبال‌کننده ${user.isOnline ? '🟢' : ''}</div>
                                         </div>
                                     </div>
                                 `;
                                 div.addEventListener('click', () => {
-                                    // Open user profile or chat
-                                    showToast('👤 ' + user.username);
+                                    openProfile(user.userId);
                                 });
                                 gallery.appendChild(div);
                             });
@@ -3506,6 +3698,8 @@
                     await loadPosts();
                     await loadStories();
                     await loadProfile();
+                    await updateChatUsers();
+                    await updateUnreadCount();
                     hideLoading();
 
                     try {
@@ -3528,7 +3722,28 @@
             hideLoading();
         });
 
-        // ===== GLOBAL ADMIN FUNCTIONS =====
+        // ===== GLOBAL FUNCTIONS =====
+        window.openProfile = function(userId) {
+            showToast('👤 باز کردن پروفایل کاربر');
+            // Navigate to profile
+            $('#profileNavBtn').click();
+            // Load user profile
+            fetch('/api/users/' + userId, {
+                headers: { 'Authorization': 'Bearer ' + STATE.token }
+            }).then(res => res.json()).then(user => {
+                if (user) {
+                    $('#profileUsername').textContent = user.username || 'کاربر';
+                    $('#profileFullName').textContent = user.fullName || '';
+                    $('#profileBio').textContent = user.bio || 'بیوگرافی';
+                    $('#profileFollowerCount').textContent = formatNumber(user.followers || 0);
+                    $('#profileFollowingCount').textContent = formatNumber(user.following || 0);
+                    if (user.avatar) {
+                        $('#profileAvatar').src = user.avatar;
+                    }
+                }
+            }).catch(() => {});
+        };
+
         window.toggleBan = async function(userId, banned) {
             if (userId === STATE.user?.userId) {
                 showToast('❌ نمی‌توانید خودتان را مسدود کنید', 'error');
