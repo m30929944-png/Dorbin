@@ -1,424 +1,623 @@
-// ================================================================
-// server.js - سرور اصلی با تمام قابلیت‌ها
-// ================================================================
-
-require('dotenv').config();
+// ============================================
+// server.js - با کش پیشرفته، رمزنگاری، مقیاس‌پذیری و پشتیبانی ویدئو
+// ============================================
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const rateLimit = require('express-rate-limit');
-const { v4: uuidv4 } = require('uuid');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const bodyParser = require('body-parser');
 const crypto = require('crypto');
-const path = require('path');
+const DatabaseManager = require('./database');
+const IntelligentAssistant = require('./assistant_logic');
 
-// ================================================================
-// ماژول‌های خودمان
-// ================================================================
-const db = require('./database');
-const cache = require('./cache');
-const encryption = require('./encryption');
+// ============================================
+// کش حافظه‌ای پیشرفته (LRU Cache)
+// ============================================
+class MemoryCache {
+  constructor(maxSize = 1000) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
 
+  get(key) {
+    const item = this.cache.get(key);
+    if (!item) return null;
+    if (Date.now() > item.expires) {
+      this.cache.delete(key);
+      return null;
+    }
+    return item.value;
+  }
+
+  set(key, value, ttl = 60000) {
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, { value, expires: Date.now() + ttl });
+  }
+
+  del(key) { this.cache.delete(key); }
+  clear() { this.cache.clear(); }
+}
+
+const cache = new MemoryCache(2000);
+
+// ============================================
+// تنظیمات اولیه
+// ============================================
 const app = express();
 const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] },
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
 
-// ================================================================
-// امنیت و بهینه‌سازی
-// ================================================================
-app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-app.use(compression());
-app.use(cors({ origin: '*', credentials: true }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cors());
+app.use(bodyParser.json({ limit: '50mb' }));
 app.use(express.static(__dirname));
 
-// ================================================================
-// Rate Limiting
-// ================================================================
-const limiter = rateLimit({ windowMs: 60000, max: 100, message: { error: 'درخواست زیاد!' } });
-app.use('/api/', limiter);
-const strictLimiter = rateLimit({ windowMs: 60000, max: 10 });
+const db = new DatabaseManager();
 
-// ================================================================
-// Socket.IO
-// ================================================================
-const io = socketIO(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-  pingTimeout: 60000,
-  maxHttpBufferSize: 10 * 1024 * 1024,
-  transports: ['websocket', 'polling']
-});
+// ============================================
+// راه‌اندازی کلاستر برای مقیاس‌پذیری
+// ============================================
+const cluster = require('cluster');
+const numCPUs = require('os').cpus().length;
 
-io.on('connection', (socket) => {
-  let userId = null;
-  socket.on('join', (id) => { userId = id; socket.join(`user_${id}`); });
-  socket.on('private_message', async (data) => {
-    const { from, to, message, timestamp } = data;
-    const encrypted = encryption.encrypt(message);
-    await db.query(`INSERT INTO messages (id, from_user, to_user, message_encrypted, iv, timestamp) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [uuidv4(), from, to, encrypted.encrypted, encrypted.iv, timestamp]);
-    io.to(`user_${to}`).emit('new_message', { from, message, encrypted: encrypted.encrypted, iv: encrypted.iv, timestamp });
-    socket.emit('message_sent', { success: true });
+if (cluster.isMaster && process.env.NODE_ENV === 'production') {
+  console.log(`🚀 Master ${process.pid} running, forking ${numCPUs} workers...`);
+  for (let i = 0; i < Math.min(numCPUs, 4); i++) {
+    cluster.fork();
+  }
+  cluster.on('exit', (worker) => {
+    console.log(`Worker ${worker.process.pid} died, restarting...`);
+    cluster.fork();
   });
-  socket.on('typing', (data) => { io.to(`user_${data.to}`).emit('typing', { from: data.from, isTyping: data.isTyping }); });
-  socket.on('follow', (data) => { io.to(`user_${data.to}`).emit('new_follower', { followerName: data.fromName }); });
-  socket.on('disconnect', () => {});
-});
+} else {
+  startServer();
+}
 
-// ================================================================
-// APIها
-// ================================================================
-
-// ---------- ثبت‌نام ----------
-app.post('/api/auth/register', async (req, res) => {
+async function startServer() {
   try {
-    const { name, avatar, password } = req.body;
-    if (!name?.trim()) return res.status(400).json({ error: 'نام الزامی است' });
-    const userId = 'user_' + crypto.randomBytes(8).toString('hex');
-    const channelId = 'channel_' + userId;
-    const hashed = password ? await bcrypt.hash(password, 10) : null;
-    await db.query(`INSERT INTO users (id, name, avatar, password_hash) VALUES ($1,$2,$3,$4)`, [userId, name.trim(), avatar || null, hashed]);
-    await db.query(`INSERT INTO channels (id, user_id, name) VALUES ($1,$2,$3)`, [channelId, userId, name.trim() + ' - کانال']);
-    const token = jwt.sign({ userId }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
-    res.json({ success: true, user: { id: userId, name: name.trim(), avatar: avatar || null, score: 0 }, token });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    await db.initTables();
+    console.log('✅ Database ready');
 
-// ---------- دریافت کاربر ----------
-app.get('/api/user/:id', async (req, res) => {
-  try {
-    const u = await db.query(`SELECT id, name, avatar, score, bio FROM users WHERE id=$1`, [req.params.id]);
-    if (!u.rows[0]) return res.status(404).json({ error: 'یافت نشد' });
-    const ch = await db.query(`SELECT followers_count, posts_count FROM channels WHERE user_id=$1`, [req.params.id]);
-    res.json({ ...u.rows[0], followers: ch.rows[0]?.followers_count || 0, posts: ch.rows[0]?.posts_count || 0 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    // ============================================
+    // API Routes with Caching
+    // ============================================
 
-// ---------- به‌روزرسانی کاربر ----------
-app.put('/api/user/update', async (req, res) => {
-  try {
-    const { userId, name, bio, avatar } = req.body;
-    await db.query(`UPDATE users SET name=$1, bio=$2, avatar=$3 WHERE id=$4`, [name, bio, avatar, userId]);
-    await db.query(`UPDATE channels SET name=$1 WHERE user_id=$2`, [name + ' - کانال', userId]);
-    await cache.del(`user_stats_${userId}`);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    // ثبت‌نام
+    app.post('/api/user/register', async (req, res) => {
+      try {
+        const { name, avatar } = req.body;
+        if (!name || !name.trim()) {
+          return res.status(400).json({ success: false, error: 'نام الزامی است' });
+        }
+        const id = 'user_' + crypto.randomBytes(8).toString('hex');
+        const channelId = 'channel_' + id;
 
-// ---------- پست جدید ----------
-app.post('/api/post/create', strictLimiter, async (req, res) => {
-  try {
-    const { userId, content, mediaData, mediaType } = req.body;
-    if (!content?.trim()) return res.status(400).json({ error: 'متن الزامی است' });
-    const ch = await db.query(`SELECT id FROM channels WHERE user_id=$1`, [userId]);
-    if (!ch.rows[0]) return res.status(404).json({ error: 'کانال یافت نشد' });
-    const postId = uuidv4();
-    let mediaUrl = null;
-    if (mediaData) {
-      mediaUrl = mediaData;
-    }
-    await db.query(`INSERT INTO posts (id, channel_id, content, media_url, media_type, is_published, published_at) VALUES ($1,$2,$3,$4,$5,1,CURRENT_TIMESTAMP)`,
-      [postId, ch.rows[0].id, content.trim(), mediaUrl, mediaType || null]);
-    await db.query(`UPDATE channels SET posts_count = posts_count + 1 WHERE user_id=$1`, [userId]);
-    await db.query(`UPDATE users SET score = score + 20 WHERE id=$1`, [userId]);
-    await cache.del(`posts_channel_${userId}`);
-    // محاسبه boost
-    const stats = await db.query(`SELECT posts_count, activity_score FROM channels WHERE user_id=$1`, [userId]);
-    const score = (stats.rows[0]?.posts_count || 0) * 2 + (stats.rows[0]?.activity_score || 0);
-    let level = 'normal';
-    if (score > 100) level = 'high';
-    if (score > 500) level = 'viral';
-    if (score > 2000) level = 'superstar';
-    await db.query(`UPDATE channels SET boost_level=$1, activity_score=$2 WHERE user_id=$3`, [level, score, userId]);
-    res.json({ success: true, postId, boost: { boostLevel: level } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+        await db.query(id, `INSERT INTO users (id, name, avatar) VALUES ($1, $2, $3)`, [id, name.trim(), avatar || null]);
+        await db.query(id, `INSERT INTO channels (id, user_id, name) VALUES ($1, $2, $3)`, [channelId, id, name.trim() + ' - کانال']);
 
-// ---------- دریافت پست‌های کانال ----------
-app.get('/api/channel/:userId/posts', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-    const cacheKey = `posts_channel_${req.params.userId}_page_${page}`;
-    const cached = await cache.get(cacheKey);
-    if (cached) return res.json(cached);
-    const result = await db.query(
-      `SELECT p.*, c.name as channel_name FROM posts p JOIN channels c ON p.channel_id = c.id WHERE c.user_id=$1 AND p.is_published=1 ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
-      [req.params.userId, limit, offset]
-    );
-    const total = await db.query(`SELECT COUNT(*) as count FROM posts p JOIN channels c ON p.channel_id=c.id WHERE c.user_id=$1 AND p.is_published=1`, [req.params.userId]);
-    const data = { posts: result.rows, total: parseInt(total.rows[0]?.count || 0), page, limit, pages: Math.ceil(total.rows[0]?.count / limit) || 1 };
-    await cache.set(cacheKey, data, 30);
-    res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- لایک ----------
-app.post('/api/post/:postId/like', async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { userId } = req.body;
-    const existing = await db.query(`SELECT 1 FROM post_likes WHERE post_id=$1 AND user_id=$2`, [postId, userId]);
-    let liked;
-    if (existing.rows.length > 0) {
-      await db.query(`DELETE FROM post_likes WHERE post_id=$1 AND user_id=$2`, [postId, userId]);
-      await db.query(`UPDATE posts SET likes = MAX(likes - 1, 0) WHERE id=$1`, [postId]);
-      liked = false;
-    } else {
-      await db.query(`INSERT INTO post_likes (post_id, user_id) VALUES ($1,$2)`, [postId, userId]);
-      await db.query(`UPDATE posts SET likes = likes + 1 WHERE id=$1`, [postId]);
-      await db.query(`UPDATE users SET score = score + 2 WHERE id=$1`, [userId]);
-      liked = true;
-    }
-    const p = await db.query(`SELECT likes FROM posts WHERE id=$1`, [postId]);
-    res.json({ success: true, liked, likes: p.rows[0]?.likes || 0 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- کامنت ----------
-app.post('/api/post/:postId/comment', async (req, res) => {
-  try {
-    const { postId } = req.params;
-    const { userId, text } = req.body;
-    if (!text?.trim()) return res.status(400).json({ error: 'متن الزامی است' });
-    const id = uuidv4();
-    await db.query(`INSERT INTO post_comments (id, post_id, user_id, text) VALUES ($1,$2,$3,$4)`, [id, postId, userId, text.trim()]);
-    await db.query(`UPDATE posts SET comments = comments + 1 WHERE id=$1`, [postId]);
-    await db.query(`UPDATE users SET score = score + 5 WHERE id=$1`, [userId]);
-    const u = await db.query(`SELECT name, avatar FROM users WHERE id=$1`, [userId]);
-    res.json({ success: true, comment: { id, userId, text: text.trim(), name: u.rows[0]?.name, avatar: u.rows[0]?.avatar } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- دریافت کامنت‌ها ----------
-app.get('/api/post/:postId/comments', async (req, res) => {
-  try {
-    const result = await db.query(`SELECT c.*, u.name, u.avatar FROM post_comments c JOIN users u ON u.id = c.user_id WHERE c.post_id=$1 ORDER BY c.created_at ASC`, [req.params.postId]);
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- فالو ----------
-app.post('/api/follow', strictLimiter, async (req, res) => {
-  try {
-    const { followerId, followingId } = req.body;
-    if (followerId === followingId) return res.status(400).json({ error: 'نمی‌توانید خودتان را فالو کنید' });
-    const existing = await db.query(`SELECT 1 FROM follows WHERE follower_id=$1 AND following_id=$2`, [followerId, followingId]);
-    if (existing.rows.length > 0) return res.json({ success: true, alreadyFollowing: true });
-    await db.query(`INSERT INTO follows (follower_id, following_id) VALUES ($1,$2)`, [followerId, followingId]);
-    await db.query(`UPDATE channels SET followers_count = followers_count + 1 WHERE user_id=$1`, [followingId]);
-    await db.query(`UPDATE users SET score = score + 15 WHERE id=$1`, [followerId]);
-    await cache.del(`profile_${followingId}`);
-    await cache.del('explore');
-    io.to(`user_${followingId}`).emit('new_follower', { followerName: followerId });
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- آنفالو ----------
-app.post('/api/unfollow', async (req, res) => {
-  try {
-    const { followerId, followingId } = req.body;
-    await db.query(`DELETE FROM follows WHERE follower_id=$1 AND following_id=$2`, [followerId, followingId]);
-    await db.query(`UPDATE channels SET followers_count = MAX(followers_count - 1, 0) WHERE user_id=$1`, [followingId]);
-    await cache.del(`profile_${followingId}`);
-    await cache.del('explore');
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- اکسپلور ----------
-app.get('/api/explore', async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 12;
-    const offset = (page - 1) * limit;
-    const cacheKey = `explore_page_${page}`;
-    const cached = await cache.get(cacheKey);
-    if (cached) return res.json(cached);
-    const result = await db.query(
-      `SELECT c.id, c.name, c.followers_count, c.posts_count, c.boost_level, c.activity_score, u.id as user_id, u.avatar FROM channels c JOIN users u ON u.id = c.user_id ORDER BY c.activity_score DESC, c.followers_count DESC LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-    const total = await db.query(`SELECT COUNT(*) as count FROM channels`);
-    const data = { items: result.rows, total: parseInt(total.rows[0]?.count || 0), page, limit, pages: Math.ceil(total.rows[0]?.count / limit) || 1 };
-    await cache.set(cacheKey, data, 60);
-    res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- پروفایل عمومی ----------
-app.get('/api/profile/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { viewerId } = req.query;
-    const u = await db.query(`SELECT id, name, avatar, bio, score FROM users WHERE id=$1`, [userId]);
-    if (!u.rows[0]) return res.status(404).json({ error: 'یافت نشد' });
-    const ch = await db.query(`SELECT * FROM channels WHERE user_id=$1`, [userId]);
-    const posts = await db.query(`SELECT * FROM posts WHERE channel_id=$1 AND is_published=1 ORDER BY created_at DESC LIMIT 30`, [ch.rows[0]?.id]);
-    let isFollowing = false;
-    if (viewerId) {
-      const f = await db.query(`SELECT 1 FROM follows WHERE follower_id=$1 AND following_id=$2`, [viewerId, userId]);
-      isFollowing = f.rows.length > 0;
-    }
-    res.json({ user: u.rows[0], channel: ch.rows[0], posts: posts.rows, isFollowing });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- دستیار: آموزش ----------
-app.post('/api/assistant/train', async (req, res) => {
-  try {
-    const { userId, question, answer } = req.body;
-    const id = uuidv4();
-    await db.query(`INSERT INTO assistant_training (id, user_id, type, question, answer) VALUES ($1,$2,'qa',$3,$4)`, [id, userId, question, answer]);
-    await db.query(`UPDATE users SET score = score + 10 WHERE id=$1`, [userId]);
-    await cache.del(`assistant_trainings_${userId}`);
-    // به‌روزرسانی boost
-    const stats = await db.query(`SELECT posts_count, activity_score FROM channels WHERE user_id=$1`, [userId]);
-    const score = (stats.rows[0]?.posts_count || 0) * 2 + (stats.rows[0]?.activity_score || 0) + 10;
-    let level = 'normal';
-    if (score > 100) level = 'high';
-    if (score > 500) level = 'viral';
-    if (score > 2000) level = 'superstar';
-    await db.query(`UPDATE channels SET boost_level=$1, activity_score=$2 WHERE user_id=$3`, [level, score, userId]);
-    res.json({ success: true, boost: { boostLevel: level } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- دستیار: کلمه کلیدی ----------
-app.post('/api/assistant/keyword', async (req, res) => {
-  try {
-    const { userId, keyword, response } = req.body;
-    const id = uuidv4();
-    await db.query(`INSERT INTO assistant_training (id, user_id, type, keyword, response) VALUES ($1,$2,'keyword',$3,$4)`, [id, userId, keyword, response]);
-    await db.query(`UPDATE users SET score = score + 10 WHERE id=$1`, [userId]);
-    await cache.del(`assistant_trainings_${userId}`);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- دریافت داده‌های دستیار ----------
-app.get('/api/assistant/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const qa = await db.query(`SELECT id, question, answer FROM assistant_training WHERE user_id=$1 AND type='qa' ORDER BY created_at DESC`, [userId]);
-    const keywords = await db.query(`SELECT id, keyword, response FROM assistant_training WHERE user_id=$1 AND type='keyword' ORDER BY created_at DESC`, [userId]);
-    const posts = await db.query(`SELECT p.* FROM posts p JOIN channels c ON p.channel_id = c.id WHERE c.user_id=$1 AND p.is_published=0 ORDER BY p.scheduled_time ASC`, [userId]);
-    const stats = await db.query(`SELECT COUNT(*) as total_posts, SUM(likes) as total_likes FROM posts p JOIN channels c ON p.channel_id=c.id WHERE c.user_id=$1 AND p.is_published=1`, [userId]);
-    const trainings = await db.query(`SELECT COUNT(*) as total FROM assistant_training WHERE user_id=$1`, [userId]);
-    const followers = await db.query(`SELECT followers_count FROM channels WHERE user_id=$1`, [userId]);
-    const totalPosts = parseInt(stats.rows[0]?.total_posts || 0);
-    const totalLikes = parseInt(stats.rows[0]?.total_likes || 0);
-    const engagement = totalPosts > 0 ? Math.round((totalLikes / totalPosts) * 100) : 0;
-    res.json({
-      qa: qa.rows, keywords: keywords.rows, posts: posts.rows,
-      stats: { totalPosts, totalLikes, totalTrainings: parseInt(trainings.rows[0]?.total || 0), followers: parseInt(followers.rows[0]?.followers_count || 0), engagementRate: engagement + '%' }
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- چت با دستیار ----------
-app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
-  try {
-    const { targetUserId } = req.params;
-    const { message } = req.body;
-    const trainings = await db.query(`SELECT * FROM assistant_training WHERE user_id=$1`, [targetUserId]);
-    let reply = null;
-    for (const t of trainings.rows) {
-      if (t.type === 'keyword' && t.keyword && message.includes(t.keyword)) { reply = t.response; break; }
-      if (t.type === 'qa' && t.question && (message.includes(t.question) || t.question.includes(message))) { reply = t.answer; break; }
-    }
-    res.json({ reply: reply || '🤖 دستیار هنوز برای این موضوع آموزش ندیده' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- زمان‌بندی پست ----------
-app.post('/api/schedule/posts', strictLimiter, async (req, res) => {
-  try {
-    const { userId, posts } = req.body;
-    if (!posts?.length) return res.status(400).json({ error: 'پستی وجود ندارد' });
-    const ch = await db.query(`SELECT id FROM channels WHERE user_id=$1`, [userId]);
-    if (!ch.rows[0]) return res.status(404).json({ error: 'کانال یافت نشد' });
-    const scheduled = [];
-    for (const post of posts) {
-      const id = uuidv4();
-      await db.query(`INSERT INTO posts (id, channel_id, content, scheduled_time, is_published) VALUES ($1,$2,$3,$4,0)`,
-        [id, ch.rows[0].id, post.content, post.scheduledTime]);
-      scheduled.push(id);
-    }
-    res.json({ success: true, posts: scheduled });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- لغو پست زمان‌بندی ----------
-app.delete('/api/schedule/posts/:postId', async (req, res) => {
-  try {
-    await db.query(`DELETE FROM posts WHERE id=$1 AND is_published=0`, [req.params.postId]);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ---------- تاریخچه چت ----------
-app.get('/api/chat/history/:userId/:targetId', async (req, res) => {
-  try {
-    const { userId, targetId } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
-    const result = await db.query(
-      `SELECT * FROM messages WHERE (from_user=$1 AND to_user=$2) OR (from_user=$2 AND to_user=$1) ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
-      [userId, targetId, limit, offset]
-    );
-    const decrypted = result.rows.map(msg => {
-      if (msg.message_encrypted && msg.iv) {
-        try { msg.message = encryption.decrypt(msg.message_encrypted, msg.iv); } catch (e) { msg.message = '[رمزگشایی نشد]'; }
+        cache.del('explore');
+        res.json({ success: true, user: { id, name: name.trim(), avatar: avatar || null, score: 0, followers: 0 } });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
       }
-      return msg;
     });
-    res.json(decrypted);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
-// ---------- لیست چت‌ها ----------
-app.get('/api/chat/list/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const result = await db.query(
-      `SELECT DISTINCT CASE WHEN from_user=$1 THEN to_user ELSE from_user END as id, u.name, u.avatar,
-       (SELECT message_encrypted FROM messages WHERE (from_user=u.id AND to_user=$1) OR (from_user=$1 AND to_user=u.id) ORDER BY created_at DESC LIMIT 1) as lastMessage
-       FROM messages m JOIN users u ON u.id = CASE WHEN m.from_user=$1 THEN m.to_user ELSE m.from_user END WHERE m.from_user=$1 OR m.to_user=$1`,
-      [userId]
-    );
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    // دریافت کاربر (با کش)
+    app.get('/api/user/:id', async (req, res) => {
+      try {
+        const { id } = req.params;
+        const cacheKey = `user_${id}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
 
-// ---------- جستجو ----------
-app.get('/api/search', async (req, res) => {
-  try {
-    const { q } = req.query;
-    const result = await db.query(`SELECT id, name, 'user' as type FROM users WHERE name LIKE $1 LIMIT 20`, [`%${q}%`]);
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+        const u = await db.query(id, `SELECT id, name, avatar, score FROM users WHERE id = $1`, [id]);
+        if (u.rows.length === 0) return res.status(404).json({ error: 'کاربر یافت نشد' });
+        const ch = await db.query(id, `SELECT followers_count FROM channels WHERE user_id = $1`, [id]);
+        data = { ...u.rows[0], followers: ch.rows[0]?.followers_count || 0 };
+        cache.set(cacheKey, data, 30000);
+        res.json(data);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
 
-// ---------- نوتیفیکیشن‌ها ----------
-app.get('/api/notifications/:userId', async (req, res) => {
-  try {
-    res.json({ notifications: [], unread: 0 });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    // آپلود عکس پروفایل
+    app.post('/api/user/avatar', async (req, res) => {
+      try {
+        const { userId, avatar } = req.body;
+        await db.query(userId, `UPDATE users SET avatar = $1 WHERE id = $2`, [avatar, userId]);
+        cache.del(`user_${userId}`);
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
 
-// ================================================================
-// راه‌اندازی
-// ================================================================
-const PORT = process.env.PORT || 3000;
-(async () => {
-  await db.initTables();
-  await cache.connect();
-  server.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
-})();
+    // پروفایل عمومی (با کش)
+    app.get('/api/profile/:userId', async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const { viewerId } = req.query;
+        const cacheKey = `profile_${userId}_${viewerId || ''}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const u = await db.query(userId, `SELECT id, name, avatar, bio, score FROM users WHERE id = $1`, [userId]);
+        if (u.rows.length === 0) return res.status(404).json({ error: 'کاربر یافت نشد' });
+
+        const ch = await db.query(userId, `SELECT * FROM channels WHERE user_id = $1`, [userId]);
+        const channel = ch.rows[0];
+
+        const posts = await db.query(userId, `
+          SELECT * FROM posts WHERE channel_id = $1 AND is_published = 1
+          ORDER BY created_at DESC LIMIT 30
+        `, [channel?.id]);
+
+        let isFollowing = false;
+        if (viewerId) {
+          const f = await db.query(userId, `SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2`, [viewerId, userId]);
+          isFollowing = f.rows.length > 0;
+        }
+
+        data = { user: u.rows[0], channel, posts: posts.rows, isFollowing };
+        cache.set(cacheKey, data, 15000);
+        res.json(data);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // فالو / آنفالو
+    app.post('/api/follow', async (req, res) => {
+      try {
+        const { followerId, followingId } = req.body;
+        if (followerId === followingId) return res.status(400).json({ success: false, error: 'نمی‌توانید خودتان را فالو کنید' });
+
+        const existing = await db.query(followerId, `SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2`, [followerId, followingId]);
+        if (existing.rows.length > 0) return res.json({ success: true, alreadyFollowing: true });
+
+        await db.query(followerId, `INSERT INTO follows (follower_id, following_id) VALUES ($1, $2)`, [followerId, followingId]);
+        await db.query(followingId, `UPDATE channels SET followers_count = followers_count + 1 WHERE user_id = $1`, [followingId]);
+
+        const assistant = new IntelligentAssistant(followerId, db);
+        await assistant.updateUserActivity('follow');
+
+        cache.del(`user_${followingId}`);
+        cache.del(`profile_${followingId}_${followerId}`);
+        cache.del('explore');
+
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/unfollow', async (req, res) => {
+      try {
+        const { followerId, followingId } = req.body;
+        await db.query(followerId, `DELETE FROM follows WHERE follower_id = $1 AND following_id = $2`, [followerId, followingId]);
+        await db.query(followingId, `UPDATE channels SET followers_count = MAX(followers_count - 1, 0) WHERE user_id = $1`, [followingId]);
+
+        cache.del(`user_${followingId}`);
+        cache.del(`profile_${followingId}_${followerId}`);
+        cache.del('explore');
+
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // ساخت پست
+    app.post('/api/post/create', async (req, res) => {
+      try {
+        const { userId, content, mediaUrl, mediaType } = req.body;
+        if (!content || !content.trim()) return res.status(400).json({ success: false, error: 'متن پست الزامی است' });
+
+        const channel = await db.query(userId, `SELECT id FROM channels WHERE user_id = $1`, [userId]);
+        if (channel.rows.length === 0) return res.status(404).json({ success: false, error: 'کانالی یافت نشد' });
+
+        const postId = crypto.randomUUID();
+        await db.query(userId, `
+          INSERT INTO posts (id, channel_id, content, media_url, media_type, is_published, published_at)
+          VALUES ($1, $2, $3, $4, $5, 1, CURRENT_TIMESTAMP)
+        `, [postId, channel.rows[0].id, content.trim(), mediaUrl || null, mediaType || null]);
+
+        await db.query(userId, `UPDATE channels SET posts_count = posts_count + 1 WHERE user_id = $1`, [userId]);
+
+        const assistant = new IntelligentAssistant(userId, db);
+        await assistant.updateUserActivity('post');
+        const boost = await assistant.boostVisibility();
+
+        cache.del(`channel_${userId}`);
+        cache.del(`profile_${userId}`);
+        cache.del('explore');
+
+        res.json({ success: true, postId, boost });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // بازدید پست
+    app.post('/api/post/:postId/view', async (req, res) => {
+      try {
+        const { postId } = req.params;
+        await db.query(postId, `UPDATE posts SET views = views + 1 WHERE id = $1`, [postId]);
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // لایک
+    app.post('/api/post/:postId/like', async (req, res) => {
+      try {
+        const { postId } = req.params;
+        const { userId } = req.body;
+
+        const existing = await db.query(userId, `SELECT 1 FROM post_likes WHERE post_id = $1 AND user_id = $2`, [postId, userId]);
+        let liked;
+        if (existing.rows.length > 0) {
+          await db.query(userId, `DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2`, [postId, userId]);
+          await db.query(postId, `UPDATE posts SET likes = MAX(likes - 1, 0) WHERE id = $1`, [postId]);
+          liked = false;
+        } else {
+          await db.query(userId, `INSERT INTO post_likes (post_id, user_id) VALUES ($1, $2)`, [postId, userId]);
+          await db.query(postId, `UPDATE posts SET likes = likes + 1 WHERE id = $1`, [postId]);
+          const assistant = new IntelligentAssistant(userId, db);
+          await assistant.updateUserActivity('like');
+          liked = true;
+        }
+
+        const p = await db.query(postId, `SELECT likes FROM posts WHERE id = $1`, [postId]);
+        cache.del(`channel_${userId}`);
+        res.json({ success: true, liked, likes: p.rows[0]?.likes || 0 });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    // کامنت
+    app.post('/api/post/:postId/comment', async (req, res) => {
+      try {
+        const { postId } = req.params;
+        const { userId, text } = req.body;
+        if (!text || !text.trim()) return res.status(400).json({ success: false, error: 'متن کامنت الزامی است' });
+
+        const id = crypto.randomUUID();
+        await db.query(userId, `INSERT INTO post_comments (id, post_id, user_id, text) VALUES ($1, $2, $3, $4)`, [id, postId, userId, text.trim()]);
+        await db.query(postId, `UPDATE posts SET comments = comments + 1 WHERE id = $1`, [postId]);
+
+        const assistant = new IntelligentAssistant(userId, db);
+        await assistant.updateUserActivity('comment');
+
+        const u = await db.query(userId, `SELECT name, avatar FROM users WHERE id = $1`, [userId]);
+        cache.del(`channel_${userId}`);
+        res.json({ success: true, comment: { id, userId, text: text.trim(), name: u.rows[0]?.name, avatar: u.rows[0]?.avatar } });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.get('/api/post/:postId/comments', async (req, res) => {
+      try {
+        const { postId } = req.params;
+        const cacheKey = `comments_${postId}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const result = await db.query(postId, `
+          SELECT c.*, u.name, u.avatar FROM post_comments c
+          JOIN users u ON u.id = c.user_id
+          WHERE c.post_id = $1 ORDER BY c.created_at ASC
+        `, [postId]);
+        cache.set(cacheKey, result.rows, 10000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // دستیار - آموزش
+    app.post('/api/assistant/train', async (req, res) => {
+      try {
+        const { userId, question, answer } = req.body;
+        const id = crypto.randomUUID();
+
+        await db.query(userId, `
+          INSERT INTO assistant_training (id, user_id, type, question, answer)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [id, userId, 'qa', question, answer]);
+
+        const assistant = new IntelligentAssistant(userId, db);
+        await assistant.updateUserActivity('train');
+        const boost = await assistant.boostVisibility();
+
+        cache.del(`assistant_${userId}`);
+        res.json({ success: true, message: 'آموزش با موفقیت ثبت شد', boost });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/assistant/keyword', async (req, res) => {
+      try {
+        const { userId, keyword, response } = req.body;
+        const id = crypto.randomUUID();
+
+        await db.query(userId, `
+          INSERT INTO assistant_training (id, user_id, type, keyword, response)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [id, userId, 'keyword', keyword, response]);
+
+        const assistant = new IntelligentAssistant(userId, db);
+        await assistant.updateUserActivity('train');
+        const boost = await assistant.boostVisibility();
+
+        cache.del(`assistant_${userId}`);
+        res.json({ success: true, message: 'کلمه کلیدی با موفقیت ثبت شد', boost });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.post('/api/assistant/schedule', async (req, res) => {
+      try {
+        const { userId, postCount, descriptions, time } = req.body;
+        const channel = await db.query(userId, `SELECT id FROM channels WHERE user_id = $1`, [userId]);
+        if (channel.rows.length === 0) return res.status(404).json({ success: false, error: 'کانالی یافت نشد' });
+
+        const channelId = channel.rows[0].id;
+        const scheduledPosts = [];
+
+        for (let i = 0; i < postCount; i++) {
+          const postId = crypto.randomUUID();
+          const desc = descriptions[i] || `پست شماره ${i + 1}`;
+
+          const postDate = new Date();
+          postDate.setDate(postDate.getDate() + i);
+          const [hours, minutes] = time.split(':');
+          postDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+          await db.query(userId, `
+            INSERT INTO posts (id, channel_id, content, scheduled_time, is_published)
+            VALUES ($1, $2, $3, $4, 0)
+          `, [postId, channelId, desc, postDate.toISOString()]);
+
+          scheduledPosts.push(postId);
+        }
+
+        cache.del(`assistant_${userId}`);
+        res.json({ success: true, message: `${postCount} پست با موفقیت زمان‌بندی شد`, posts: scheduledPosts });
+      } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+
+    app.get('/api/assistant/:userId', async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const cacheKey = `assistant_${userId}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const qa = await db.query(userId, `
+          SELECT question, answer FROM assistant_training 
+          WHERE user_id = $1 AND type = 'qa' ORDER BY created_at DESC
+        `, [userId]);
+
+        const keywords = await db.query(userId, `
+          SELECT keyword, response FROM assistant_training 
+          WHERE user_id = $1 AND type = 'keyword' ORDER BY created_at DESC
+        `, [userId]);
+
+        const posts = await db.query(userId, `
+          SELECT p.*, c.name as channel_name 
+          FROM posts p JOIN channels c ON p.channel_id = c.id
+          WHERE c.user_id = $1 AND p.is_published = 0
+          ORDER BY p.scheduled_time ASC
+        `, [userId]);
+
+        const assistant = new IntelligentAssistant(userId, db);
+        const stats = await assistant.getStats();
+
+        data = { qa: qa.rows, keywords: keywords.rows, posts: posts.rows, stats };
+        cache.set(cacheKey, data, 30000);
+        res.json(data);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // چت با دستیار دیگران
+    app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
+      try {
+        const { targetUserId } = req.params;
+        const { message } = req.body;
+
+        const assistant = new IntelligentAssistant(targetUserId, db);
+        const reply = await assistant.autoReply(message);
+
+        res.json({ reply: reply || 'دستیار هنوز برای این موضوع آموزش ندیده 🤖' });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // کانال - پست‌ها
+    app.get('/api/channel/:userId/posts', async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const cacheKey = `channel_${userId}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const result = await db.query(userId, `
+          SELECT p.*, c.name as channel_name
+          FROM posts p JOIN channels c ON p.channel_id = c.id
+          WHERE c.user_id = $1 AND p.is_published = 1
+          ORDER BY p.created_at DESC LIMIT 50
+        `, [userId]);
+        cache.set(cacheKey, result.rows, 15000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // جستجو
+    app.get('/api/search', async (req, res) => {
+      try {
+        const { q } = req.query;
+        const cacheKey = `search_${q}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const result = await db.query(null, `
+          SELECT id, name, 'user' as type FROM users WHERE name LIKE $1
+          UNION
+          SELECT id, name, 'channel' as type FROM channels WHERE name LIKE $1
+          LIMIT 20
+        `, [`%${q}%`]);
+        cache.set(cacheKey, result.rows, 60000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // اکسپلور (با کش)
+    app.get('/api/explore', async (req, res) => {
+      try {
+        let data = cache.get('explore');
+        if (data) return res.json(data);
+
+        const result = await db.query(null, `
+          SELECT c.id, c.name, c.followers_count, c.posts_count, c.boost_level, c.activity_score, u.id as user_id, u.avatar
+          FROM channels c JOIN users u ON u.id = c.user_id
+          ORDER BY c.activity_score DESC, c.followers_count DESC
+          LIMIT 30
+        `);
+        cache.set('explore', result.rows, 30000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // ============================================
+    // چت خصوصی با رمزنگاری
+    // ============================================
+    app.post('/api/chat/save', async (req, res) => {
+      try {
+        const { from, to, message } = req.body;
+        const id = crypto.randomUUID();
+        await db.query(from, `INSERT INTO messages (id, from_user, to_user, message) VALUES ($1, $2, $3, $4)`, [id, from, to, message]);
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    app.get('/api/chat/history/:userId/:targetId', async (req, res) => {
+      try {
+        const { userId, targetId } = req.params;
+        const cacheKey = `chat_${userId}_${targetId}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const result = await db.query(userId, `
+          SELECT * FROM messages 
+          WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
+          ORDER BY created_at ASC LIMIT 100
+        `, [userId, targetId]);
+        cache.set(cacheKey, result.rows, 30000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    app.get('/api/chat/list/:userId', async (req, res) => {
+      try {
+        const { userId } = req.params;
+        const cacheKey = `chatlist_${userId}`;
+        let data = cache.get(cacheKey);
+        if (data) return res.json(data);
+
+        const result = await db.query(userId, `
+          SELECT DISTINCT
+            CASE WHEN from_user = $1 THEN to_user ELSE from_user END as id,
+            u.name, u.avatar,
+            (SELECT message FROM messages 
+             WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
+             ORDER BY created_at DESC LIMIT 1) as lastMessage
+          FROM messages m
+          JOIN users u ON u.id = CASE WHEN m.from_user = $1 THEN m.to_user ELSE m.from_user END
+          WHERE m.from_user = $1 OR m.to_user = $1
+        `, [userId]);
+        cache.set(cacheKey, result.rows, 30000);
+        res.json(result.rows);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // ============================================
+    // WebSocket با رمزنگاری
+    // ============================================
+    io.on('connection', (socket) => {
+      console.log('🔌 Client connected:', socket.id);
+
+      socket.on('join', (userId) => {
+        socket.join(`user_${userId}`);
+        console.log(`User ${userId} joined room`);
+      });
+
+      socket.on('private_message', async (data) => {
+        const { from, to, message, timestamp } = data;
+
+        // ذخیره پیام رمزنگاری شده در دیتابیس
+        try {
+          const id = crypto.randomUUID();
+          await db.query(from, `INSERT INTO messages (id, from_user, to_user, message) VALUES ($1, $2, $3, $4)`, [id, from, to, message]);
+          // پاک کردن کش چت
+          cache.del(`chat_${from}_${to}`);
+          cache.del(`chat_${to}_${from}`);
+          cache.del(`chatlist_${from}`);
+          cache.del(`chatlist_${to}`);
+        } catch (e) { console.error('Save message error:', e); }
+
+        io.to(`user_${to}`).emit('new_message', { from, message, timestamp });
+        socket.emit('message_sent', { success: true, timestamp });
+      });
+
+      socket.on('disconnect', () => {
+        console.log('🔌 Client disconnected:', socket.id);
+      });
+    });
+
+    // ============================================
+    // راه‌اندازی سرور
+    // ============================================
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📍 http://localhost:${PORT}`);
+      if (process.env.NODE_ENV === 'production') {
+        console.log(`🔒 Production mode with ${Math.min(numCPUs, 4)} workers`);
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
