@@ -17,7 +17,7 @@ const io = socketIO(server, {
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
-app.use(express.static('public'));
+app.use(express.static(__dirname));
 
 // ============================================
 // دیتابیس با قابلیت شاردینگ (Sharding)
@@ -437,7 +437,7 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-
+// راه‌اندازی سرور
 // ============================================
 const PORT = process.env.PORT || 3000;
 

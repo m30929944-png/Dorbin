@@ -1,8 +1,8 @@
 // ============================================
 // اتصال به سرور با WebSocket
 // ============================================
-const socket = io('http://localhost:3000', {
-    transports: ['websocket'],
+const socket = io({
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 10
 });
