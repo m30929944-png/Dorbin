@@ -4,62 +4,56 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
-const path = require('path');
-const fs = require('fs');
+const compression = require('compression');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const DatabaseManager = require('./database');
 const IntelligentAssistant = require('./assistant_logic');
 
 // ============================================
-// تنظیمات امنیتی و محدودیت‌ها
+// تنظیمات سرور
 // ============================================
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
     cors: { origin: "*", methods: ["GET", "POST"] },
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    maxHttpBufferSize: 1e8 // 100MB
 });
 
-// میدلورهای امنیتی
+// ============================================
+// امنیت و بهینه‌سازی
+// ============================================
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+}));
+app.use(compression());
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(__dirname));
 
-// محدودیت نرخ درخواست (Rate Limiting)
-const rateLimits = new Map();
-app.use((req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
-    const now = Date.now();
-    const window = 60000; // 1 دقیقه
-    const limit = 100; // 100 درخواست در دقیقه
-
-    if (!rateLimits.has(ip)) {
-        rateLimits.set(ip, { count: 1, reset: now + window });
-        return next();
-    }
-
-    const data = rateLimits.get(ip);
-    if (now > data.reset) {
-        data.count = 1;
-        data.reset = now + window;
-        return next();
-    }
-
-    data.count++;
-    if (data.count > limit) {
-        return res.status(429).json({ error: 'تعداد درخواست‌ها بیش از حد مجاز است' });
-    }
-    next();
+// محدودیت نرخ درخواست
+const limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    message: { error: 'تعداد درخواست‌ها بیش از حد مجاز است' }
 });
+app.use('/api/', limiter);
+
+app.use(bodyParser.json({ limit: '100mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.static(__dirname, {
+    maxAge: '1d',
+    etag: true
+}));
 
 const db = new DatabaseManager();
 
 // ============================================
-// تأیید ادمین
+// بررسی ادمین
 // ============================================
 function isAdmin(req, res, next) {
-    const { userId } = req.body;
+    const userId = req.headers.userid || req.body.userId;
     if (userId === 'admin_milad') {
         return next();
     }
@@ -67,7 +61,7 @@ function isAdmin(req, res, next) {
 }
 
 // ============================================
-// API‌های کاربر
+// API ثبت‌نام
 // ============================================
 app.post('/api/user/register', async (req, res) => {
     try {
@@ -75,30 +69,45 @@ app.post('/api/user/register', async (req, res) => {
         if (!name || !name.trim()) {
             return res.status(400).json({ success: false, error: 'نام الزامی است' });
         }
-        const id = 'user_' + crypto.randomBytes(8).toString('hex');
+        
+        let id;
+        const nameLower = name.trim().toLowerCase();
+        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin') {
+            id = 'admin_milad';
+        } else {
+            id = 'user_' + crypto.randomBytes(8).toString('hex');
+        }
+        
         const channelId = 'channel_' + id;
 
-        await db.query(id, `
-            INSERT INTO users (id, name, avatar, created_at) 
-            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-        `, [id, name.trim(), avatar || null]);
-        
-        await db.query(id, `
-            INSERT INTO channels (id, user_id, name, created_at) 
-            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-        `, [channelId, id, name.trim() + ' - کانال']);
+        const check = await db.query(id, `SELECT id FROM users WHERE id = $1`, [id]);
+        if (check.rows.length === 0) {
+            await db.query(id, `
+                INSERT INTO users (id, name, avatar, role, is_verified, score, created_at) 
+                VALUES ($1, $2, $3, $4, 1, $5, CURRENT_TIMESTAMP)
+            `, [id, name.trim(), avatar || null, id === 'admin_milad' ? 'admin' : 'user', id === 'admin_milad' ? 999999 : 0]);
+            
+            await db.query(id, `
+                INSERT INTO channels (id, user_id, name, boost_level, created_at) 
+                VALUES ($1, $2, $3, 'normal', CURRENT_TIMESTAMP)
+            `, [channelId, id, name.trim() + ' - کانال']);
+        }
 
-        res.json({ success: true, user: { id, name: name.trim(), avatar: avatar || null, score: 0, followers: 0 } });
+        const u = await db.query(id, `SELECT id, name, avatar, score, role FROM users WHERE id = $1`, [id]);
+        res.json({ success: true, user: u.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
+// ============================================
+// API کاربر
+// ============================================
 app.get('/api/user/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const u = await db.query(id, `
-            SELECT id, name, avatar, score, bio, is_verified, role 
+            SELECT id, name, avatar, score, bio, role, is_verified, created_at 
             FROM users WHERE id = $1
         `, [id]);
         if (u.rows.length === 0) return res.status(404).json({ error: 'کاربر یافت نشد' });
@@ -112,10 +121,17 @@ app.get('/api/user/:id', async (req, res) => {
 app.post('/api/user/avatar', async (req, res) => {
     try {
         const { userId, avatar } = req.body;
-        await db.query(userId, `
-            UPDATE users SET avatar = $1, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = $2
-        `, [avatar, userId]);
+        await db.query(userId, `UPDATE users SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [avatar, userId]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/user/bio', async (req, res) => {
+    try {
+        const { userId, bio } = req.body;
+        await db.query(userId, `UPDATE users SET bio = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [bio, userId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -123,15 +139,24 @@ app.post('/api/user/avatar', async (req, res) => {
 });
 
 // ============================================
-// API پروفایل عمومی
+// پروفایل عمومی با کش
 // ============================================
+const profileCache = new Map();
+const PROFILE_CACHE_TTL = 30000;
+
 app.get('/api/profile/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         const { viewerId } = req.query;
+        
+        const cacheKey = `${userId}_${viewerId}`;
+        const cached = profileCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < PROFILE_CACHE_TTL) {
+            return res.json(cached.data);
+        }
 
         const u = await db.query(userId, `
-            SELECT id, name, avatar, bio, score, is_verified 
+            SELECT id, name, avatar, bio, score, is_verified, created_at 
             FROM users WHERE id = $1
         `, [userId]);
         if (u.rows.length === 0) return res.status(404).json({ error: 'کاربر یافت نشد' });
@@ -140,26 +165,31 @@ app.get('/api/profile/:userId', async (req, res) => {
         const channel = ch.rows[0];
 
         const posts = await db.query(userId, `
-            SELECT * FROM posts WHERE channel_id = $1 AND is_published = 1
-            ORDER BY created_at DESC LIMIT 30
-        `, [channel?.id]);
+            SELECT p.*, c.name as channel_name
+            FROM posts p JOIN channels c ON p.channel_id = c.id
+            WHERE c.user_id = $1 AND p.is_published = 1
+            ORDER BY p.created_at DESC LIMIT 30
+        `, [userId]);
 
         let isFollowing = false;
-        if (viewerId) {
+        if (viewerId && viewerId !== userId) {
             const f = await db.query(userId, `
                 SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2
             `, [viewerId, userId]);
             isFollowing = f.rows.length > 0;
         }
 
-        res.json({ user: u.rows[0], channel, posts: posts.rows, isFollowing });
+        const data = { user: u.rows[0], channel, posts: posts.rows, isFollowing };
+        profileCache.set(cacheKey, { data, timestamp: Date.now() });
+        
+        res.json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 // ============================================
-// فالو / آنفالو
+// فالو / آنفالو با تراکنش
 // ============================================
 app.post('/api/follow', async (req, res) => {
     try {
@@ -168,27 +198,37 @@ app.post('/api/follow', async (req, res) => {
             return res.status(400).json({ success: false, error: 'نمی‌توانید خودتان را فالو کنید' });
         }
 
-        const existing = await db.query(followerId, `
-            SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2
-        `, [followerId, followingId]);
-        if (existing.rows.length > 0) {
-            return res.json({ success: true, alreadyFollowing: true });
-        }
-
-        await db.query(followerId, `
-            INSERT INTO follows (follower_id, following_id, created_at) 
-            VALUES ($1, $2, CURRENT_TIMESTAMP)
-        `, [followerId, followingId]);
+        const dbInstance = db.getDb();
+        let result;
         
-        await db.query(followingId, `
-            UPDATE channels SET followers_count = followers_count + 1, updated_at = CURRENT_TIMESTAMP 
-            WHERE user_id = $1
-        `, [followingId]);
+        const transaction = dbInstance.transaction(() => {
+            const existing = dbInstance.prepare(`
+                SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?
+            `).get(followerId, followingId);
+            
+            if (existing) return { success: true, alreadyFollowing: true };
 
-        const assistant = new IntelligentAssistant(followerId, db);
-        await assistant.updateUserActivity('follow');
+            dbInstance.prepare(`
+                INSERT INTO follows (follower_id, following_id, created_at) 
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            `).run(followerId, followingId);
+            
+            dbInstance.prepare(`
+                UPDATE channels SET followers_count = followers_count + 1, updated_at = CURRENT_TIMESTAMP 
+                WHERE user_id = ?
+            `).run(followingId);
 
-        res.json({ success: true });
+            return { success: true };
+        });
+
+        result = transaction();
+        if (result.success && !result.alreadyFollowing) {
+            const assistant = new IntelligentAssistant(followerId, db);
+            await assistant.updateUserActivity('follow');
+            profileCache.clear();
+        }
+        
+        res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -197,13 +237,21 @@ app.post('/api/follow', async (req, res) => {
 app.post('/api/unfollow', async (req, res) => {
     try {
         const { followerId, followingId } = req.body;
-        await db.query(followerId, `
-            DELETE FROM follows WHERE follower_id = $1 AND following_id = $2
-        `, [followerId, followingId]);
-        await db.query(followingId, `
-            UPDATE channels SET followers_count = MAX(followers_count - 1, 0), updated_at = CURRENT_TIMESTAMP 
-            WHERE user_id = $1
-        `, [followingId]);
+        
+        const dbInstance = db.getDb();
+        const transaction = dbInstance.transaction(() => {
+            dbInstance.prepare(`
+                DELETE FROM follows WHERE follower_id = ? AND following_id = ?
+            `).run(followerId, followingId);
+            
+            dbInstance.prepare(`
+                UPDATE channels SET followers_count = MAX(followers_count - 1, 0), updated_at = CURRENT_TIMESTAMP 
+                WHERE user_id = ?
+            `).run(followingId);
+        });
+
+        transaction();
+        profileCache.clear();
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -211,7 +259,7 @@ app.post('/api/unfollow', async (req, res) => {
 });
 
 // ============================================
-// ساخت پست جدید با پشتیبانی از ویدیو
+// پست‌ها با پشتیبانی ویدیو
 // ============================================
 app.post('/api/post/create', async (req, res) => {
     try {
@@ -233,14 +281,14 @@ app.post('/api/post/create', async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `, [postId, channel.rows[0].id, content.trim(), mediaUrl || null, type]);
 
-        await db.query(userId, `
-            UPDATE channels SET posts_count = posts_count + 1, updated_at = CURRENT_TIMESTAMP 
-            WHERE user_id = $1
-        `, [userId]);
+        await db.query(userId, `UPDATE channels SET posts_count = posts_count + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
 
         const assistant = new IntelligentAssistant(userId, db);
         await assistant.updateUserActivity('post');
         const boost = await assistant.boostVisibility();
+
+        profileCache.clear();
+        exploreCache.clear();
 
         res.json({ success: true, postId, boost });
     } catch (error) {
@@ -248,43 +296,67 @@ app.post('/api/post/create', async (req, res) => {
     }
 });
 
+app.post('/api/post/:postId/view', async (req, res) => {
+    try {
+        const { postId } = req.params;
+        await db.query(postId, `UPDATE posts SET views = views + 1 WHERE id = $1`, [postId]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ============================================
-// لایک / کامنت
+// لایک و کامنت
 // ============================================
 app.post('/api/post/:postId/like', async (req, res) => {
     try {
         const { postId } = req.params;
         const { userId } = req.body;
 
-        const existing = await db.query(userId, `
-            SELECT 1 FROM post_likes WHERE post_id = $1 AND user_id = $2
-        `, [postId, userId]);
-        let liked;
-        if (existing.rows.length > 0) {
-            await db.query(userId, `
-                DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2
-            `, [postId, userId]);
-            await db.query(postId, `
-                UPDATE posts SET likes = MAX(likes - 1, 0), updated_at = CURRENT_TIMESTAMP 
-                WHERE id = $1
-            `, [postId]);
-            liked = false;
-        } else {
-            await db.query(userId, `
-                INSERT INTO post_likes (post_id, user_id, created_at) 
-                VALUES ($1, $2, CURRENT_TIMESTAMP)
-            `, [postId, userId]);
-            await db.query(postId, `
-                UPDATE posts SET likes = likes + 1, updated_at = CURRENT_TIMESTAMP 
-                WHERE id = $1
-            `, [postId]);
+        const dbInstance = db.getDb();
+        let liked, likes;
+        
+        const transaction = dbInstance.transaction(() => {
+            const existing = dbInstance.prepare(`
+                SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?
+            `).get(postId, userId);
+            
+            if (existing) {
+                dbInstance.prepare(`
+                    DELETE FROM post_likes WHERE post_id = ? AND user_id = ?
+                `).run(postId, userId);
+                dbInstance.prepare(`
+                    UPDATE posts SET likes = MAX(likes - 1, 0), updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                `).run(postId);
+                liked = false;
+            } else {
+                dbInstance.prepare(`
+                    INSERT INTO post_likes (post_id, user_id, created_at) 
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                `).run(postId, userId);
+                dbInstance.prepare(`
+                    UPDATE posts SET likes = likes + 1, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                `).run(postId);
+                liked = true;
+            }
+            
+            const p = dbInstance.prepare(`SELECT likes FROM posts WHERE id = ?`).get(postId);
+            likes = p?.likes || 0;
+        });
+
+        transaction();
+        
+        if (liked) {
             const assistant = new IntelligentAssistant(userId, db);
             await assistant.updateUserActivity('like');
-            liked = true;
         }
-
-        const p = await db.query(postId, `SELECT likes FROM posts WHERE id = $1`, [postId]);
-        res.json({ success: true, liked, likes: p.rows[0]?.likes || 0 });
+        
+        profileCache.clear();
+        exploreCache.clear();
+        res.json({ success: true, liked, likes });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -303,15 +375,14 @@ app.post('/api/post/:postId/comment', async (req, res) => {
             INSERT INTO post_comments (id, post_id, user_id, text, created_at) 
             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
         `, [id, postId, userId, text.trim()]);
-        await db.query(postId, `
-            UPDATE posts SET comments = comments + 1, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = $1
-        `, [postId]);
+        await db.query(postId, `UPDATE posts SET comments = comments + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [postId]);
 
         const assistant = new IntelligentAssistant(userId, db);
         await assistant.updateUserActivity('comment');
 
         const u = await db.query(userId, `SELECT name, avatar FROM users WHERE id = $1`, [userId]);
+        profileCache.clear();
+        exploreCache.clear();
         res.json({ success: true, comment: { id, userId, text: text.trim(), name: u.rows[0]?.name, avatar: u.rows[0]?.avatar } });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -375,7 +446,6 @@ app.post('/api/assistant/keyword', async (req, res) => {
     }
 });
 
-// زمان‌بندی پست‌ها با پشتیبانی از ویدیو
 app.post('/api/assistant/schedule', async (req, res) => {
     try {
         const { userId, posts } = req.body;
@@ -388,11 +458,7 @@ app.post('/api/assistant/schedule', async (req, res) => {
         const assistant = new IntelligentAssistant(userId, db);
         const scheduled = await assistant.schedulePosts(posts);
 
-        res.json({ 
-            success: true, 
-            message: `${posts.length} پست با موفقیت زمان‌بندی شد`,
-            posts: scheduled 
-        });
+        res.json({ success: true, message: `${posts.length} پست با موفقیت زمان‌بندی شد`, posts: scheduled });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -428,7 +494,6 @@ app.get('/api/assistant/:userId', async (req, res) => {
     }
 });
 
-// چت با دستیار
 app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
     try {
         const { targetUserId } = req.params;
@@ -444,8 +509,66 @@ app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
 });
 
 // ============================================
-// کانال / اکسپلور
+// کانال و اکسپلور با کش
 // ============================================
+const exploreCache = new Map();
+const EXPLORE_CACHE_TTL = 15000;
+
+app.get('/api/explore', async (req, res) => {
+    try {
+        const cached = exploreCache.get('explore');
+        if (cached && (Date.now() - cached.timestamp) < EXPLORE_CACHE_TTL) {
+            return res.json(cached.data);
+        }
+
+        const result = await db.query(null, `
+            SELECT 
+                u.id as user_id,
+                u.name,
+                u.avatar,
+                u.score,
+                c.id as channel_id,
+                c.followers_count,
+                c.posts_count,
+                c.boost_level,
+                c.activity_score,
+                (
+                    SELECT json_group_array(
+                        json_object(
+                            'id', p.id,
+                            'content', p.content,
+                            'media_url', p.media_url,
+                            'media_type', p.media_type,
+                            'likes', p.likes,
+                            'comments', p.comments,
+                            'views', p.views,
+                            'created_at', p.created_at
+                        )
+                    )
+                    FROM posts p
+                    WHERE p.channel_id = c.id AND p.is_published = 1
+                    ORDER BY p.created_at DESC
+                    LIMIT 5
+                ) as recent_posts
+            FROM channels c
+            JOIN users u ON u.id = c.user_id
+            WHERE c.posts_count > 0
+            ORDER BY c.activity_score DESC, c.followers_count DESC
+            LIMIT 50
+        `);
+        
+        const items = result.rows.map(row => ({
+            ...row,
+            recent_posts: row.recent_posts ? JSON.parse(row.recent_posts) : []
+        }));
+        
+        exploreCache.set('explore', { data: items, timestamp: Date.now() });
+        res.json(items);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/channel/:userId/posts', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -461,15 +584,19 @@ app.get('/api/channel/:userId/posts', async (req, res) => {
     }
 });
 
-app.get('/api/explore', async (req, res) => {
+app.get('/api/search', async (req, res) => {
     try {
+        const { q } = req.query;
+        if (!q || q.length < 2) return res.json([]);
+        
         const result = await db.query(null, `
-            SELECT c.id, c.name, c.followers_count, c.posts_count, c.boost_level, 
-                   c.activity_score, u.id as user_id, u.avatar, u.name as user_name
-            FROM channels c JOIN users u ON u.id = c.user_id
-            ORDER BY c.activity_score DESC, c.followers_count DESC
-            LIMIT 30
-        `);
+            SELECT id, name, avatar, 'user' as type FROM users 
+            WHERE name LIKE $1 AND id != 'admin_milad'
+            UNION
+            SELECT id, name, NULL as avatar, 'channel' as type FROM channels 
+            WHERE name LIKE $1
+            LIMIT 20
+        `, [`%${q}%`]);
         res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -477,19 +604,17 @@ app.get('/api/explore', async (req, res) => {
 });
 
 // ============================================
-// چت خصوصی رمزنگاری شده
+// چت خصوصی با تاریخچه کامل
 // ============================================
 app.post('/api/chat/save', async (req, res) => {
     try {
         const { from, to, message } = req.body;
         const id = crypto.randomUUID();
-        // رمزنگاری پیام
-        const encrypted = db.encrypt(message);
         
         await db.query(from, `
-            INSERT INTO messages (id, from_user, to_user, message, encrypted, created_at) 
-            VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP)
-        `, [id, from, to, encrypted]);
+            INSERT INTO messages (id, from_user, to_user, message, created_at) 
+            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+        `, [id, from, to, message]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -502,16 +627,9 @@ app.get('/api/chat/history/:userId/:targetId', async (req, res) => {
         const result = await db.query(userId, `
             SELECT * FROM messages 
             WHERE (from_user = $1 AND to_user = $2) OR (from_user = $2 AND to_user = $1)
-            ORDER BY created_at ASC LIMIT 100
+            ORDER BY created_at ASC LIMIT 200
         `, [userId, targetId]);
-
-        // رمزگشایی پیام‌ها
-        const decrypted = result.rows.map(row => ({
-            ...row,
-            message: row.encrypted ? db.decrypt(row.message) : row.message
-        }));
-
-        res.json(decrypted);
+        res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -521,56 +639,55 @@ app.get('/api/chat/list/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
         const result = await db.query(userId, `
-            SELECT DISTINCT
-                CASE WHEN from_user = $1 THEN to_user ELSE from_user END as id,
-                u.name, u.avatar,
-                (SELECT message FROM messages 
-                 WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
-                 ORDER BY created_at DESC LIMIT 1) as lastMessage
-            FROM messages m
-            JOIN users u ON u.id = CASE WHEN m.from_user = $1 THEN m.to_user ELSE m.from_user END
-            WHERE m.from_user = $1 OR m.to_user = $1
+            SELECT 
+                u.id,
+                u.name,
+                u.avatar,
+                (
+                    SELECT message FROM messages 
+                    WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
+                    ORDER BY created_at DESC LIMIT 1
+                ) as lastMessage,
+                (
+                    SELECT created_at FROM messages 
+                    WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
+                    ORDER BY created_at DESC LIMIT 1
+                ) as lastTime,
+                (
+                    SELECT COUNT(*) FROM messages 
+                    WHERE from_user = u.id AND to_user = $1 AND is_read = 0
+                ) as unreadCount
+            FROM users u
+            WHERE u.id IN (
+                SELECT DISTINCT CASE WHEN from_user = $1 THEN to_user ELSE from_user END
+                FROM messages
+                WHERE from_user = $1 OR to_user = $1
+            )
+            AND u.id != $1
+            ORDER BY lastTime DESC
         `, [userId]);
-
-        // رمزگشایی آخرین پیام
-        const decrypted = result.rows.map(row => ({
-            ...row,
-            lastMessage: row.lastMessage ? db.decrypt(row.lastMessage) : null
-        }));
-
-        res.json(decrypted);
+        res.json(result.rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// ============================================
-// پنل مدیریت
-// ============================================
-// ارسال پیام همگانی
-app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
+app.post('/api/chat/read', async (req, res) => {
     try {
-        const { message, title } = req.body;
-        const users = await db.query(null, `SELECT id FROM users`);
-        
-        for (const user of users.rows) {
-            const id = crypto.randomUUID();
-            await db.query(null, `
-                INSERT INTO system_notifications (id, user_id, title, message, type, created_at)
-                VALUES ($1, $2, $3, $4, 'broadcast', CURRENT_TIMESTAMP)
-            `, [id, user.id, title || 'اعلان سیستمی', message]);
-            
-            // ارسال از طریق سوکت
-            io.to(`user_${user.id}`).emit('broadcast', { title, message });
-        }
-        
-        res.json({ success: true, message: `پیام به ${users.rows.length} کاربر ارسال شد` });
+        const { userId, fromUser } = req.body;
+        await db.query(userId, `
+            UPDATE messages SET is_read = 1 
+            WHERE from_user = $1 AND to_user = $2 AND is_read = 0
+        `, [fromUser, userId]);
+        res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// مدیریت کاربران
+// ============================================
+// پنل مدیریت کامل
+// ============================================
 app.get('/api/admin/users', isAdmin, async (req, res) => {
     try {
         const users = await db.query(null, `
@@ -585,23 +702,26 @@ app.get('/api/admin/users', isAdmin, async (req, res) => {
     }
 });
 
-app.post('/api/admin/user/status', isAdmin, async (req, res) => {
+app.post('/api/admin/user/:action', isAdmin, async (req, res) => {
     try {
-        const { userId, action } = req.body;
-        if (action === 'ban') {
-            await db.query(null, `UPDATE users SET role = 'banned' WHERE id = $1`, [userId]);
-        } else if (action === 'unban') {
-            await db.query(null, `UPDATE users SET role = 'user' WHERE id = $1`, [userId]);
-        } else if (action === 'verify') {
-            await db.query(null, `UPDATE users SET is_verified = 1 WHERE id = $1`, [userId]);
-        }
+        const { action } = req.params;
+        const { userId } = req.body;
+        
+        const actions = {
+            verify: `UPDATE users SET is_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            unverify: `UPDATE users SET is_verified = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            ban: `UPDATE users SET role = 'banned', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+            unban: `UPDATE users SET role = 'user', updated_at = CURRENT_TIMESTAMP WHERE id = $1`
+        };
+        
+        if (!actions[action]) return res.status(400).json({ error: 'عملیات نامعتبر' });
+        await db.query(null, actions[action], [userId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// مدیریت پست‌ها
 app.get('/api/admin/posts', isAdmin, async (req, res) => {
     try {
         const posts = await db.query(null, `
@@ -621,13 +741,14 @@ app.post('/api/admin/post/delete', isAdmin, async (req, res) => {
     try {
         const { postId } = req.body;
         await db.query(null, `DELETE FROM posts WHERE id = $1`, [postId]);
+        profileCache.clear();
+        exploreCache.clear();
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// مدیریت کانال‌ها
 app.get('/api/admin/channels', isAdmin, async (req, res) => {
     try {
         const channels = await db.query(null, `
@@ -642,8 +763,58 @@ app.get('/api/admin/channels', isAdmin, async (req, res) => {
     }
 });
 
+app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
+    try {
+        const { message, title } = req.body;
+        const users = await db.query(null, `SELECT id FROM users`);
+        
+        const dbInstance = db.getDb();
+        const insert = dbInstance.prepare(`
+            INSERT INTO system_notifications (id, user_id, title, message, type, created_at) 
+            VALUES (?, ?, ?, ?, 'broadcast', CURRENT_TIMESTAMP)
+        `);
+        
+        const transaction = dbInstance.transaction(() => {
+            for (const user of users.rows) {
+                const id = crypto.randomUUID();
+                insert.run(id, user.id, title || 'اعلان سیستمی', message);
+                io.to(`user_${user.id}`).emit('broadcast', { title: title || 'اعلان سیستمی', message });
+            }
+        });
+        
+        transaction();
+        res.json({ success: true, message: `پیام به ${users.rows.length} کاربر ارسال شد` });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/stats', isAdmin, async (req, res) => {
+    try {
+        const users = await db.query(null, `SELECT COUNT(*) as total FROM users`);
+        const posts = await db.query(null, `SELECT COUNT(*) as total FROM posts WHERE is_published = 1`);
+        const channels = await db.query(null, `SELECT COUNT(*) as total FROM channels`);
+        const messages = await db.query(null, `SELECT COUNT(*) as total FROM messages`);
+        const follows = await db.query(null, `SELECT COUNT(*) as total FROM follows`);
+        const comments = await db.query(null, `SELECT COUNT(*) as total FROM post_comments`);
+        const trainings = await db.query(null, `SELECT COUNT(*) as total FROM assistant_training`);
+        
+        res.json({
+            users: users.rows[0]?.total || 0,
+            posts: posts.rows[0]?.total || 0,
+            channels: channels.rows[0]?.total || 0,
+            messages: messages.rows[0]?.total || 0,
+            follows: follows.rows[0]?.total || 0,
+            comments: comments.rows[0]?.total || 0,
+            trainings: trainings.rows[0]?.total || 0
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ============================================
-// WebSocket
+// WebSocket با پشتیبانی از میلیون‌ها کاربر
 // ============================================
 io.on('connection', (socket) => {
     console.log('🔌 New client connected:', socket.id);
@@ -656,23 +827,23 @@ io.on('connection', (socket) => {
     socket.on('private_message', async (data) => {
         const { from, to, message, timestamp } = data;
         
-        // رمزنگاری پیام
-        const encrypted = db.encrypt(message);
-        
-        // ذخیره در دیتابیس
         try {
             const id = crypto.randomUUID();
             await db.query(from, `
-                INSERT INTO messages (id, from_user, to_user, message, encrypted, created_at) 
-                VALUES ($1, $2, $3, $4, 1, CURRENT_TIMESTAMP)
-            `, [id, from, to, encrypted]);
+                INSERT INTO messages (id, from_user, to_user, message, created_at) 
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+            `, [id, from, to, message]);
         } catch (e) {
             console.error('save message error', e);
         }
 
-        // ارسال به گیرنده
         io.to(`user_${to}`).emit('new_message', { from, message, timestamp });
-        socket.emit('message_sent', { success: true, timestamp });
+        io.to(`user_${from}`).emit('message_sent', { success: true, timestamp });
+    });
+
+    socket.on('typing', (data) => {
+        const { from, to } = data;
+        io.to(`user_${to}`).emit('user_typing', { from });
     });
 
     socket.on('disconnect', () => {
@@ -681,7 +852,7 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-// راه‌اندازی
+// راه‌اندازی سرور
 // ============================================
 const PORT = process.env.PORT || 3000;
 
@@ -689,10 +860,13 @@ async function startServer() {
     try {
         await db.initTables();
         console.log('✅ Database ready');
+        console.log('✅ Tables created/verified');
 
         server.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📍 http://localhost:${PORT}`);
+            console.log(`👑 Admin: milad / M09145978426m`);
+            console.log(`📊 Mode: ${process.env.NODE_ENV || 'development'}`);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);
@@ -701,3 +875,5 @@ async function startServer() {
 }
 
 startServer();
+
+module.exports = { app, server, io };

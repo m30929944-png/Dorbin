@@ -1,12 +1,13 @@
 // ============================================
 // اتصال WebSocket
 // ============================================
-const socket = io({ 
-    transports: ['websocket', 'polling'], 
-    reconnection: true, 
-    reconnectionAttempts: 10,
+const socket = io({
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 20,
     reconnectionDelay: 1000,
-    timeout: 10000
+    reconnectionDelayMax: 5000,
+    timeout: 15000
 });
 
 let currentUser = null;
@@ -18,9 +19,11 @@ let pendingMediaType = null;
 let scheduledMediaFiles = [];
 let isAdmin = false;
 let adminPanelOpen = false;
+let chatListCache = [];
+let messagesCache = {};
 
 // ============================================
-// توابع اصلی
+// توابع کمکی
 // ============================================
 function defaultAvatar(seed) {
     return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed || 'user')}`;
@@ -46,15 +49,20 @@ function timeAgo(dateStr) {
     if (diff < 60) return 'همین الان';
     if (diff < 3600) return Math.floor(diff / 60) + ' دقیقه پیش';
     if (diff < 86400) return Math.floor(diff / 3600) + ' ساعت پیش';
-    return Math.floor(diff / 86400) + ' روز پیش';
+    if (diff < 2592000) return Math.floor(diff / 86400) + ' روز پیش';
+    return new Date(dateStr).toLocaleDateString('fa-IR');
 }
 
-function showNotification(text) {
+function showNotification(text, type = 'info') {
     const n = document.createElement('div');
     n.className = 'notification';
-    n.textContent = text;
+    n.innerHTML = text;
     document.body.appendChild(n);
-    setTimeout(() => n.remove(), 2600);
+    setTimeout(() => {
+        n.style.opacity = '0';
+        n.style.transform = 'translate(-50%, -20px)';
+        setTimeout(() => n.remove(), 300);
+    }, 3000);
 }
 
 function closeModal() {
@@ -78,6 +86,12 @@ function updateBoostBadge(level) {
     const labels = { normal: 'عادی', high: '🔥 داغ', viral: '🚀 وایرال', superstar: '⭐ ستاره' };
     badge.textContent = labels[level] || 'عادی';
     badge.className = 'boost-badge boost-' + level;
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num;
 }
 
 // ============================================
@@ -109,12 +123,20 @@ function showRegisterModal() {
     modal.innerHTML = `
         <div class="modal-content">
             <h2>👋 خوش اومدی!</h2>
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">
+                یه اسم برای خودت انتخاب کن
+            </p>
             <div class="avatar-upload">
                 <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
             <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-            <button class="btn-primary" style="width:100%;padding:10px;" onclick="registerUser()">ورود به یارِ من</button>
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+                <i class="fas fa-rocket"></i> ورود به یارِ من
+            </button>
+            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
+                با ثبت‌نام، قوانین و حریم خصوصی را می‌پذیرید
+            </p>
         </div>`;
     document.body.appendChild(modal);
 
@@ -140,7 +162,14 @@ async function registerUser() {
             currentUser = data.user;
             localStorage.setItem('yareman_user_id', currentUser.id);
             document.getElementById('registerModal').remove();
+            
+            if (currentUser.id === 'admin_milad') {
+                isAdmin = true;
+                document.getElementById('adminBtn').classList.add('show');
+            }
+            
             afterLogin();
+            showNotification('✨ خوش آمدی ' + currentUser.name);
         } else {
             showNotification('خطا: ' + data.error);
         }
@@ -150,13 +179,17 @@ async function registerUser() {
 function afterLogin() {
     document.getElementById('userName').textContent = currentUser.name;
     document.getElementById('avatarImg').src = currentUser.avatar || defaultAvatar(currentUser.name);
-    document.getElementById('userScore').textContent = `🏆 ${currentUser.score || 0}`;
+    document.getElementById('userScore').textContent = `🏆 ${formatNumber(currentUser.score || 0)}`;
     socket.emit('join', currentUser.id);
     setupNav();
     loadPageData('channel');
     
     socket.on('broadcast', (data) => {
         showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
+    });
+    
+    socket.on('message_sent', (data) => {
+        // پیام ارسال شد
     });
 }
 
@@ -205,13 +238,16 @@ async function showProfileModal() {
                 <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
                 <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
             </div>
-            <h3 style="font-size:16px;">${escapeHtml(currentUser.name)}</h3>
+            <h3 style="font-size:17px;">${escapeHtml(currentUser.name)}</h3>
+            ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
             <div class="profile-stats">
-                <div><b>${currentUser.followers || 0}</b><span>فالوور</span></div>
-                <div><b>${currentUser.score || 0}</b><span>امتیاز</span></div>
+                <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
+                <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
             </div>
             <div class="profile-actions">
-                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">🤖 مدیریت دستیار</button>
+                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
+                    <i class="fas fa-robot"></i> مدیریت دستیار
+                </button>
                 <button class="btn-ghost" onclick="closeModal()">بستن</button>
             </div>
         </div>`;
@@ -226,6 +262,7 @@ async function showProfileModal() {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, avatar: b64 })
             });
+            showNotification('✅ عکس پروفایل به‌روز شد');
         });
     });
 }
@@ -302,18 +339,22 @@ async function createPost() {
 
 async function loadChannelPosts() {
     try {
-        const res = await fetch(`/api/channel/${currentUser.id}/posts`);
+        const res = await fetch(`/api/channel/${currentUser.id}`);
         const posts = await res.json();
         const container = document.getElementById('channelPosts');
         if (!container) return;
         
         container.innerHTML = posts.length ? 
             posts.map(p => renderPostCard(p, currentUser)).join('') :
-            '<p class="empty-state">هنوز پستی منتشر نکردی. اولین پستت رو بنویس! ✍️</p>';
+            `<div class="empty-state">
+                <i class="fas fa-pen-fancy"></i>
+                هنوز پستی منتشر نکردی.<br>
+                اولین پستت رو بنویس! ✍️
+            </div>`;
 
         const ures = await fetch(`/api/user/${currentUser.id}`);
         const u = await ures.json();
-        document.getElementById('followersCount').textContent = `${u.followers || 0} فالوور`;
+        document.getElementById('followersCount').textContent = `${formatNumber(u.followers || 0)} فالوور`;
     } catch (e) { console.error(e); }
 }
 
@@ -323,23 +364,29 @@ function renderPostCard(post, author) {
     const mediaHtml = post.media_url ? `
         <div class="media-wrapper">
             ${post.media_type === 'video' ? 
-                `<video src="${post.media_url}" controls></video>` : 
+                `<video src="${post.media_url}" controls preload="metadata"></video>` : 
                 `<img src="${post.media_url}" loading="lazy">`}
         </div>` : '';
     
     return `
     <div class="post-card" data-post-id="${post.id}">
         <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
-            <img src="${avatar}">
+            <img src="${avatar}" loading="lazy">
             <span class="name">${escapeHtml(name)}</span>
             <span class="time">${timeAgo(post.created_at)}</span>
         </div>
         <p class="content">${escapeHtml(post.content)}</p>
         ${mediaHtml}
         <div class="post-stats">
-            <button onclick="toggleLike('${post.id}', this)"><i class="far fa-heart"></i> <span class="like-count">${post.likes || 0}</span></button>
-            <button onclick="toggleComments('${post.id}', this)"><i class="far fa-comment"></i> <span class="comment-count">${post.comments || 0}</span></button>
-            <button disabled><i class="far fa-eye"></i> ${post.views || 0}</button>
+            <button onclick="toggleLike('${post.id}', this)" class="like-btn">
+                <i class="far fa-heart"></i> <span class="like-count">${formatNumber(post.likes || 0)}</span>
+            </button>
+            <button onclick="toggleComments('${post.id}', this)">
+                <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
+            </button>
+            <button disabled>
+                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
+            </button>
         </div>
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
@@ -355,7 +402,7 @@ async function toggleLike(postId, btn) {
         if (data.success) {
             btn.classList.toggle('liked', data.liked);
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
-            btn.querySelector('.like-count').textContent = data.likes;
+            btn.querySelector('.like-count').textContent = formatNumber(data.likes);
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -370,7 +417,13 @@ async function toggleComments(postId, btn) {
             const res = await fetch(`/api/post/${postId}/comments`);
             const comments = await res.json();
             box.innerHTML = (comments.map(c => `
-                <div class="comment-item"><img src="${c.avatar || defaultAvatar(c.name)}"><span><b>${escapeHtml(c.name)}</b>: ${escapeHtml(c.text)}</span></div>
+                <div class="comment-item">
+                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                    <div>
+                        <b>${escapeHtml(c.name)}</b>
+                        <span class="comment-text">${escapeHtml(c.text)}</span>
+                    </div>
+                </div>
             `).join('') || '') + `
                 <div class="comment-form">
                     <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس...">
@@ -398,10 +451,15 @@ async function submitComment(postId) {
             const form = box.querySelector('.comment-form');
             const item = document.createElement('div');
             item.className = 'comment-item';
-            item.innerHTML = `<img src="${data.comment.avatar || defaultAvatar(data.comment.name)}"><span><b>${escapeHtml(data.comment.name)}</b>: ${escapeHtml(data.comment.text)}</span>`;
+            item.innerHTML = `
+                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                <div>
+                    <b>${escapeHtml(data.comment.name)}</b>
+                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
+                </div>`;
             box.insertBefore(item, form);
             const card = document.querySelector(`[data-post-id="${postId}"] .comment-count`);
-            if (card) card.textContent = parseInt(card.textContent) + 1;
+            if (card) card.textContent = formatNumber(parseInt(card.textContent.replace(/,/g, '')) + 1);
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -414,23 +472,30 @@ async function loadAssistantData() {
         const res = await fetch(`/api/assistant/${currentUser.id}`);
         const data = await res.json();
 
-        document.getElementById('statPosts').textContent = data.stats?.totalPosts ?? 0;
-        document.getElementById('statTrainings').textContent = data.stats?.totalTrainings ?? 0;
-        document.getElementById('statFollowers').textContent = data.stats?.followers ?? 0;
+        document.getElementById('statPosts').textContent = formatNumber(data.stats?.totalPosts ?? 0);
+        document.getElementById('statTrainings').textContent = formatNumber(data.stats?.totalTrainings ?? 0);
+        document.getElementById('statFollowers').textContent = formatNumber(data.stats?.followers ?? 0);
         document.getElementById('statEngagement').textContent = data.stats?.engagementRate ?? '0%';
 
         document.getElementById('qaList').innerHTML = data.qa?.length ? data.qa.map(q => `
-            <div class="qa-item"><span>❓ ${escapeHtml(q.question)}</span><span>💬 ${escapeHtml(q.answer)}</span></div>
+            <div class="qa-item">
+                <span class="q">❓ ${escapeHtml(q.question)}</span>
+                <span class="a">💬 ${escapeHtml(q.answer)}</span>
+            </div>
         `).join('') : '<p class="empty-state">هنوز آموزشی ثبت نشده.</p>';
 
         document.getElementById('keywordList').innerHTML = data.keywords?.length ? data.keywords.map(k => `
-            <div class="keyword-item"><span>🔑 ${escapeHtml(k.keyword)}</span><span>💬 ${escapeHtml(k.response)}</span></div>
+            <div class="keyword-item">
+                <span class="k">🔑 ${escapeHtml(k.keyword)}</span>
+                <span class="r">💬 ${escapeHtml(k.response)}</span>
+            </div>
         `).join('') : '<p class="empty-state">هنوز کلمه کلیدی ثبت نشده.</p>';
 
         if (data.posts?.length) {
             document.getElementById('scheduledPostsList').innerHTML = data.posts.map(p => `
-                <div style="font-size:11px;color:var(--text-2);padding:4px 0;border-bottom:1px solid var(--border);">
-                    📅 ${escapeHtml(p.content?.substring(0, 30) || '')}... - ${new Date(p.scheduled_time).toLocaleString('fa-IR')}
+                <div style="font-size:11px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                    <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
+                    <span style="font-size:10px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
                 </div>
             `).join('');
         }
@@ -578,30 +643,110 @@ async function loadExplore() {
         const container = document.getElementById('exploreContent');
         if (!container) return;
         
-        container.innerHTML = items.length ? items.map(c => `
-            <div class="explore-card" onclick="openProfile('${c.user_id}')">
-                <img src="${c.avatar || defaultAvatar(c.user_name || c.name)}" loading="lazy">
-                <h4>${escapeHtml(c.user_name || c.name)}</h4>
-                <div class="meta">${labels[c.boost_level] || 'عادی'} · ${c.followers_count} فالوور</div>
-                <button class="follow-btn" onclick="event.stopPropagation(); quickFollow('${c.user_id}', this)">فالو</button>
-            </div>`).join('') : '<p class="empty-state">هنوز کانالی وجود نداره.</p>';
+        if (!items.length) {
+            container.innerHTML = `<div class="empty-state">
+                <i class="fas fa-compass"></i>
+                هنوز پستی در اکسپلور وجود نداره.<br>
+                اولین پست رو تو منتشر کن! 🚀
+            </div>`;
+            return;
+        }
+
+        container.innerHTML = items.map(user => {
+            const postsHtml = user.recent_posts && user.recent_posts.length ? 
+                user.recent_posts.map(p => `
+                    <div class="explore-post-mini" onclick="event.stopPropagation(); openPostDetail('${p.id}')">
+                        <p>${escapeHtml(p.content?.substring(0, 120) || '')}${p.content?.length > 120 ? '...' : ''}</p>
+                        ${p.media_url ? `
+                            <div class="mini-media">
+                                ${p.media_type === 'video' ? 
+                                    `<video src="${p.media_url}" muted preload="metadata"></video>` : 
+                                    `<img src="${p.media_url}" loading="lazy">`}
+                            </div>
+                        ` : ''}
+                        <div class="mini-stats">
+                            <span><i class="far fa-heart"></i> ${formatNumber(p.likes || 0)}</span>
+                            <span><i class="far fa-comment"></i> ${formatNumber(p.comments || 0)}</span>
+                            <span><i class="far fa-eye"></i> ${formatNumber(p.views || 0)}</span>
+                        </div>
+                    </div>
+                `).join('') : 
+                `<p style="font-size:11px;color:var(--text-3);padding:4px 0;">هنوز پستی منتشر نشده</p>`;
+
+            return `
+                <div class="explore-user-card">
+                    <div class="explore-user-header">
+                        <img src="${user.avatar || defaultAvatar(user.name)}" loading="lazy" onclick="openProfile('${user.user_id}')">
+                        <div class="info" onclick="openProfile('${user.user_id}')">
+                            <h4>${escapeHtml(user.name)}</h4>
+                            <div class="meta">${labels[user.boost_level] || 'عادی'} · ${formatNumber(user.followers_count || 0)} فالوور</div>
+                        </div>
+                        <button class="follow-btn" onclick="event.stopPropagation(); quickFollow('${user.user_id}', this)">
+                            فالو
+                        </button>
+                    </div>
+                    <div class="explore-posts">
+                        ${postsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
     } catch (e) { console.error(e); }
 }
 
+function openPostDetail(postId) {
+    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+    if (postCard) {
+        postCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        postCard.style.border = '2px solid var(--primary)';
+        postCard.style.boxShadow = 'var(--shadow-glow)';
+        setTimeout(() => {
+            postCard.style.border = '';
+            postCard.style.boxShadow = '';
+        }, 3000);
+    } else {
+        showNotification('پست در حال بارگذاری...');
+        document.querySelector('[data-page="channel"]').click();
+        setTimeout(() => {
+            const card = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 500);
+    }
+}
+
 async function quickFollow(userId, btn) {
-    if (userId === currentUser.id) return;
+    if (userId === currentUser.id) {
+        showNotification('نمی‌توانید خودتان را فالو کنید');
+        return;
+    }
+    
+    const isFollowing = btn.classList.contains('following');
+    
     try {
-        const res = await fetch('/api/follow', {
+        const endpoint = isFollowing ? '/api/unfollow' : '/api/follow';
+        const res = await fetch(endpoint, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ followerId: currentUser.id, followingId: userId })
         });
         const data = await res.json();
-        if (data.success) { 
-            btn.textContent = 'فالو شد'; 
-            btn.classList.add('following');
-            showNotification('✅ فالو شد');
+        if (data.success) {
+            if (isFollowing) {
+                btn.textContent = 'فالو';
+                btn.classList.remove('following');
+                showNotification('❌ آنفالو شد');
+            } else {
+                btn.textContent = 'فالو شد ✓';
+                btn.classList.add('following');
+                showNotification('✅ فالو شد');
+            }
+            const countEl = document.getElementById('viewFollowers');
+            if (countEl) {
+                countEl.textContent = formatNumber(parseInt(countEl.textContent.replace(/,/g, '')) + (isFollowing ? -1 : 1));
+            }
         }
-    } catch (e) { showNotification('خطا'); }
+    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
 }
 
 // ============================================
@@ -615,9 +760,10 @@ async function openProfile(userId) {
 
         document.getElementById('viewAvatar').src = data.user.avatar || defaultAvatar(data.user.name);
         document.getElementById('viewName').textContent = data.user.name;
-        document.getElementById('viewFollowers').textContent = data.channel?.followers_count || 0;
-        document.getElementById('viewPosts').textContent = data.channel?.posts_count || 0;
-        document.getElementById('viewScore').textContent = data.user.score || 0;
+        document.getElementById('viewBio').textContent = data.user.bio || '';
+        document.getElementById('viewFollowers').textContent = formatNumber(data.channel?.followers_count || 0);
+        document.getElementById('viewPosts').textContent = formatNumber(data.channel?.posts_count || 0);
+        document.getElementById('viewScore').textContent = formatNumber(data.user.score || 0);
 
         viewingProfileFollowing = data.isFollowing;
         const followBtn = document.getElementById('viewFollowBtn');
@@ -627,7 +773,10 @@ async function openProfile(userId) {
         if (container) {
             container.innerHTML = data.posts.length ?
                 data.posts.map(p => renderPostCard(p, data.user)).join('') :
-                '<p class="empty-state">هنوز پستی منتشر نکرده.</p>';
+                `<div class="empty-state">
+                    <i class="fas fa-pen-fancy"></i>
+                    این کاربر هنوز پستی منتشر نکرده.
+                </div>`;
         }
 
         document.getElementById('viewAssistantChat').innerHTML = '';
@@ -635,7 +784,7 @@ async function openProfile(userId) {
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         const profilePage = document.getElementById('profilePage');
         if (profilePage) profilePage.classList.add('active');
-    } catch (e) { showNotification('خطا'); }
+    } catch (e) { showNotification('خطا در بارگذاری پروفایل'); }
 }
 
 function backFromProfile() {
@@ -656,7 +805,7 @@ async function toggleFollowView() {
             const followBtn = document.getElementById('viewFollowBtn');
             if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
             const count = document.getElementById('viewFollowers');
-            if (count) count.textContent = parseInt(count.textContent) + (viewingProfileFollowing ? 1 : -1);
+            if (count) count.textContent = formatNumber(parseInt(count.textContent.replace(/,/g, '')) + (viewingProfileFollowing ? 1 : -1));
             showNotification(viewingProfileFollowing ? '✅ فالو شد' : '❌ آنفالو شد');
         }
     } catch (e) { showNotification('خطا'); }
@@ -691,14 +840,40 @@ async function loadChatList() {
     try {
         const res = await fetch(`/api/chat/list/${currentUser.id}`);
         const chats = await res.json();
+        chatListCache = chats;
         const container = document.getElementById('chatList');
         if (!container) return;
         
-        container.innerHTML = chats.length ? chats.map(c => `
+        if (!chats.length) {
+            container.innerHTML = `<div class="empty-state">
+                <i class="fas fa-comment-dots"></i>
+                هنوز چتی نداری.<br>
+                از اکسپلور یکی رو پیدا کن و پیام بده! 💬
+            </div>`;
+            return;
+        }
+        
+        container.innerHTML = chats.map(c => `
             <div class="chat-item" onclick="openChat('${c.id}', '${escapeHtml(c.name)}', '${c.avatar || defaultAvatar(c.name)}')">
-                <img src="${c.avatar || defaultAvatar(c.name)}">
-                <div><strong>${escapeHtml(c.name)}</strong><p>${escapeHtml(c.lastMessage || '')}</p></div>
-            </div>`).join('') : '<p class="empty-state">هنوز چتی نداری. از اکسپلور یکی رو پیدا کن و پیام بده!</p>';
+                <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                <div class="info">
+                    <strong>${escapeHtml(c.name)}</strong>
+                    <p>${escapeHtml(c.lastMessage || '')}</p>
+                </div>
+                ${c.unreadCount > 0 ? `<span class="unread">${c.unreadCount}</span>` : ''}
+            </div>
+        `).join('');
+        
+        const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+        const badge = document.getElementById('chatBadge');
+        if (badge) {
+            if (totalUnread > 0) {
+                badge.style.display = 'block';
+                badge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
     } catch (e) { console.error(e); }
 }
 
@@ -709,13 +884,39 @@ async function openChat(userId, name, avatar) {
     document.getElementById('chatWindow').classList.add('open');
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
 
+    // علامت‌گذاری پیام‌ها به عنوان خوانده شده
     try {
+        await fetch('/api/chat/read', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, fromUser: userId })
+        });
+        await loadChatList();
+    } catch (e) {}
+
+    try {
+        const cacheKey = `${currentUser.id}_${userId}`;
+        if (messagesCache[cacheKey]) {
+            renderMessages(messagesCache[cacheKey]);
+            return;
+        }
+        
         const res = await fetch(`/api/chat/history/${currentUser.id}/${userId}`);
         const messages = await res.json();
-        const container = document.getElementById('chatMessages');
-        container.innerHTML = messages.map(m => `<div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">${escapeHtml(m.message)}</div>`).join('');
-        container.scrollTop = container.scrollHeight;
+        messagesCache[cacheKey] = messages;
+        renderMessages(messages);
     } catch (e) { showNotification('خطا'); }
+}
+
+function renderMessages(messages) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    container.innerHTML = messages.map(m => `
+        <div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">
+            ${escapeHtml(m.message)}
+            <span class="time">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+    `).join('');
+    container.scrollTop = container.scrollHeight;
 }
 
 function closeChatWindow() {
@@ -728,7 +929,13 @@ async function sendMessage() {
     const message = input.value.trim();
     if (!message || !currentChatUser) return;
 
-    socket.emit('private_message', { from: currentUser.id, to: currentChatUser.id, message, timestamp: Date.now() });
+    socket.emit('private_message', { 
+        from: currentUser.id, 
+        to: currentChatUser.id, 
+        message, 
+        timestamp: Date.now() 
+    });
+    
     displayMessage(message, 'sent');
     input.value = '';
 }
@@ -738,18 +945,94 @@ function displayMessage(text, type) {
     if (!container) return;
     const div = document.createElement('div');
     div.className = `message ${type}`;
-    div.textContent = text;
+    div.innerHTML = `${escapeHtml(text)}<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
 
 socket.on('new_message', (data) => {
+    const cacheKey = `${currentUser.id}_${data.from}`;
+    if (messagesCache[cacheKey]) {
+        messagesCache[cacheKey].push({
+            from_user: data.from,
+            to_user: currentUser.id,
+            message: data.message,
+            created_at: new Date().toISOString()
+        });
+    }
+    
     if (currentChatUser && data.from === currentChatUser.id) {
         displayMessage(data.message, 'received');
     } else {
-        showNotification(`📩 پیام جدید`);
+        showNotification(`📩 پیام جدید از ${data.from}`);
+        loadChatList();
     }
 });
+
+socket.on('message_sent', (data) => {
+    // پیام ارسال شد
+});
+
+// ============================================
+// جستجو
+// ============================================
+document.getElementById('searchInput').addEventListener('input', debounce(async function(e) {
+    const q = e.target.value.trim();
+    if (q.length < 2) {
+        document.getElementById('searchResults')?.remove();
+        return;
+    }
+    try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const results = await res.json();
+        showSearchResults(results);
+    } catch (e) { console.error(e); }
+}, 500));
+
+function showSearchResults(results) {
+    let container = document.getElementById('searchResults');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'searchResults';
+        container.style.cssText = `
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            margin-top: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 50;
+            display: none;
+        `;
+        document.querySelector('.search-box').appendChild(container);
+    }
+    
+    if (!results.length) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    container.innerHTML = results.map(r => `
+        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
+             onclick="openProfile('${r.id}')" 
+             onmouseover="this.style.background='var(--bg-soft)'"
+             onmouseout="this.style.background=''">
+            <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}"></i>
+            <span>${escapeHtml(r.name)}</span>
+            <span style="font-size:10px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
+        </div>
+    `).join('');
+}
+
+function debounce(fn, wait) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+}
 
 // ============================================
 // پنل مدیریت
@@ -761,7 +1044,7 @@ function toggleAdminPanel() {
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         const adminPage = document.getElementById('adminPage');
         if (adminPage) adminPage.classList.add('active');
-        loadAdminData('users');
+        loadAdminData('stats');
     } else {
         document.querySelector('[data-page="channel"]').click();
     }
@@ -772,19 +1055,30 @@ function switchAdminTab(tab) {
     const tabBtn = document.querySelector(`.admin-tab[data-tab="${tab}"]`);
     if (tabBtn) tabBtn.classList.add('active');
     
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
+    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
     const content = document.getElementById('admin' + tab.charAt(0).toUpperCase() + tab.slice(1));
-    if (content) content.style.display = 'block';
+    if (content) content.classList.add('active');
     loadAdminData(tab);
 }
 
 async function loadAdminData(type) {
     try {
-        if (type === 'users') {
-            const res = await fetch('/api/admin/users', { 
-                method: 'GET',
-                headers: { 'userId': 'admin_milad' }
-            });
+        if (type === 'stats') {
+            const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
+            const stats = await res.json();
+            const container = document.getElementById('adminStatsContent');
+            if (container) {
+                container.innerHTML = `
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
+                        <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.messages)}</b><span>پیام‌ها</span></div>
+                    </div>
+                `;
+            }
+        } else if (type === 'users') {
+            const res = await fetch('/api/admin/users', { headers: { 'userId': 'admin_milad' } });
             const users = await res.json();
             const container = document.getElementById('adminUsersList');
             if (container) {
@@ -792,10 +1086,11 @@ async function loadAdminData(type) {
                     <div class="admin-user-item">
                         <span class="name">${escapeHtml(u.name)}</span>
                         <span style="font-size:10px;color:var(--text-3);">${u.role || 'user'}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
                         <div class="actions">
                             ${u.role !== 'admin' ? `
-                                <button class="btn-secondary" onclick="adminAction('user','${u.id}','verify')">تأیید</button>
-                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">بن</button>
+                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>
+                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>
                             ` : ''}
                         </div>
                     </div>
@@ -808,9 +1103,10 @@ async function loadAdminData(type) {
             if (container) {
                 container.innerHTML = posts.map(p => `
                     <div class="admin-post-item">
-                        <span>${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
+                        <span>${escapeHtml(p.content?.substring(0, 40) || '')}...</span>
                         <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">حذف</button>
+                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
                     </div>
                 `).join('');
             }
@@ -822,8 +1118,9 @@ async function loadAdminData(type) {
                 container.innerHTML = channels.map(c => `
                     <div class="admin-user-item">
                         <span>${escapeHtml(c.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${c.followers_count} فالوور</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
                         <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
                     </div>
                 `).join('');
             }
@@ -872,24 +1169,15 @@ async function sendBroadcast() {
 }
 
 // ============================================
-// جستجو
-// ============================================
-document.getElementById('searchInput').addEventListener('input', debounce(async function(e) {
-    const q = e.target.value.trim();
-    if (q.length < 2) return;
-    try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-        const results = await res.json();
-        console.log('نتایج جستجو:', results);
-    } catch (e) { console.error(e); }
-}, 450));
-
-function debounce(fn, wait) {
-    let t;
-    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
-}
-
-// ============================================
 // شروع برنامه
 // ============================================
-document.addEventListener('DOMContentLoaded', initApp);
+document.addEventListener('DOMContentLoaded', () => {
+    initApp();
+    
+    // Auto-refresh chat list
+    setInterval(() => {
+        if (document.getElementById('chatPage').classList.contains('active')) {
+            loadChatList();
+        }
+    }, 30000);
+});

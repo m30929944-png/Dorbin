@@ -2,8 +2,6 @@
 // assistant_logic.js - دستیار هوشمند پیشرفته
 // ============================================
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 
 class IntelligentAssistant {
     constructor(userId, db) {
@@ -12,43 +10,77 @@ class IntelligentAssistant {
         this.trainingData = null;
         this.autoReplyEnabled = true;
         this.scheduleJobs = new Map();
+        this.cache = new Map();
+        this.cacheTTL = 30000;
     }
 
+    // ============================================
+    // بارگذاری داده‌های آموزشی با کش
+    // ============================================
     async loadTrainingData() {
+        const cacheKey = `training_${this.userId}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+            this.trainingData = cached.data;
+            return this.trainingData;
+        }
+
         const result = await this.db.query(this.userId, `
             SELECT * FROM assistant_training 
             WHERE user_id = $1
+            ORDER BY created_at DESC
         `, [this.userId]);
+
         this.trainingData = result.rows;
+        this.cache.set(cacheKey, { data: this.trainingData, timestamp: Date.now() });
         return this.trainingData;
     }
 
+    // ============================================
+    // پاسخ‌دهی خودکار
+    // ============================================
     async autoReply(message) {
         if (!this.autoReplyEnabled) return null;
         await this.loadTrainingData();
 
-        const cleanMsg = (message || '').trim();
+        const cleanMsg = (message || '').trim().toLowerCase();
         if (!cleanMsg) return null;
 
+        // بررسی کلمات کلیدی
         const keywords = this.trainingData.filter(t => t.type === 'keyword');
         for (const kw of keywords) {
-            if (kw.keyword && cleanMsg.includes(kw.keyword)) {
+            if (kw.keyword && cleanMsg.includes(kw.keyword.toLowerCase())) {
                 return kw.response;
             }
         }
 
+        // بررسی سوالات مشابه (تطابق ساده‌ی متنی)
         const qa = this.trainingData.filter(t => t.type === 'qa');
         for (const q of qa) {
             if (!q.question) continue;
-            if (cleanMsg.includes(q.question) || q.question.includes(cleanMsg)) {
+            const questionLower = q.question.toLowerCase();
+            if (cleanMsg.includes(questionLower) || questionLower.includes(cleanMsg)) {
                 return q.answer;
+            }
+        }
+
+        // بررسی تطابق کلمات کلیدی با درصد
+        const words = cleanMsg.split(' ');
+        for (const word of words) {
+            if (word.length < 3) continue;
+            for (const kw of keywords) {
+                if (kw.keyword && kw.keyword.toLowerCase().includes(word)) {
+                    return kw.response;
+                }
             }
         }
 
         return null;
     }
 
-    // زمان‌بندی پست‌ها با پشتیبانی از ویدیو
+    // ============================================
+    // زمان‌بندی پست‌ها
+    // ============================================
     async schedulePosts(postsData) {
         const channel = await this.db.query(this.userId, `
             SELECT id FROM channels WHERE user_id = $1
@@ -64,12 +96,12 @@ class IntelligentAssistant {
         for (const post of postsData) {
             const id = crypto.randomUUID();
             const mediaType = post.mediaUrl ? 
-                (post.mediaUrl.match(/\.(mp4|webm|ogg|mov)$/i) ? 'video' : 
-                 post.mediaUrl.match(/\.(mp3|wav|ogg)$/i) ? 'audio' : 'image') : 'none';
+                (post.mediaUrl.match(/\.(mp4|webm|ogg|mov|avi)$/i) ? 'video' : 
+                 post.mediaUrl.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' : 'image') : 'none';
 
             await this.db.query(this.userId, `
-                INSERT INTO posts (id, channel_id, content, media_url, media_type, scheduled_time, is_published)
-                VALUES ($1, $2, $3, $4, $5, $6, 0)
+                INSERT INTO posts (id, channel_id, content, media_url, media_type, scheduled_time, is_published, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, 0, CURRENT_TIMESTAMP)
             `, [id, channelId, post.content, post.mediaUrl || null, mediaType, post.scheduledTime]);
 
             scheduled.push({ id, mediaType, scheduledTime: post.scheduledTime });
@@ -81,7 +113,9 @@ class IntelligentAssistant {
         return scheduled;
     }
 
-    // تنظیم زمان‌بندی ارسال خودکار پست‌ها
+    // ============================================
+    // تنظیم زمان‌بندی ارسال خودکار
+    // ============================================
     setupScheduler(channelId, posts) {
         for (const post of posts) {
             const scheduleTime = new Date(post.scheduledTime).getTime();
@@ -97,11 +131,13 @@ class IntelligentAssistant {
         }
     }
 
+    // ============================================
     // انتشار یک پست زمان‌بندی شده
+    // ============================================
     async publishSinglePost(postId) {
         try {
             await this.db.query(this.userId, `
-                UPDATE posts SET is_published = 1, published_at = CURRENT_TIMESTAMP
+                UPDATE posts SET is_published = 1, published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [postId]);
 
@@ -111,18 +147,25 @@ class IntelligentAssistant {
 
             if (post.rows.length > 0) {
                 await this.db.query(this.userId, `
-                    UPDATE channels SET posts_count = posts_count + 1
+                    UPDATE channels SET posts_count = posts_count + 1, updated_at = CURRENT_TIMESTAMP
                     WHERE id = $1
                 `, [post.rows[0].channel_id]);
+                
+                // به‌روزرسانی امتیاز
+                await this.updateUserActivity('post');
+                await this.boostVisibility();
             }
 
             this.scheduleJobs.delete(postId);
+            this.cache.clear();
         } catch (error) {
             console.error('Error publishing scheduled post:', error);
         }
     }
 
+    // ============================================
     // انتشار پست‌های زمان‌بندی شده (فراخوانی دوره‌ای)
+    // ============================================
     async publishScheduledPosts() {
         const now = new Date().toISOString();
         const result = await this.db.query(this.userId, `
@@ -143,21 +186,45 @@ class IntelligentAssistant {
         return published;
     }
 
+    // ============================================
+    // به‌روزرسانی فعالیت کاربر
+    // ============================================
     async updateUserActivity(type) {
-        const scoreMap = { post: 20, like: 2, comment: 5, follow: 15, train: 10 };
+        const scoreMap = { 
+            post: 20, 
+            like: 2, 
+            comment: 5, 
+            follow: 15, 
+            train: 10,
+            view: 1,
+            share: 8
+        };
         const points = scoreMap[type] || 0;
+        
         await this.db.query(this.userId, `
             UPDATE users SET score = score + $1, updated_at = CURRENT_TIMESTAMP 
             WHERE id = $2
         `, [points, this.userId]);
+        
         return points;
     }
 
+    // ============================================
+    // دریافت آمار عملکرد دستیار
+    // ============================================
     async getStats() {
+        const cacheKey = `stats_${this.userId}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+            return cached.data;
+        }
+
         const posts = await this.db.query(this.userId, `
-            SELECT COUNT(*) as total_posts, 
-                   SUM(views) as total_views,
-                   SUM(likes) as total_likes
+            SELECT 
+                COUNT(*) as total_posts,
+                COALESCE(SUM(views), 0) as total_views,
+                COALESCE(SUM(likes), 0) as total_likes,
+                COALESCE(SUM(comments), 0) as total_comments
             FROM posts p
             JOIN channels c ON p.channel_id = c.id
             WHERE c.user_id = $1 AND p.is_published = 1
@@ -173,32 +240,47 @@ class IntelligentAssistant {
             SELECT followers_count FROM channels WHERE user_id = $1
         `, [this.userId]);
 
-        return {
+        const result = {
             totalPosts: parseInt(posts.rows[0]?.total_posts || 0),
             totalViews: parseInt(posts.rows[0]?.total_views || 0),
             totalLikes: parseInt(posts.rows[0]?.total_likes || 0),
+            totalComments: parseInt(posts.rows[0]?.total_comments || 0),
             totalTrainings: parseInt(trainings.rows[0]?.total_trainings || 0),
             followers: parseInt(followers.rows[0]?.followers_count || 0),
             engagementRate: this.calculateEngagementRate(posts.rows[0])
         };
+
+        this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
+        return result;
     }
 
     calculateEngagementRate(postData) {
-        if (!postData || !postData.total_posts) return '0%';
+        if (!postData || !postData.total_posts || parseInt(postData.total_posts) === 0) return '0%';
         const views = parseInt(postData.total_views || 0);
         const likes = parseInt(postData.total_likes || 0);
-        if (!views) return '0%';
-        return ((likes / views) * 100).toFixed(2) + '%';
+        const comments = parseInt(postData.total_comments || 0);
+        if (views === 0) return '0%';
+        const engagement = ((likes + comments * 2) / views) * 100;
+        return engagement.toFixed(2) + '%';
     }
 
+    // ============================================
+    // الگوریتم دیده‌شدن
+    // ============================================
     async boostVisibility() {
         const stats = await this.getStats();
-        const activityScore = (stats.totalPosts * 2) + (stats.totalLikes * 0.5) + (stats.totalTrainings * 3);
+        const activityScore = 
+            (stats.totalPosts * 2) + 
+            (stats.totalLikes * 0.5) + 
+            (stats.totalComments * 1) + 
+            (stats.totalTrainings * 3) +
+            (stats.totalViews * 0.1);
 
         let boostLevel = 'normal';
-        if (activityScore > 500) boostLevel = 'high';
-        if (activityScore > 1000) boostLevel = 'viral';
-        if (activityScore > 5000) boostLevel = 'superstar';
+        if (activityScore > 100) boostLevel = 'high';
+        if (activityScore > 300) boostLevel = 'viral';
+        if (activityScore > 800) boostLevel = 'superstar';
+        if (activityScore > 2000) boostLevel = 'legend';
 
         await this.db.query(this.userId, `
             UPDATE channels 
@@ -207,17 +289,46 @@ class IntelligentAssistant {
                 last_boost_calc = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = $3
-        `, [boostLevel, activityScore, this.userId]);
+        `, [boostLevel, Math.round(activityScore), this.userId]);
 
-        return { boostLevel, activityScore };
+        return { boostLevel, activityScore: Math.round(activityScore) };
     }
 
+    // ============================================
     // پاک کردن زمان‌بندی‌ها
+    // ============================================
     clearSchedules() {
         for (const [id, job] of this.scheduleJobs) {
             clearTimeout(job);
         }
         this.scheduleJobs.clear();
+    }
+
+    // ============================================
+    // غیرفعال کردن دستیار
+    // ============================================
+    setAutoReply(enabled) {
+        this.autoReplyEnabled = enabled;
+        return this.autoReplyEnabled;
+    }
+
+    // ============================================
+    // دریافت وضعیت دستیار
+    // ============================================
+    getStatus() {
+        return {
+            userId: this.userId,
+            autoReplyEnabled: this.autoReplyEnabled,
+            trainingCount: this.trainingData?.length || 0,
+            scheduledJobs: this.scheduleJobs.size
+        };
+    }
+
+    // ============================================
+    // پاک کردن کش
+    // ============================================
+    clearCache() {
+        this.cache.clear();
     }
 }
 
