@@ -95,6 +95,74 @@ function formatNumber(num) {
 }
 
 // ============================================
+// رندر پست با دکمه‌های بزرگ استخوانی
+// ============================================
+function renderPostCard(post, author, isExplore = false) {
+    const name = author?.name || post.channel_name || 'کاربر';
+    const avatar = author?.avatar || defaultAvatar(name);
+    const mediaHtml = post.media_url ? `
+        <div class="media-wrapper">
+            ${post.media_type === 'video' ? 
+                `<video src="${post.media_url}" controls preload="metadata" playsinline></video>` : 
+                `<img src="${post.media_url}" loading="lazy">`}
+        </div>` : '';
+    
+    const cardClass = isExplore ? 'explore-post-full' : 'post-card';
+    
+    return `
+    <div class="${cardClass}" data-post-id="${post.id}">
+        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
+            <img src="${avatar}" loading="lazy">
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="time">${timeAgo(post.created_at)}</span>
+        </div>
+        <p class="content">${escapeHtml(post.content)}</p>
+        ${mediaHtml}
+        <div class="post-actions">
+            <button class="btn-like ${post.isLiked ? 'liked' : ''}" onclick="toggleLike('${post.id}', this)">
+                <i class="${post.isLiked ? 'fas' : 'far'} fa-heart"></i>
+                <span class="count">${formatNumber(post.likes || 0)}</span>
+            </button>
+            <button class="btn-comment" onclick="toggleComments('${post.id}', this)">
+                <i class="far fa-comment"></i>
+                <span class="count">${formatNumber(post.comments || 0)}</span>
+            </button>
+            <button class="btn-share" onclick="sharePost('${post.id}')">
+                <i class="fas fa-share-alt"></i>
+                <span class="count">اشتراک</span>
+            </button>
+        </div>
+        <div class="comments-box" id="comments-${post.id}">
+            <div class="comment-form">
+                <input type="text" id="commentInput-${post.id}" placeholder="کامنت بنویس...">
+                <button class="btn-secondary" onclick="submitComment('${post.id}')">ارسال</button>
+            </div>
+            <div class="comments-list" id="comments-list-${post.id}"></div>
+        </div>
+    </div>`;
+}
+
+// ============================================
+// اشتراک‌گذاری
+// ============================================
+function sharePost(postId) {
+    const url = window.location.href + `?post=${postId}`;
+    if (navigator.share) {
+        navigator.share({
+            title: 'یارِ من - پست',
+            text: 'این پست رو ببین!',
+            url: url
+        }).catch(() => {});
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            showNotification('✅ لینک پست کپی شد');
+        }).catch(() => {
+            showNotification('📋 لینک: ' + url);
+        });
+    }
+}
+
+// ============================================
 // ورود / ثبت‌نام
 // ============================================
 async function initApp() {
@@ -131,7 +199,7 @@ function showRegisterModal() {
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
             <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+            <button class="btn-primary" style="width:100%;padding:14px;font-size:16px;min-height:56px;" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ورود به یارِ من
             </button>
             <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
@@ -238,17 +306,17 @@ async function showProfileModal() {
                 <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
                 <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
             </div>
-            <h3 style="font-size:17px;">${escapeHtml(currentUser.name)}</h3>
+            <h3 style="font-size:18px;">${escapeHtml(currentUser.name)}</h3>
             ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
             <div class="profile-stats">
                 <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
                 <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
             </div>
             <div class="profile-actions">
-                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
+                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();" style="min-height:48px;padding:12px 24px;">
                     <i class="fas fa-robot"></i> مدیریت دستیار
                 </button>
-                <button class="btn-ghost" onclick="closeModal()">بستن</button>
+                <button class="btn-ghost" onclick="closeModal()" style="min-height:48px;padding:12px 24px;">بستن</button>
             </div>
         </div>`;
     document.body.appendChild(modal);
@@ -293,7 +361,7 @@ function showMediaPreview(b64, type) {
     if (!container || !content) return;
     container.style.display = 'block';
     if (type === 'video') {
-        content.innerHTML = `<video src="${b64}" controls></video>`;
+        content.innerHTML = `<video src="${b64}" controls playsinline></video>`;
     } else {
         content.innerHTML = `<img src="${b64}">`;
     }
@@ -345,7 +413,7 @@ async function loadChannelPosts() {
         if (!container) return;
         
         container.innerHTML = posts.length ? 
-            posts.map(p => renderPostCard(p, currentUser)).join('') :
+            posts.map(p => renderPostCard(p, currentUser, false)).join('') :
             `<div class="empty-state">
                 <i class="fas fa-pen-fancy"></i>
                 هنوز پستی منتشر نکردی.<br>
@@ -358,40 +426,6 @@ async function loadChannelPosts() {
     } catch (e) { console.error(e); }
 }
 
-function renderPostCard(post, author) {
-    const name = author?.name || post.channel_name || 'کاربر';
-    const avatar = author?.avatar || defaultAvatar(name);
-    const mediaHtml = post.media_url ? `
-        <div class="media-wrapper">
-            ${post.media_type === 'video' ? 
-                `<video src="${post.media_url}" controls preload="metadata"></video>` : 
-                `<img src="${post.media_url}" loading="lazy">`}
-        </div>` : '';
-    
-    return `
-    <div class="post-card" data-post-id="${post.id}">
-        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
-            <img src="${avatar}" loading="lazy">
-            <span class="name">${escapeHtml(name)}</span>
-            <span class="time">${timeAgo(post.created_at)}</span>
-        </div>
-        <p class="content">${escapeHtml(post.content)}</p>
-        ${mediaHtml}
-        <div class="post-stats">
-            <button onclick="toggleLike('${post.id}', this)" class="like-btn">
-                <i class="far fa-heart"></i> <span class="like-count">${formatNumber(post.likes || 0)}</span>
-            </button>
-            <button onclick="toggleComments('${post.id}', this)">
-                <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
-            </button>
-            <button disabled>
-                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
-            </button>
-        </div>
-        <div class="comments-box" id="comments-${post.id}"></div>
-    </div>`;
-}
-
 async function toggleLike(postId, btn) {
     try {
         const res = await fetch(`/api/post/${postId}/like`, {
@@ -402,7 +436,7 @@ async function toggleLike(postId, btn) {
         if (data.success) {
             btn.classList.toggle('liked', data.liked);
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
-            btn.querySelector('.like-count').textContent = formatNumber(data.likes);
+            btn.querySelector('.count').textContent = formatNumber(data.likes);
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -416,19 +450,18 @@ async function toggleComments(postId, btn) {
         try {
             const res = await fetch(`/api/post/${postId}/comments`);
             const comments = await res.json();
-            box.innerHTML = (comments.map(c => `
-                <div class="comment-item">
-                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
-                    <div>
-                        <b>${escapeHtml(c.name)}</b>
-                        <span class="comment-text">${escapeHtml(c.text)}</span>
+            const list = document.getElementById(`comments-list-${postId}`);
+            if (list) {
+                list.innerHTML = comments.map(c => `
+                    <div class="comment-item">
+                        <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                        <div>
+                            <b>${escapeHtml(c.name)}</b>
+                            <span class="comment-text">${escapeHtml(c.text)}</span>
+                        </div>
                     </div>
-                </div>
-            `).join('') || '') + `
-                <div class="comment-form">
-                    <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس...">
-                    <button class="btn-secondary" onclick="submitComment('${postId}')">ارسال</button>
-                </div>`;
+                `).join('');
+            }
         } catch (e) { showNotification('خطا'); }
     }
 }
@@ -446,19 +479,19 @@ async function submitComment(postId) {
         const data = await res.json();
         if (data.success) {
             input.value = '';
-            const box = document.getElementById(`comments-${postId}`);
-            if (!box) return;
-            const form = box.querySelector('.comment-form');
-            const item = document.createElement('div');
-            item.className = 'comment-item';
-            item.innerHTML = `
-                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
-                <div>
-                    <b>${escapeHtml(data.comment.name)}</b>
-                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
-                </div>`;
-            box.insertBefore(item, form);
-            const card = document.querySelector(`[data-post-id="${postId}"] .comment-count`);
+            const list = document.getElementById(`comments-list-${postId}`);
+            if (list) {
+                const item = document.createElement('div');
+                item.className = 'comment-item';
+                item.innerHTML = `
+                    <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                    <div>
+                        <b>${escapeHtml(data.comment.name)}</b>
+                        <span class="comment-text">${escapeHtml(data.comment.text)}</span>
+                    </div>`;
+                list.appendChild(item);
+            }
+            const card = document.querySelector(`[data-post-id="${postId}"] .btn-comment .count`);
             if (card) card.textContent = formatNumber(parseInt(card.textContent.replace(/,/g, '')) + 1);
         }
     } catch (e) { showNotification('خطا'); }
@@ -493,9 +526,9 @@ async function loadAssistantData() {
 
         if (data.posts?.length) {
             document.getElementById('scheduledPostsList').innerHTML = data.posts.map(p => `
-                <div style="font-size:11px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:12px;color:var(--text-2);padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
                     <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
-                    <span style="font-size:10px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
+                    <span style="font-size:11px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
                 </div>
             `).join('');
         }
@@ -633,7 +666,7 @@ async function schedulePosts() {
 }
 
 // ============================================
-// اکسپلور
+// اکسپلور - پست‌های تمام صفحه با کیفیت بالا
 // ============================================
 async function loadExplore() {
     try {
@@ -654,24 +687,8 @@ async function loadExplore() {
 
         container.innerHTML = items.map(user => {
             const postsHtml = user.recent_posts && user.recent_posts.length ? 
-                user.recent_posts.map(p => `
-                    <div class="explore-post-mini" onclick="event.stopPropagation(); openPostDetail('${p.id}')">
-                        <p>${escapeHtml(p.content?.substring(0, 120) || '')}${p.content?.length > 120 ? '...' : ''}</p>
-                        ${p.media_url ? `
-                            <div class="mini-media">
-                                ${p.media_type === 'video' ? 
-                                    `<video src="${p.media_url}" muted preload="metadata"></video>` : 
-                                    `<img src="${p.media_url}" loading="lazy">`}
-                            </div>
-                        ` : ''}
-                        <div class="mini-stats">
-                            <span><i class="far fa-heart"></i> ${formatNumber(p.likes || 0)}</span>
-                            <span><i class="far fa-comment"></i> ${formatNumber(p.comments || 0)}</span>
-                            <span><i class="far fa-eye"></i> ${formatNumber(p.views || 0)}</span>
-                        </div>
-                    </div>
-                `).join('') : 
-                `<p style="font-size:11px;color:var(--text-3);padding:4px 0;">هنوز پستی منتشر نشده</p>`;
+                user.recent_posts.map(p => renderPostCard(p, user, true)).join('') : 
+                `<p style="font-size:13px;color:var(--text-3);padding:10px 0;text-align:center;">هنوز پستی منتشر نشده</p>`;
 
             return `
                 <div class="explore-user-card">
@@ -695,10 +712,10 @@ async function loadExplore() {
 }
 
 function openPostDetail(postId) {
-    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"], .explore-post-full[data-post-id="${postId}"]`);
     if (postCard) {
         postCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        postCard.style.border = '2px solid var(--primary)';
+        postCard.style.border = '3px solid var(--primary)';
         postCard.style.boxShadow = 'var(--shadow-glow)';
         setTimeout(() => {
             postCard.style.border = '';
@@ -706,9 +723,9 @@ function openPostDetail(postId) {
         }, 3000);
     } else {
         showNotification('پست در حال بارگذاری...');
-        document.querySelector('[data-page="channel"]').click();
+        document.querySelector('[data-page="explore"]').click();
         setTimeout(() => {
-            const card = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+            const card = document.querySelector(`.explore-post-full[data-post-id="${postId}"]`);
             if (card) {
                 card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
@@ -772,7 +789,7 @@ async function openProfile(userId) {
         const container = document.getElementById('viewPostsContainer');
         if (container) {
             container.innerHTML = data.posts.length ?
-                data.posts.map(p => renderPostCard(p, data.user)).join('') :
+                data.posts.map(p => renderPostCard(p, data.user, false)).join('') :
                 `<div class="empty-state">
                     <i class="fas fa-pen-fancy"></i>
                     این کاربر هنوز پستی منتشر نکرده.
@@ -881,7 +898,7 @@ async function openChat(userId, name, avatar) {
     currentChatUser = { id: userId, name, avatar };
     document.getElementById('chatWithName').textContent = name || 'کاربر';
     document.getElementById('chatWithAvatar').src = avatar || defaultAvatar(name);
-    document.getElementById('chatWindow').classList.add('open');
+    document.getElementById('chatWindow').style.display = 'flex';
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
 
     // علامت‌گذاری پیام‌ها به عنوان خوانده شده
@@ -920,7 +937,7 @@ function renderMessages(messages) {
 }
 
 function closeChatWindow() {
-    document.getElementById('chatWindow').classList.remove('open');
+    document.getElementById('chatWindow').style.display = 'none';
     currentChatUser = null;
 }
 
@@ -1000,10 +1017,10 @@ function showSearchResults(results) {
             left: 0;
             right: 0;
             background: var(--bg-card);
-            border: 1px solid var(--border);
+            border: 2px solid var(--border);
             border-radius: var(--radius-sm);
-            margin-top: 4px;
-            max-height: 300px;
+            margin-top: 6px;
+            max-height: 320px;
             overflow-y: auto;
             z-index: 50;
             display: none;
@@ -1018,7 +1035,7 @@ function showSearchResults(results) {
     
     container.style.display = 'block';
     container.innerHTML = results.map(r => `
-        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
+        <div style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);transition:var(--transition);font-size:13px;"
              onclick="openProfile('${r.id}')" 
              onmouseover="this.style.background='var(--bg-soft)'"
              onmouseout="this.style.background=''">
@@ -1051,13 +1068,21 @@ function toggleAdminPanel() {
 }
 
 function switchAdminTab(tab) {
-    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.admin-tab').forEach(t => {
+        t.classList.remove('active');
+        t.style.background = 'var(--bg-soft)';
+        t.style.color = 'var(--text-2)';
+    });
     const tabBtn = document.querySelector(`.admin-tab[data-tab="${tab}"]`);
-    if (tabBtn) tabBtn.classList.add('active');
+    if (tabBtn) {
+        tabBtn.classList.add('active');
+        tabBtn.style.background = 'var(--primary)';
+        tabBtn.style.color = '#fff';
+    }
     
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
     const content = document.getElementById('admin' + tab.charAt(0).toUpperCase() + tab.slice(1));
-    if (content) content.classList.add('active');
+    if (content) content.style.display = 'block';
     loadAdminData(tab);
 }
 
@@ -1066,10 +1091,10 @@ async function loadAdminData(type) {
         if (type === 'stats') {
             const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
             const stats = await res.json();
-            const container = document.getElementById('adminStatsContent');
+            const container = document.getElementById('adminStats');
             if (container) {
                 container.innerHTML = `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
                         <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
@@ -1080,17 +1105,17 @@ async function loadAdminData(type) {
         } else if (type === 'users') {
             const res = await fetch('/api/admin/users', { headers: { 'userId': 'admin_milad' } });
             const users = await res.json();
-            const container = document.getElementById('adminUsersList');
+            const container = document.getElementById('adminUsers');
             if (container) {
                 container.innerHTML = users.map(u => `
-                    <div class="admin-user-item">
-                        <span class="name">${escapeHtml(u.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${u.role || 'user'}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
-                        <div class="actions">
+                    <div class="admin-user-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
+                        <span class="name" style="font-weight:600;">${escapeHtml(u.name)}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${u.role || 'user'}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
+                        <div class="actions" style="display:flex;gap:6px;">
                             ${u.role !== 'admin' ? `
-                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>
-                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>
+                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">✓</button>
+                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">⛔</button>
                             ` : ''}
                         </div>
                     </div>
@@ -1099,28 +1124,28 @@ async function loadAdminData(type) {
         } else if (type === 'posts') {
             const res = await fetch('/api/admin/posts', { headers: { 'userId': 'admin_milad' } });
             const posts = await res.json();
-            const container = document.getElementById('adminPostsList');
+            const container = document.getElementById('adminPosts');
             if (container) {
                 container.innerHTML = posts.map(p => `
-                    <div class="admin-post-item">
+                    <div class="admin-post-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
                         <span>${escapeHtml(p.content?.substring(0, 40) || '')}...</span>
-                        <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
-                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
+                        <span style="font-size:11px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">🗑️</button>
                     </div>
                 `).join('');
             }
         } else if (type === 'channels') {
             const res = await fetch('/api/admin/channels', { headers: { 'userId': 'admin_milad' } });
             const channels = await res.json();
-            const container = document.getElementById('adminChannelsList');
+            const container = document.getElementById('adminChannels');
             if (container) {
                 container.innerHTML = channels.map(c => `
-                    <div class="admin-user-item">
-                        <span>${escapeHtml(c.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
-                        <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
+                    <div class="admin-user-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
+                        <span style="font-weight:600;">${escapeHtml(c.name)}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
+                        <span style="font-size:11px;color:var(--text-3);">${c.boost_level}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
                     </div>
                 `).join('');
             }
