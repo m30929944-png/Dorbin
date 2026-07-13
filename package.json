@@ -1,24 +1,14 @@
 {
-  "name": "bamgram-backend",
+  "name": "yareman",
   "version": "1.0.0",
-  "description": "بک‌اند واقعی بامگرام - Express + MongoDB + JWT + WebSocket",
+  "description": "یارِ من - پیام‌رسان و پلتفرم دستیار هوشمند",
   "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.0.0",
+    "body-parser": "^1.20.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.5.0",
-    "multer": "^1.4.5-lts.1",
-    "ws": "^8.17.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
+    "socket.io": "^4.7.5"
   }
 }

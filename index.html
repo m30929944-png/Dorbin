@@ -1,137 +1,310 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>یارِ من - پیام‌رسان هوشمند</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Vazir:wght@300;400;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>یارِ من - پیام‌رسان هوشمند</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+:root{
+  --bg:#0f1220; --bg-soft:#171b2e; --card:#1c2138; --card-2:#232945;
+  --border:#2b3155; --text:#eef0fb; --text-2:#9aa1c7; --text-3:#6b7299;
+  --primary:#7c6cf6; --primary-2:#5b4fd6; --accent:#f6b93b; --danger:#f45b69;
+  --like:#ff5c8a; --radius:16px; --radius-sm:10px;
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+body{font-family:'Vazirmatn',sans-serif; background:radial-gradient(circle at 20% -10%, #1f2547 0%, var(--bg) 45%); color:var(--text); min-height:100vh; padding-bottom:78px;}
+button{font-family:inherit; cursor:pointer;}
+input,textarea{font-family:inherit;}
+img{object-fit:cover;}
+::selection{background:var(--primary); color:#fff;}
+
+/* ---------- هدر ---------- */
+.main-header{position:sticky; top:0; z-index:40; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:rgba(15,18,32,.85); backdrop-filter:blur(14px); border-bottom:1px solid var(--border);}
+.profile-btn{display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--text);}
+.profile-btn img{width:38px; height:38px; border-radius:50%; border:2px solid var(--primary); background:var(--card-2);}
+.profile-btn span{font-size:14px; font-weight:500;}
+.header-center{flex:1; max-width:420px;}
+.search-box{display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border); border-radius:99px; padding:9px 14px;}
+.search-box i{color:var(--text-3);}
+.search-box input{background:none; border:none; outline:none; color:var(--text); width:100%; font-size:13px;}
+.user-score{font-size:13px; background:var(--card); border:1px solid var(--border); padding:7px 12px; border-radius:99px; white-space:nowrap; color:var(--accent); font-weight:600;}
+
+/* ---------- ناوبری پایین ---------- */
+.main-nav{position:fixed; bottom:0; left:0; right:0; z-index:40; display:flex; background:rgba(23,27,46,.92); backdrop-filter:blur(14px); border-top:1px solid var(--border); padding:6px 4px calc(env(safe-area-inset-bottom) + 6px);}
+.nav-btn{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; background:none; border:none; color:var(--text-3); padding:8px 2px; border-radius:12px; font-size:11px; transition:.2s;}
+.nav-btn i{font-size:18px;}
+.nav-btn.active{color:var(--primary);}
+.nav-btn.active i{transform:translateY(-2px);}
+
+main{max-width:640px; margin:0 auto; padding:16px;}
+.page{display:none; animation:fadeIn .25s ease;}
+.page.active{display:block;}
+@keyframes fadeIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+
+/* ---------- کانال ---------- */
+.channel-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;}
+.channel-header h2{font-size:19px;}
+.followers-count{font-size:12px; color:var(--text-2);}
+.boost-badge{display:inline-flex; align-items:center; gap:4px; font-size:11px; padding:4px 10px; border-radius:99px; font-weight:700; margin-inline-start:8px;}
+.boost-normal{background:#2b3155; color:var(--text-2);}
+.boost-high{background:#33406b; color:#a9c2ff;}
+.boost-viral{background:#402a5e; color:#d9b6ff;}
+.boost-superstar{background:linear-gradient(90deg,#f6b93b,#ff5c8a); color:#1a1a1a;}
+
+.composer{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:16px;}
+.composer textarea{width:100%; background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:10px; resize:vertical; min-height:60px; font-size:14px;}
+.composer-actions{display:flex; justify-content:space-between; align-items:center; margin-top:10px;}
+.btn-primary{background:linear-gradient(90deg,var(--primary),var(--primary-2)); color:#fff; border:none; padding:9px 20px; border-radius:99px; font-size:13px; font-weight:600;}
+.btn-secondary{background:var(--card-2); color:var(--text); border:1px solid var(--border); padding:9px 16px; border-radius:99px; font-size:13px;}
+.btn-ghost{background:none; border:none; color:var(--text-2); font-size:13px;}
+
+.posts-container{display:flex; flex-direction:column; gap:14px;}
+.post-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; box-shadow:var(--shadow);}
+.post-card .post-head{display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer;}
+.post-card .post-head img{width:32px; height:32px; border-radius:50%; background:var(--card-2);}
+.post-card .post-head .name{font-size:13px; font-weight:600;}
+.post-card .post-head .time{font-size:11px; color:var(--text-3); margin-inline-start:auto;}
+.post-card p.content{font-size:14px; line-height:1.9; white-space:pre-wrap; margin-bottom:10px;}
+.post-card img.media, .post-card video.media{width:100%; border-radius:var(--radius-sm); margin-bottom:10px;}
+.post-stats{display:flex; gap:16px; font-size:12px; color:var(--text-2); border-top:1px solid var(--border); padding-top:10px;}
+.post-stats button{background:none; border:none; color:var(--text-2); font-size:12px; display:flex; align-items:center; gap:5px;}
+.post-stats button.liked{color:var(--like);}
+.post-stats button:active{transform:scale(.92);}
+.comments-box{margin-top:10px; border-top:1px solid var(--border); padding-top:10px; display:none;}
+.comments-box.open{display:block;}
+.comment-item{display:flex; gap:8px; margin-bottom:8px; font-size:12.5px;}
+.comment-item img{width:24px; height:24px; border-radius:50%;}
+.comment-item b{color:var(--text);}
+.comment-form{display:flex; gap:6px; margin-top:8px;}
+.comment-form input{flex:1; background:var(--bg-soft); border:1px solid var(--border); border-radius:99px; padding:8px 12px; color:var(--text); font-size:12.5px; outline:none;}
+
+/* ---------- دستیار ---------- */
+.assistant-panel h2{font-size:19px; margin-bottom:10px;}
+.assistant-stats{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+.stat-chip{background:var(--card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 14px; font-size:12px; color:var(--text-2); flex:1; min-width:100px; text-align:center;}
+.stat-chip b{display:block; font-size:16px; color:var(--text); margin-bottom:2px;}
+.training-section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:14px;}
+.training-section h3{font-size:14px; margin-bottom:10px;}
+.train-form{display:flex; flex-direction:column; gap:8px;}
+.train-form input, .train-form textarea{background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:9px 12px; font-size:13px; outline:none;}
+.train-form button{align-self:flex-start; margin-top:2px;}
+.qa-list,.keyword-list{margin-top:10px; display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto;}
+.qa-item,.keyword-item{background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:3px;}
+.auto-post-section{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px;}
+#autoPostPanel{display:flex; flex-direction:column; gap:8px; margin-top:10px;}
+#autoPostPanel input, #autoPostPanel textarea{background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:9px 12px; font-size:13px;}
+
+.assistant-chat-preview{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:14px;}
+.assistant-chat-preview .mini-chat{max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;}
+.mini-msg{padding:8px 12px; border-radius:14px; font-size:12.5px; max-width:80%;}
+.mini-msg.me{align-self:flex-end; background:var(--primary); color:#fff;}
+.mini-msg.bot{align-self:flex-start; background:var(--bg-soft); border:1px solid var(--border);}
+.mini-chat-input{display:flex; gap:6px;}
+.mini-chat-input input{flex:1; background:var(--bg-soft); border:1px solid var(--border); border-radius:99px; padding:9px 14px; color:var(--text); font-size:13px; outline:none;}
+
+/* ---------- چت خصوصی ---------- */
+.chat-container{display:flex; flex-direction:column; gap:10px;}
+.chat-list{display:flex; flex-direction:column; gap:8px;}
+.chat-item{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; cursor:pointer;}
+.chat-item img{width:38px; height:38px; border-radius:50%; background:var(--card-2);}
+.chat-window{display:none; flex-direction:column; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;}
+.chat-window.open{display:flex;}
+.chat-window-head{display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border);}
+.chat-window-head img{width:32px; height:32px; border-radius:50%;}
+.chat-messages{height:340px; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px;}
+.message{padding:9px 13px; border-radius:16px; font-size:13.5px; max-width:78%; line-height:1.6;}
+.message.sent{align-self:flex-end; background:linear-gradient(90deg,var(--primary),var(--primary-2)); color:#fff; border-bottom-left-radius:4px;}
+.message.received{align-self:flex-start; background:var(--bg-soft); border:1px solid var(--border); border-bottom-right-radius:4px;}
+.chat-input{display:flex; gap:8px; padding:10px; border-top:1px solid var(--border);}
+.chat-input input{flex:1; background:var(--bg-soft); border:1px solid var(--border); border-radius:99px; padding:10px 14px; color:var(--text); outline:none; font-size:13.5px;}
+.chat-input button{width:40px; height:40px; border-radius:50%; background:var(--primary); color:#fff; border:none;}
+
+/* ---------- اکسپلور ---------- */
+.explore-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.explore-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px; text-align:center; cursor:pointer; transition:.2s;}
+.explore-card:active{transform:scale(.96);}
+.explore-card img{width:56px; height:56px; border-radius:50%; margin-bottom:8px; background:var(--card-2);}
+.explore-card h4{font-size:13.5px; margin-bottom:4px;}
+.explore-card .meta{font-size:11px; color:var(--text-2); margin-bottom:6px;}
+.explore-card .follow-btn{width:100%; padding:7px; border-radius:99px; font-size:12px; border:none; background:var(--primary); color:#fff;}
+.explore-card .follow-btn.following{background:var(--card-2); border:1px solid var(--border); color:var(--text-2);}
+
+/* ---------- مودال‌ها ---------- */
+.modal{position:fixed; inset:0; background:rgba(6,7,15,.72); display:flex; align-items:center; justify-content:center; z-index:200; backdrop-filter:blur(6px); padding:16px;}
+.modal-content{background:var(--card); border:1px solid var(--border); padding:24px; border-radius:20px; max-width:420px; width:100%; text-align:center; max-height:88vh; overflow-y:auto;}
+.modal-content h2{font-size:18px; margin-bottom:14px;}
+.avatar-upload{position:relative; width:88px; height:88px; margin:0 auto 12px;}
+.avatar-upload img{width:88px; height:88px; border-radius:50%; border:3px solid var(--primary); background:var(--card-2);}
+.avatar-upload label{position:absolute; bottom:0; left:0; width:28px; height:28px; background:var(--primary); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; color:#fff; cursor:pointer; border:2px solid var(--card);}
+.avatar-upload input{display:none;}
+.profile-info p{font-size:13px; color:var(--text-2); margin:3px 0;}
+.profile-info h3{font-size:16px; margin:4px 0;}
+.profile-stats{display:flex; justify-content:center; gap:18px; margin:12px 0;}
+.profile-stats div{text-align:center;}
+.profile-stats b{display:block; font-size:15px;}
+.profile-stats span{font-size:11px; color:var(--text-3);}
+.profile-actions{display:flex; flex-direction:column; gap:8px; margin-top:14px;}
+.profile-actions button{padding:11px; border-radius:12px; font-size:13.5px; border:none;}
+.name-input{width:100%; background:var(--bg-soft); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); padding:11px; font-size:14px; margin-bottom:10px; text-align:center;}
+
+/* ---------- نوتیفیکیشن ---------- */
+.notification{position:fixed; top:14px; left:50%; transform:translateX(-50%); background:var(--card); border:1px solid var(--border); padding:11px 18px; border-radius:99px; z-index:999; font-size:12.5px; box-shadow:var(--shadow); animation:slideDown .3s ease;}
+@keyframes slideDown{from{transform:translate(-50%,-30px); opacity:0;} to{transform:translate(-50%,0); opacity:1;}}
+
+.empty-state{text-align:center; color:var(--text-3); font-size:13px; padding:30px 10px;}
+::-webkit-scrollbar{width:5px;} ::-webkit-scrollbar-thumb{background:var(--border); border-radius:99px;}
+</style>
 </head>
 <body>
-    <!-- هدر با جستجو و پروفایل -->
-    <header class="main-header">
-        <div class="header-left">
-            <button id="profileBtn" class="profile-btn">
-                <img src="default-avatar.png" alt="پروفایل" id="avatarImg">
-                <span id="userName">کاربر</span>
-            </button>
+
+<header class="main-header">
+    <button id="profileBtn" class="profile-btn">
+        <img src="" alt="پروفایل" id="avatarImg">
+        <span id="userName">کاربر</span>
+    </button>
+    <div class="header-center">
+        <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="جستجوی کاربر یا کانال...">
         </div>
-        <div class="header-center">
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="جستجوی کاربر، کانال یا محتوا...">
+    </div>
+    <span class="user-score" id="userScore">🏆 ۰</span>
+</header>
+
+<nav class="main-nav">
+    <button class="nav-btn" data-page="explore"><i class="fas fa-compass"></i><span>اکسپلور</span></button>
+    <button class="nav-btn" data-page="chat"><i class="fas fa-envelope"></i><span>چت خصوصی</span></button>
+    <button class="nav-btn" data-page="assistant"><i class="fas fa-robot"></i><span>دستیار</span></button>
+    <button class="nav-btn active" data-page="channel"><i class="fas fa-bullhorn"></i><span>کانال</span></button>
+</nav>
+
+<main id="mainContent">
+    <section id="channelPage" class="page active">
+        <div class="channel-header">
+            <h2>📢 کانال من <span id="boostBadge" class="boost-badge boost-normal">عادی</span></h2>
+            <span class="followers-count" id="followersCount">۰ فالوور</span>
+        </div>
+
+        <div class="composer">
+            <textarea id="postContent" placeholder="چه خبر؟ یه پست جدید بنویس..."></textarea>
+            <div class="composer-actions">
+                <label class="btn-ghost" style="cursor:pointer;">
+                    <i class="fas fa-image"></i> افزودن عکس
+                    <input type="file" id="postImageInput" accept="image/*" style="display:none;">
+                </label>
+                <button class="btn-primary" onclick="createPost()">انتشار پست</button>
             </div>
         </div>
-        <div class="header-right">
-            <span class="user-score" id="userScore">🏆 ۰ امتیاز</span>
+
+        <div id="channelPosts" class="posts-container"></div>
+    </section>
+
+    <section id="assistantPage" class="page">
+        <h2>🤖 دستیار من</h2>
+        <div class="assistant-stats">
+            <div class="stat-chip"><b id="statPosts">۰</b>پست</div>
+            <div class="stat-chip"><b id="statTrainings">۰</b>آموزش</div>
+            <div class="stat-chip"><b id="statFollowers">۰</b>فالوور</div>
+            <div class="stat-chip"><b id="statEngagement">۰٪</b>تعامل</div>
         </div>
-    </header>
 
-    <!-- دکمه‌های اصلی -->
-    <nav class="main-nav">
-        <button class="nav-btn active" data-page="channel">
-            <i class="fas fa-bullhorn"></i>
-            <span>کانال</span>
-        </button>
-        <button class="nav-btn" data-page="assistant">
-            <i class="fas fa-robot"></i>
-            <span>دستیار</span>
-        </button>
-        <button class="nav-btn" data-page="chat">
-            <i class="fas fa-envelope"></i>
-            <span>چت خصوصی</span>
-        </button>
-        <button class="nav-btn" data-page="explore">
-            <i class="fas fa-compass"></i>
-            <span>اکسپلور</span>
-        </button>
-    </nav>
-
-    <!-- محتوای صفحات -->
-    <main id="mainContent">
-        <!-- صفحه‌ی کانال -->
-        <section id="channelPage" class="page active">
-            <div class="channel-header">
-                <h2>📢 کانال من</h2>
-                <span class="followers-count" id="followersCount">۰ فالوور</span>
+        <div class="assistant-chat-preview">
+            <h3 style="font-size:14px;margin-bottom:10px;">💬 امتحان کن دستیارت چی بلده</h3>
+            <div class="mini-chat" id="assistantPreviewChat"></div>
+            <div class="mini-chat-input">
+                <input type="text" id="assistantPreviewInput" placeholder="یه چیزی بپرس...">
+                <button class="btn-secondary" onclick="testAssistant()">پرسیدن</button>
             </div>
-            <div id="channelPosts" class="posts-container">
-                <!-- پست‌ها توسط JavaScript بارگذاری می‌شوند -->
+        </div>
+
+        <div class="training-section">
+            <h3>📝 آموزش سوال و جواب</h3>
+            <div class="train-form">
+                <input type="text" id="questionInput" placeholder="سوال...">
+                <input type="text" id="answerInput" placeholder="جواب...">
+                <button class="btn-primary" onclick="trainAssistant()">یاد بده!</button>
             </div>
-        </section>
+            <div id="qaList" class="qa-list"></div>
+        </div>
 
-        <!-- صفحه‌ی دستیار -->
-        <section id="assistantPage" class="page">
-            <div class="assistant-panel">
-                <h2>🤖 دستیار من</h2>
-                <div class="assistant-stats">
-                    <span id="assistantPostsCount">۰ پست</span>
-                    <span id="assistantTasksCount">۰ وظیفه</span>
-                </div>
-                
-                <!-- بخش آموزش سوال و جواب -->
-                <div class="training-section">
-                    <h3>📝 آموزش سوال و جواب</h3>
-                    <div class="train-form">
-                        <input type="text" id="questionInput" placeholder="سوال...">
-                        <input type="text" id="answerInput" placeholder="جواب...">
-                        <button onclick="trainAssistant()">یاد بده!</button>
-                    </div>
-                    <div id="qaList" class="qa-list"></div>
-                </div>
+        <div class="training-section">
+            <h3>🔑 کلمات کلیدی</h3>
+            <div class="train-form">
+                <input type="text" id="keywordInput" placeholder="کلمه کلیدی...">
+                <input type="text" id="keywordResponseInput" placeholder="پاسخ...">
+                <button class="btn-primary" onclick="trainKeyword()">ثبت کن</button>
+            </div>
+            <div id="keywordList" class="keyword-list"></div>
+        </div>
 
-                <!-- بخش آموزش کلمات کلیدی -->
-                <div class="training-section">
-                    <h3>🔑 کلمات کلیدی</h3>
-                    <div class="train-form">
-                        <input type="text" id="keywordInput" placeholder="کلمه کلیدی...">
-                        <input type="text" id="keywordResponseInput" placeholder="پاسخ...">
-                        <button onclick="trainKeyword()">ثبت کن</button>
-                    </div>
-                    <div id="keywordList" class="keyword-list"></div>
-                </div>
+        <div class="auto-post-section">
+            <h3>📅 پست‌های اتومات</h3>
+            <button class="btn-secondary" onclick="showAutoPostPanel()">مدیریت پست‌ها</button>
+            <div id="autoPostPanel" style="display:none;">
+                <input type="number" id="postCount" placeholder="تعداد پست‌ها...">
+                <textarea id="postDescriptions" placeholder="توضیحات هر پست (یک در هر خط)..."></textarea>
+                <input type="time" id="postTime" value="09:00">
+                <button class="btn-primary" onclick="schedulePosts()">ثبت و زمان‌بندی</button>
+            </div>
+        </div>
+    </section>
 
-                <!-- بخش مدیریت پست‌های اتومات -->
-                <div class="auto-post-section">
-                    <h3>📅 پست‌های اتومات</h3>
-                    <button onclick="showAutoPostPanel()">مدیریت پست‌ها</button>
-                    <div id="autoPostPanel" style="display:none;">
-                        <input type="number" id="postCount" placeholder="تعداد پست‌ها...">
-                        <textarea id="postDescriptions" placeholder="توضیحات هر پست (یک در هر خط)..."></textarea>
-                        <input type="time" id="postTime" value="09:00">
-                        <button onclick="schedulePosts()">ثبت و زمان‌بندی</button>
-                    </div>
+    <section id="chatPage" class="page">
+        <div class="chat-container">
+            <div class="chat-list" id="chatList"></div>
+            <div class="chat-window" id="chatWindow">
+                <div class="chat-window-head">
+                    <img id="chatWithAvatar" src="">
+                    <strong id="chatWithName"></strong>
+                    <button class="btn-ghost" style="margin-inline-start:auto;" onclick="closeChatWindow()">✕</button>
+                </div>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="پیام...">
+                    <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
-        </section>
+        </div>
+    </section>
 
-        <!-- صفحه‌ی چت خصوصی -->
-        <section id="chatPage" class="page">
-            <div class="chat-container">
-                <div class="chat-list" id="chatList">
-                    <!-- لیست چت‌ها -->
-                </div>
-                <div class="chat-window" id="chatWindow">
-                    <div class="chat-messages" id="chatMessages"></div>
-                    <div class="chat-input">
-                        <input type="text" id="messageInput" placeholder="پیام...">
-                        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
-                    </div>
-                </div>
+    <section id="explorePage" class="page">
+        <h2 style="font-size:19px;margin-bottom:14px;">🌍 اکتشاف</h2>
+        <div id="exploreContent" class="explore-grid"></div>
+    </section>
+
+    <section id="profilePage" class="page">
+        <button class="btn-ghost" onclick="backFromProfile()">→ بازگشت</button>
+        <div style="text-align:center; margin:16px 0;">
+            <img id="viewAvatar" src="" style="width:80px;height:80px;border-radius:50%;border:3px solid var(--primary);">
+            <h2 id="viewName" style="margin-top:8px;font-size:18px;"></h2>
+            <div class="profile-stats">
+                <div><b id="viewFollowers">۰</b><span>فالوور</span></div>
+                <div><b id="viewPosts">۰</b><span>پست</span></div>
+                <div><b id="viewScore">۰</b><span>امتیاز</span></div>
             </div>
-        </section>
-
-        <!-- صفحه‌ی اکسپلور -->
-        <section id="explorePage" class="page">
-            <h2>🌍 اکتشاف</h2>
-            <div id="exploreContent" class="explore-grid">
-                <!-- کانال‌های محبوب و پست‌های وایرال -->
+            <div style="display:flex; gap:8px; justify-content:center; margin-top:10px;">
+                <button class="btn-primary" id="viewFollowBtn" onclick="toggleFollowView()">فالو</button>
+                <button class="btn-secondary" onclick="openChatFromProfile()">پیام خصوصی</button>
             </div>
-        </section>
-    </main>
+        </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="script.js"></script>
+        <div class="assistant-chat-preview">
+            <h3 style="font-size:14px;margin-bottom:10px;">🤖 از دستیار این کاربر بپرس</h3>
+            <div class="mini-chat" id="viewAssistantChat"></div>
+            <div class="mini-chat-input">
+                <input type="text" id="viewAssistantInput" placeholder="سوالت رو بپرس...">
+                <button class="btn-secondary" onclick="askOtherAssistant()">پرسیدن</button>
+            </div>
+        </div>
+
+        <div id="viewPostsContainer" class="posts-container"></div>
+    </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
