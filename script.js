@@ -95,74 +95,6 @@ function formatNumber(num) {
 }
 
 // ============================================
-// رندر پست با دکمه‌های بزرگ استخوانی
-// ============================================
-function renderPostCard(post, author, isExplore = false) {
-    const name = author?.name || post.channel_name || 'کاربر';
-    const avatar = author?.avatar || defaultAvatar(name);
-    const mediaHtml = post.media_url ? `
-        <div class="media-wrapper">
-            ${post.media_type === 'video' ? 
-                `<video src="${post.media_url}" controls preload="metadata" playsinline></video>` : 
-                `<img src="${post.media_url}" loading="lazy">`}
-        </div>` : '';
-    
-    const cardClass = isExplore ? 'explore-post-full' : 'post-card';
-    
-    return `
-    <div class="${cardClass}" data-post-id="${post.id}">
-        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
-            <img src="${avatar}" loading="lazy">
-            <span class="name">${escapeHtml(name)}</span>
-            <span class="time">${timeAgo(post.created_at)}</span>
-        </div>
-        <p class="content">${escapeHtml(post.content)}</p>
-        ${mediaHtml}
-        <div class="post-actions">
-            <button class="btn-like ${post.isLiked ? 'liked' : ''}" onclick="toggleLike('${post.id}', this)">
-                <i class="${post.isLiked ? 'fas' : 'far'} fa-heart"></i>
-                <span class="count">${formatNumber(post.likes || 0)}</span>
-            </button>
-            <button class="btn-comment" onclick="toggleComments('${post.id}', this)">
-                <i class="far fa-comment"></i>
-                <span class="count">${formatNumber(post.comments || 0)}</span>
-            </button>
-            <button class="btn-share" onclick="sharePost('${post.id}')">
-                <i class="fas fa-share-alt"></i>
-                <span class="count">اشتراک</span>
-            </button>
-        </div>
-        <div class="comments-box" id="comments-${post.id}">
-            <div class="comment-form">
-                <input type="text" id="commentInput-${post.id}" placeholder="کامنت بنویس...">
-                <button class="btn-secondary" onclick="submitComment('${post.id}')">ارسال</button>
-            </div>
-            <div class="comments-list" id="comments-list-${post.id}"></div>
-        </div>
-    </div>`;
-}
-
-// ============================================
-// اشتراک‌گذاری
-// ============================================
-function sharePost(postId) {
-    const url = window.location.href + `?post=${postId}`;
-    if (navigator.share) {
-        navigator.share({
-            title: 'یارِ من - پست',
-            text: 'این پست رو ببین!',
-            url: url
-        }).catch(() => {});
-    } else {
-        navigator.clipboard.writeText(url).then(() => {
-            showNotification('✅ لینک پست کپی شد');
-        }).catch(() => {
-            showNotification('📋 لینک: ' + url);
-        });
-    }
-}
-
-// ============================================
 // ورود / ثبت‌نام
 // ============================================
 async function initApp() {
@@ -199,7 +131,7 @@ function showRegisterModal() {
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
             <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-            <button class="btn-primary" style="width:100%;padding:14px;font-size:16px;min-height:56px;" onclick="registerUser()">
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ورود به یارِ من
             </button>
             <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
@@ -306,17 +238,17 @@ async function showProfileModal() {
                 <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
                 <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
             </div>
-            <h3 style="font-size:18px;">${escapeHtml(currentUser.name)}</h3>
+            <h3 style="font-size:17px;">${escapeHtml(currentUser.name)}</h3>
             ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
             <div class="profile-stats">
                 <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
                 <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
             </div>
             <div class="profile-actions">
-                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();" style="min-height:48px;padding:12px 24px;">
+                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
                     <i class="fas fa-robot"></i> مدیریت دستیار
                 </button>
-                <button class="btn-ghost" onclick="closeModal()" style="min-height:48px;padding:12px 24px;">بستن</button>
+                <button class="btn-ghost" onclick="closeModal()">بستن</button>
             </div>
         </div>`;
     document.body.appendChild(modal);
@@ -361,7 +293,7 @@ function showMediaPreview(b64, type) {
     if (!container || !content) return;
     container.style.display = 'block';
     if (type === 'video') {
-        content.innerHTML = `<video src="${b64}" controls playsinline></video>`;
+        content.innerHTML = `<video src="${b64}" controls></video>`;
     } else {
         content.innerHTML = `<img src="${b64}">`;
     }
@@ -413,7 +345,7 @@ async function loadChannelPosts() {
         if (!container) return;
         
         container.innerHTML = posts.length ? 
-            posts.map(p => renderPostCard(p, currentUser, false)).join('') :
+            posts.map(p => renderPostCard(p, currentUser)).join('') :
             `<div class="empty-state">
                 <i class="fas fa-pen-fancy"></i>
                 هنوز پستی منتشر نکردی.<br>
@@ -426,6 +358,40 @@ async function loadChannelPosts() {
     } catch (e) { console.error(e); }
 }
 
+function renderPostCard(post, author) {
+    const name = author?.name || post.channel_name || 'کاربر';
+    const avatar = author?.avatar || defaultAvatar(name);
+    const mediaHtml = post.media_url ? `
+        <div class="media-wrapper">
+            ${post.media_type === 'video' ? 
+                `<video src="${post.media_url}" controls preload="metadata"></video>` : 
+                `<img src="${post.media_url}" loading="lazy">`}
+        </div>` : '';
+    
+    return `
+    <div class="post-card" data-post-id="${post.id}">
+        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
+            <img src="${avatar}" loading="lazy">
+            <span class="name">${escapeHtml(name)}</span>
+            <span class="time">${timeAgo(post.created_at)}</span>
+        </div>
+        <p class="content">${escapeHtml(post.content)}</p>
+        ${mediaHtml}
+        <div class="post-stats">
+            <button onclick="toggleLike('${post.id}', this)" class="like-btn">
+                <i class="far fa-heart"></i> <span class="like-count">${formatNumber(post.likes || 0)}</span>
+            </button>
+            <button onclick="toggleComments('${post.id}', this)">
+                <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
+            </button>
+            <button disabled>
+                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
+            </button>
+        </div>
+        <div class="comments-box" id="comments-${post.id}"></div>
+    </div>`;
+}
+
 async function toggleLike(postId, btn) {
     try {
         const res = await fetch(`/api/post/${postId}/like`, {
@@ -436,7 +402,7 @@ async function toggleLike(postId, btn) {
         if (data.success) {
             btn.classList.toggle('liked', data.liked);
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
-            btn.querySelector('.count').textContent = formatNumber(data.likes);
+            btn.querySelector('.like-count').textContent = formatNumber(data.likes);
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -450,18 +416,19 @@ async function toggleComments(postId, btn) {
         try {
             const res = await fetch(`/api/post/${postId}/comments`);
             const comments = await res.json();
-            const list = document.getElementById(`comments-list-${postId}`);
-            if (list) {
-                list.innerHTML = comments.map(c => `
-                    <div class="comment-item">
-                        <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
-                        <div>
-                            <b>${escapeHtml(c.name)}</b>
-                            <span class="comment-text">${escapeHtml(c.text)}</span>
-                        </div>
+            box.innerHTML = (comments.map(c => `
+                <div class="comment-item">
+                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                    <div>
+                        <b>${escapeHtml(c.name)}</b>
+                        <span class="comment-text">${escapeHtml(c.text)}</span>
                     </div>
-                `).join('');
-            }
+                </div>
+            `).join('') || '') + `
+                <div class="comment-form">
+                    <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس...">
+                    <button class="btn-secondary" onclick="submitComment('${postId}')">ارسال</button>
+                </div>`;
         } catch (e) { showNotification('خطا'); }
     }
 }
@@ -479,19 +446,19 @@ async function submitComment(postId) {
         const data = await res.json();
         if (data.success) {
             input.value = '';
-            const list = document.getElementById(`comments-list-${postId}`);
-            if (list) {
-                const item = document.createElement('div');
-                item.className = 'comment-item';
-                item.innerHTML = `
-                    <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
-                    <div>
-                        <b>${escapeHtml(data.comment.name)}</b>
-                        <span class="comment-text">${escapeHtml(data.comment.text)}</span>
-                    </div>`;
-                list.appendChild(item);
-            }
-            const card = document.querySelector(`[data-post-id="${postId}"] .btn-comment .count`);
+            const box = document.getElementById(`comments-${postId}`);
+            if (!box) return;
+            const form = box.querySelector('.comment-form');
+            const item = document.createElement('div');
+            item.className = 'comment-item';
+            item.innerHTML = `
+                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                <div>
+                    <b>${escapeHtml(data.comment.name)}</b>
+                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
+                </div>`;
+            box.insertBefore(item, form);
+            const card = document.querySelector(`[data-post-id="${postId}"] .comment-count`);
             if (card) card.textContent = formatNumber(parseInt(card.textContent.replace(/,/g, '')) + 1);
         }
     } catch (e) { showNotification('خطا'); }
@@ -526,9 +493,9 @@ async function loadAssistantData() {
 
         if (data.posts?.length) {
             document.getElementById('scheduledPostsList').innerHTML = data.posts.map(p => `
-                <div style="font-size:12px;color:var(--text-2);padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:11px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
                     <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
-                    <span style="font-size:11px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
+                    <span style="font-size:10px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
                 </div>
             `).join('');
         }
@@ -666,16 +633,18 @@ async function schedulePosts() {
 }
 
 // ============================================
-// اکسپلور - پست‌های تمام صفحه با کیفیت بالا
+// اکسپلور - گرید سه‌تایی مثل اینستاگرام
 // ============================================
+let explorePostIndex = {}; // postId -> { post, user }
+let pfCurrentPostId = null;
+
 async function loadExplore() {
     try {
         const res = await fetch('/api/explore');
         const items = await res.json();
-        const labels = { normal: 'عادی', high: '🔥 داغ', viral: '🚀 وایرال', superstar: '⭐ ستاره' };
         const container = document.getElementById('exploreContent');
         if (!container) return;
-        
+
         if (!items.length) {
             container.innerHTML = `<div class="empty-state">
                 <i class="fas fa-compass"></i>
@@ -685,52 +654,208 @@ async function loadExplore() {
             return;
         }
 
-        container.innerHTML = items.map(user => {
-            const postsHtml = user.recent_posts && user.recent_posts.length ? 
-                user.recent_posts.map(p => renderPostCard(p, user, true)).join('') : 
-                `<p style="font-size:13px;color:var(--text-3);padding:10px 0;text-align:center;">هنوز پستی منتشر نشده</p>`;
+        explorePostIndex = {};
+        const tiles = [];
 
-            return `
-                <div class="explore-user-card">
-                    <div class="explore-user-header">
-                        <img src="${user.avatar || defaultAvatar(user.name)}" loading="lazy" onclick="openProfile('${user.user_id}')">
-                        <div class="info" onclick="openProfile('${user.user_id}')">
-                            <h4>${escapeHtml(user.name)}</h4>
-                            <div class="meta">${labels[user.boost_level] || 'عادی'} · ${formatNumber(user.followers_count || 0)} فالوور</div>
+        items.forEach(user => {
+            const posts = user.recent_posts || [];
+            if (!posts.length) return;
+            posts.forEach(p => {
+                explorePostIndex[p.id] = { post: p, user };
+                if (p.media_url) {
+                    tiles.push(`
+                        <div class="explore-tile" onclick="openPostFullscreen('${p.id}')">
+                            ${p.media_type === 'video' ?
+                                `<video src="${p.media_url}" muted preload="metadata"></video>
+                                 <i class="fas fa-play tile-video-badge"></i>` :
+                                `<img src="${p.media_url}" loading="lazy">`}
+                            <div class="tile-overlay">
+                                <span><i class="fas fa-eye"></i>${formatNumber(p.views || 0)}</span>
+                                <span><i class="fas fa-heart"></i>${formatNumber(p.likes || 0)}</span>
+                            </div>
                         </div>
-                        <button class="follow-btn" onclick="event.stopPropagation(); quickFollow('${user.user_id}', this)">
-                            فالو
-                        </button>
-                    </div>
-                    <div class="explore-posts">
-                        ${postsHtml}
-                    </div>
-                </div>
-            `;
-        }).join('');
+                    `);
+                } else {
+                    tiles.push(`
+                        <div class="explore-tile no-media" onclick="openPostFullscreen('${p.id}')">
+                            <p>${escapeHtml((p.content || '').substring(0, 140))}</p>
+                            <div class="tile-overlay">
+                                <span><i class="fas fa-eye"></i>${formatNumber(p.views || 0)}</span>
+                                <span><i class="fas fa-heart"></i>${formatNumber(p.likes || 0)}</span>
+                            </div>
+                        </div>
+                    `);
+                }
+            });
+        });
+
+        container.innerHTML = tiles.join('') || `<div class="empty-state">
+            <i class="fas fa-compass"></i>
+            هنوز پستی در اکسپلور وجود نداره.<br>
+            اولین پست رو تو منتشر کن! 🚀
+        </div>`;
     } catch (e) { console.error(e); }
 }
 
-function openPostDetail(postId) {
-    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"], .explore-post-full[data-post-id="${postId}"]`);
-    if (postCard) {
-        postCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        postCard.style.border = '3px solid var(--primary)';
-        postCard.style.boxShadow = 'var(--shadow-glow)';
-        setTimeout(() => {
-            postCard.style.border = '';
-            postCard.style.boxShadow = '';
-        }, 3000);
-    } else {
-        showNotification('پست در حال بارگذاری...');
-        document.querySelector('[data-page="explore"]').click();
-        setTimeout(() => {
-            const card = document.querySelector(`.explore-post-full[data-post-id="${postId}"]`);
-            if (card) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }, 500);
+// ============================================
+// نمایش تمام‌صفحه پست
+// ============================================
+function openPostFullscreen(postId) {
+    const entry = explorePostIndex[postId];
+    if (!entry) return;
+    const { post, user } = entry;
+    pfCurrentPostId = postId;
+
+    document.getElementById('pfAvatar').src = user.avatar || defaultAvatar(user.name);
+    document.getElementById('pfName').textContent = user.name;
+    document.getElementById('pfTime').textContent = timeAgo(post.created_at);
+    document.getElementById('pfCaption').textContent = post.content || '';
+
+    const mediaEl = document.getElementById('pfMedia');
+    mediaEl.innerHTML = post.media_url ? (
+        post.media_type === 'video' ?
+            `<video src="${post.media_url}" controls preload="metadata"></video>` :
+            `<img src="${post.media_url}">`
+    ) : '';
+
+    const likeBtn = document.getElementById('pfLikeBtn');
+    likeBtn.classList.remove('liked');
+    likeBtn.querySelector('i').className = 'far fa-heart';
+    document.getElementById('pfLikeCount').textContent = formatNumber(post.likes || 0);
+    document.getElementById('pfCommentCount').textContent = formatNumber(post.comments || 0);
+
+    const followBtn = document.getElementById('pfFollowBtn');
+    const isMe = user.user_id === currentUser.id;
+    followBtn.style.display = isMe ? 'none' : '';
+    followBtn.textContent = 'فالو';
+    followBtn.classList.remove('following');
+
+    const commentsBox = document.getElementById('pfCommentsBox');
+    commentsBox.innerHTML = '';
+    commentsBox.classList.remove('open');
+    delete commentsBox.dataset.loaded;
+
+    document.getElementById('postFullOverlay').classList.add('open');
+}
+
+function closePostFullscreen() {
+    document.getElementById('postFullOverlay').classList.remove('open');
+    document.getElementById('pfMedia').innerHTML = '';
+    pfCurrentPostId = null;
+}
+
+function pfOpenProfile() {
+    const entry = explorePostIndex[pfCurrentPostId];
+    if (!entry) return;
+    closePostFullscreen();
+    openProfile(entry.user.user_id);
+}
+
+async function pfQuickFollow() {
+    const entry = explorePostIndex[pfCurrentPostId];
+    if (!entry) return;
+    await quickFollow(entry.user.user_id, document.getElementById('pfFollowBtn'));
+}
+
+async function pfToggleLike() {
+    if (!pfCurrentPostId) return;
+    await toggleLike(pfCurrentPostId, document.getElementById('pfLikeBtn'));
+    const entry = explorePostIndex[pfCurrentPostId];
+    if (entry) {
+        entry.post.likes = parseInt((document.getElementById('pfLikeCount').textContent || '0').replace(/,/g, '')) || entry.post.likes;
     }
+}
+
+async function pfToggleComments() {
+    if (!pfCurrentPostId) return;
+    const box = document.getElementById('pfCommentsBox');
+    box.classList.toggle('open');
+    if (box.classList.contains('open') && !box.dataset.loaded) {
+        box.dataset.loaded = '1';
+        try {
+            const res = await fetch(`/api/post/${pfCurrentPostId}/comments`);
+            const comments = await res.json();
+            box.innerHTML = (comments.map(c => `
+                <div class="comment-item">
+                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                    <div>
+                        <b>${escapeHtml(c.name)}</b>
+                        <span class="comment-text">${escapeHtml(c.text)}</span>
+                    </div>
+                </div>
+            `).join('') || '') + `
+                <div class="comment-form">
+                    <input type="text" id="pfCommentInput" placeholder="کامنت بنویس...">
+                    <button class="btn-plastic btn-plastic--pistachio" onclick="pfSubmitComment()">ارسال</button>
+                </div>`;
+        } catch (e) { showNotification('خطا'); }
+    }
+}
+
+async function pfSubmitComment() {
+    const input = document.getElementById('pfCommentInput');
+    if (!input || !pfCurrentPostId) return;
+    const text = input.value.trim();
+    if (!text) return;
+    try {
+        const res = await fetch(`/api/post/${pfCurrentPostId}/comment`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, text })
+        });
+        const data = await res.json();
+        if (data.success) {
+            input.value = '';
+            const box = document.getElementById('pfCommentsBox');
+            const form = box.querySelector('.comment-form');
+            const item = document.createElement('div');
+            item.className = 'comment-item';
+            item.innerHTML = `
+                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                <div>
+                    <b>${escapeHtml(data.comment.name)}</b>
+                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
+                </div>`;
+            if (form) box.insertBefore(item, form); else box.appendChild(item);
+
+            const countEl = document.getElementById('pfCommentCount');
+            countEl.textContent = formatNumber((parseInt(countEl.textContent.replace(/,/g, '')) || 0) + 1);
+
+            const entry = explorePostIndex[pfCurrentPostId];
+            if (entry) entry.post.comments = (entry.post.comments || 0) + 1;
+        }
+    } catch (e) { showNotification('خطا در ارسال کامنت'); }
+}
+
+async function pfShare() {
+    await sharePost(pfCurrentPostId);
+}
+
+async function sharePost(postId) {
+    const entry = explorePostIndex[postId];
+    const shareUrl = `${location.origin}${location.pathname}?post=${postId}`;
+    const shareText = entry ? `${entry.user.name}: ${(entry.post.content || '').substring(0, 100)}` : 'یه پست جالب';
+    try {
+        if (navigator.share) {
+            await navigator.share({ title: 'یارِ من', text: shareText, url: shareUrl });
+        } else {
+            await navigator.clipboard.writeText(shareUrl);
+            showNotification('🔗 لینک پست کپی شد');
+        }
+    } catch (e) {
+        // کاربر اشتراک‌گذاری را لغو کرده - نیازی به پیام خطا نیست
+    }
+}
+
+function pfMessage() {
+    const entry = explorePostIndex[pfCurrentPostId];
+    if (!entry) return;
+    if (entry.user.user_id === currentUser.id) {
+        showNotification('این پست خودتونه 🙂');
+        return;
+    }
+    closePostFullscreen();
+    document.querySelector('[data-page="chat"]').click();
+    openChat(entry.user.user_id, entry.user.name, entry.user.avatar || defaultAvatar(entry.user.name));
 }
 
 async function quickFollow(userId, btn) {
@@ -789,7 +914,7 @@ async function openProfile(userId) {
         const container = document.getElementById('viewPostsContainer');
         if (container) {
             container.innerHTML = data.posts.length ?
-                data.posts.map(p => renderPostCard(p, data.user, false)).join('') :
+                data.posts.map(p => renderPostCard(p, data.user)).join('') :
                 `<div class="empty-state">
                     <i class="fas fa-pen-fancy"></i>
                     این کاربر هنوز پستی منتشر نکرده.
@@ -898,7 +1023,7 @@ async function openChat(userId, name, avatar) {
     currentChatUser = { id: userId, name, avatar };
     document.getElementById('chatWithName').textContent = name || 'کاربر';
     document.getElementById('chatWithAvatar').src = avatar || defaultAvatar(name);
-    document.getElementById('chatWindow').style.display = 'flex';
+    document.getElementById('chatWindow').classList.add('open');
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
 
     // علامت‌گذاری پیام‌ها به عنوان خوانده شده
@@ -937,7 +1062,7 @@ function renderMessages(messages) {
 }
 
 function closeChatWindow() {
-    document.getElementById('chatWindow').style.display = 'none';
+    document.getElementById('chatWindow').classList.remove('open');
     currentChatUser = null;
 }
 
@@ -1017,10 +1142,10 @@ function showSearchResults(results) {
             left: 0;
             right: 0;
             background: var(--bg-card);
-            border: 2px solid var(--border);
+            border: 1px solid var(--border);
             border-radius: var(--radius-sm);
-            margin-top: 6px;
-            max-height: 320px;
+            margin-top: 4px;
+            max-height: 300px;
             overflow-y: auto;
             z-index: 50;
             display: none;
@@ -1035,7 +1160,7 @@ function showSearchResults(results) {
     
     container.style.display = 'block';
     container.innerHTML = results.map(r => `
-        <div style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);transition:var(--transition);font-size:13px;"
+        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
              onclick="openProfile('${r.id}')" 
              onmouseover="this.style.background='var(--bg-soft)'"
              onmouseout="this.style.background=''">
@@ -1068,21 +1193,13 @@ function toggleAdminPanel() {
 }
 
 function switchAdminTab(tab) {
-    document.querySelectorAll('.admin-tab').forEach(t => {
-        t.classList.remove('active');
-        t.style.background = 'var(--bg-soft)';
-        t.style.color = 'var(--text-2)';
-    });
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
     const tabBtn = document.querySelector(`.admin-tab[data-tab="${tab}"]`);
-    if (tabBtn) {
-        tabBtn.classList.add('active');
-        tabBtn.style.background = 'var(--primary)';
-        tabBtn.style.color = '#fff';
-    }
+    if (tabBtn) tabBtn.classList.add('active');
     
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
+    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
     const content = document.getElementById('admin' + tab.charAt(0).toUpperCase() + tab.slice(1));
-    if (content) content.style.display = 'block';
+    if (content) content.classList.add('active');
     loadAdminData(tab);
 }
 
@@ -1091,10 +1208,10 @@ async function loadAdminData(type) {
         if (type === 'stats') {
             const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
             const stats = await res.json();
-            const container = document.getElementById('adminStats');
+            const container = document.getElementById('adminStatsContent');
             if (container) {
                 container.innerHTML = `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
                         <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
@@ -1105,17 +1222,17 @@ async function loadAdminData(type) {
         } else if (type === 'users') {
             const res = await fetch('/api/admin/users', { headers: { 'userId': 'admin_milad' } });
             const users = await res.json();
-            const container = document.getElementById('adminUsers');
+            const container = document.getElementById('adminUsersList');
             if (container) {
                 container.innerHTML = users.map(u => `
-                    <div class="admin-user-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
-                        <span class="name" style="font-weight:600;">${escapeHtml(u.name)}</span>
-                        <span style="font-size:11px;color:var(--text-3);">${u.role || 'user'}</span>
-                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
-                        <div class="actions" style="display:flex;gap:6px;">
+                    <div class="admin-user-item">
+                        <span class="name">${escapeHtml(u.name)}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${u.role || 'user'}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
+                        <div class="actions">
                             ${u.role !== 'admin' ? `
-                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">✓</button>
-                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">⛔</button>
+                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>
+                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>
                             ` : ''}
                         </div>
                     </div>
@@ -1124,28 +1241,28 @@ async function loadAdminData(type) {
         } else if (type === 'posts') {
             const res = await fetch('/api/admin/posts', { headers: { 'userId': 'admin_milad' } });
             const posts = await res.json();
-            const container = document.getElementById('adminPosts');
+            const container = document.getElementById('adminPostsList');
             if (container) {
                 container.innerHTML = posts.map(p => `
-                    <div class="admin-post-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
+                    <div class="admin-post-item">
                         <span>${escapeHtml(p.content?.substring(0, 40) || '')}...</span>
-                        <span style="font-size:11px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                        <span style="font-size:11px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
-                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')" style="padding:4px 14px;border-radius:var(--radius-full);border:none;font-size:11px;cursor:pointer;min-height:32px;">🗑️</button>
+                        <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
                     </div>
                 `).join('');
             }
         } else if (type === 'channels') {
             const res = await fetch('/api/admin/channels', { headers: { 'userId': 'admin_milad' } });
             const channels = await res.json();
-            const container = document.getElementById('adminChannels');
+            const container = document.getElementById('adminChannelsList');
             if (container) {
                 container.innerHTML = channels.map(c => `
-                    <div class="admin-user-item" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;flex-wrap:wrap;gap:6px;">
-                        <span style="font-weight:600;">${escapeHtml(c.name)}</span>
-                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
-                        <span style="font-size:11px;color:var(--text-3);">${c.boost_level}</span>
-                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
+                    <div class="admin-user-item">
+                        <span>${escapeHtml(c.name)}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
+                        <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
                     </div>
                 `).join('');
             }
