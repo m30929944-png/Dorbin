@@ -19,8 +19,8 @@ let pendingMediaType = null;
 let scheduledMediaFiles = [];
 let isAdmin = false;
 let adminPanelOpen = false;
-let chatListCache = [];
-let messagesCache = {};
+let currentTheme = 0;
+const themes = ['default', 'blue', 'pink', 'green'];
 
 // ============================================
 // توابع کمکی
@@ -53,16 +53,42 @@ function timeAgo(dateStr) {
     return new Date(dateStr).toLocaleDateString('fa-IR');
 }
 
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num;
+}
+
 function showNotification(text, type = 'info') {
+    const existing = document.querySelector('.notification');
+    if (existing) existing.remove();
+    
     const n = document.createElement('div');
     n.className = 'notification';
-    n.innerHTML = text;
+    
+    if (type === 'broadcast') {
+        n.style.cssText = `
+            background: linear-gradient(135deg, rgba(74,222,128,0.15), rgba(34,197,94,0.15));
+            border-color: var(--success);
+            color: var(--success);
+            padding: 16px 24px;
+            border-radius: var(--radius);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        `;
+        n.innerHTML = `<i class="fas fa-bullhorn" style="font-size:20px;"></i> ${text}`;
+    } else {
+        n.innerHTML = text;
+    }
+    
     document.body.appendChild(n);
     setTimeout(() => {
         n.style.opacity = '0';
-        n.style.transform = 'translate(-50%, -20px)';
+        n.style.transform = 'translate(-50%, -30px)';
         setTimeout(() => n.remove(), 300);
-    }, 3000);
+    }, 3500);
 }
 
 function closeModal() {
@@ -76,6 +102,22 @@ function appendMiniMsg(containerId, text, who) {
     const div = document.createElement('div');
     div.className = 'mini-msg ' + who;
     div.textContent = text;
+    div.style.cssText = `
+        padding: 8px 14px;
+        border-radius: 14px;
+        font-size: 13px;
+        max-width: 85%;
+        word-wrap: break-word;
+        ${who === 'me' ? `
+            align-self: flex-end;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: #fff;
+        ` : `
+            align-self: flex-start;
+            background: var(--bg-soft);
+            border: 1px solid var(--border);
+        `}
+    `;
     c.appendChild(div);
     c.scrollTop = c.scrollHeight;
 }
@@ -85,19 +127,58 @@ function updateBoostBadge(level) {
     if (!badge) return;
     const labels = { normal: 'عادی', high: '🔥 داغ', viral: '🚀 وایرال', superstar: '⭐ ستاره' };
     badge.textContent = labels[level] || 'عادی';
-    badge.className = 'boost-badge boost-' + level;
 }
 
-function formatNumber(num) {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-    return num;
+// ============================================
+// تغییر تم
+// ============================================
+function toggleTheme() {
+    currentTheme = (currentTheme + 1) % themes.length;
+    document.body.className = themes[currentTheme] === 'default' ? '' : 'theme-' + themes[currentTheme];
+    localStorage.setItem('yareman_theme', themes[currentTheme]);
+    showNotification('🎨 تم تغییر کرد');
+}
+
+function loadTheme() {
+    const saved = localStorage.getItem('yareman_theme');
+    if (saved && themes.includes(saved)) {
+        currentTheme = themes.indexOf(saved);
+        document.body.className = saved === 'default' ? '' : 'theme-' + saved;
+    }
+}
+
+// ============================================
+// مودال تمام صفحه
+// ============================================
+function openFullscreen(url, type) {
+    const modal = document.getElementById('fullscreenModal');
+    const content = document.getElementById('fullscreenContent');
+    if (!modal || !content) return;
+    
+    if (type === 'video') {
+        content.innerHTML = `<video src="${url}" controls autoplay style="max-width:100%;max-height:90vh;"></video>`;
+    } else {
+        content.innerHTML = `<img src="${url}" style="max-width:100%;max-height:90vh;">`;
+    }
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeFullscreen() {
+    const modal = document.getElementById('fullscreenModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+    const content = document.getElementById('fullscreenContent');
+    if (content) content.innerHTML = '';
 }
 
 // ============================================
 // ورود / ثبت‌نام
 // ============================================
 async function initApp() {
+    loadTheme();
+    
     const savedId = localStorage.getItem('yareman_user_id');
     if (savedId) {
         try {
@@ -123,7 +204,7 @@ function showRegisterModal() {
     modal.innerHTML = `
         <div class="modal-content">
             <h2>👋 خوش اومدی!</h2>
-            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">
+            <p style="color:var(--text-2);font-size:14px;margin-bottom:16px;">
                 یه اسم برای خودت انتخاب کن
             </p>
             <div class="avatar-upload">
@@ -131,10 +212,10 @@ function showRegisterModal() {
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
             <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+            <button class="btn-primary" style="width:100%;padding:14px;font-size:16px;" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ورود به یارِ من
             </button>
-            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
+            <p style="font-size:11px;color:var(--text-3);margin-top:10px;">
                 با ثبت‌نام، قوانین و حریم خصوصی را می‌پذیرید
             </p>
         </div>`;
@@ -166,10 +247,12 @@ async function registerUser() {
             if (currentUser.id === 'admin_milad') {
                 isAdmin = true;
                 document.getElementById('adminBtn').classList.add('show');
+                showNotification('👑 خوش آمدی مدیر سیستم!');
+            } else {
+                showNotification('✨ خوش آمدی ' + currentUser.name);
             }
             
             afterLogin();
-            showNotification('✨ خوش آمدی ' + currentUser.name);
         } else {
             showNotification('خطا: ' + data.error);
         }
@@ -185,11 +268,7 @@ function afterLogin() {
     loadPageData('channel');
     
     socket.on('broadcast', (data) => {
-        showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
-    });
-    
-    socket.on('message_sent', (data) => {
-        // پیام ارسال شد
+        showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`, 'broadcast');
     });
 }
 
@@ -238,13 +317,13 @@ async function showProfileModal() {
                 <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
                 <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
             </div>
-            <h3 style="font-size:17px;">${escapeHtml(currentUser.name)}</h3>
-            ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
-            <div class="profile-stats">
-                <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
-                <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
+            <h3 style="font-size:20px;">${escapeHtml(currentUser.name)}</h3>
+            ${currentUser.bio ? `<p style="color:var(--text-2);font-size:14px;">${escapeHtml(currentUser.bio)}</p>` : ''}
+            <div style="display:flex;justify-content:center;gap:24px;margin:12px 0;">
+                <div><b style="font-size:18px;">${formatNumber(currentUser.followers || 0)}</b><span style="font-size:12px;color:var(--text-3);display:block;">فالوور</span></div>
+                <div><b style="font-size:18px;">${formatNumber(currentUser.score || 0)}</b><span style="font-size:12px;color:var(--text-3);display:block;">امتیاز</span></div>
             </div>
-            <div class="profile-actions">
+            <div style="display:flex;flex-direction:column;gap:8px;">
                 <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
                     <i class="fas fa-robot"></i> مدیریت دستیار
                 </button>
@@ -280,6 +359,11 @@ document.getElementById('postVideoInput').addEventListener('change', function(e)
 
 function handleMediaFile(file, type) {
     if (!file) return;
+    const maxSize = type === 'video' ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+        showNotification(`حجم فایل بیش از حد مجاز است (حداکثر ${type === 'video' ? '50' : '10'}MB)`);
+        return;
+    }
     readFileAsBase64(file, (b64) => {
         pendingMedia = b64;
         pendingMediaType = type;
@@ -293,9 +377,9 @@ function showMediaPreview(b64, type) {
     if (!container || !content) return;
     container.style.display = 'block';
     if (type === 'video') {
-        content.innerHTML = `<video src="${b64}" controls></video>`;
+        content.innerHTML = `<video src="${b64}" controls style="width:100%;max-height:400px;"></video>`;
     } else {
-        content.innerHTML = `<img src="${b64}">`;
+        content.innerHTML = `<img src="${b64}" style="width:100%;max-height:400px;">`;
     }
 }
 
@@ -344,13 +428,16 @@ async function loadChannelPosts() {
         const container = document.getElementById('channelPosts');
         if (!container) return;
         
-        container.innerHTML = posts.length ? 
-            posts.map(p => renderPostCard(p, currentUser)).join('') :
-            `<div class="empty-state">
+        if (!posts.length) {
+            container.innerHTML = `<div class="empty-state">
                 <i class="fas fa-pen-fancy"></i>
                 هنوز پستی منتشر نکردی.<br>
                 اولین پستت رو بنویس! ✍️
             </div>`;
+            return;
+        }
+        
+        container.innerHTML = posts.map(p => renderPostCard(p, currentUser)).join('');
 
         const ures = await fetch(`/api/user/${currentUser.id}`);
         const u = await ures.json();
@@ -361,11 +448,19 @@ async function loadChannelPosts() {
 function renderPostCard(post, author) {
     const name = author?.name || post.channel_name || 'کاربر';
     const avatar = author?.avatar || defaultAvatar(name);
+    
+    // تشخیص هشتگ‌ها
+    let contentHtml = escapeHtml(post.content);
+    contentHtml = contentHtml.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
+    
     const mediaHtml = post.media_url ? `
         <div class="media-wrapper">
             ${post.media_type === 'video' ? 
-                `<video src="${post.media_url}" controls preload="metadata"></video>` : 
-                `<img src="${post.media_url}" loading="lazy">`}
+                `<video src="${post.media_url}" controls preload="metadata" style="width:100%;"></video>` : 
+                `<img src="${post.media_url}" loading="lazy" style="width:100%;cursor:pointer;" onclick="event.stopPropagation(); openFullscreen('${post.media_url}', 'image')">`}
+            <button class="fullscreen-btn" onclick="event.stopPropagation(); openFullscreen('${post.media_url}', '${post.media_type === 'video' ? 'video' : 'image'}')">
+                <i class="fas fa-expand"></i>
+            </button>
         </div>` : '';
     
     return `
@@ -375,21 +470,34 @@ function renderPostCard(post, author) {
             <span class="name">${escapeHtml(name)}</span>
             <span class="time">${timeAgo(post.created_at)}</span>
         </div>
-        <p class="content">${escapeHtml(post.content)}</p>
+        <p class="content">${contentHtml}</p>
         ${mediaHtml}
         <div class="post-stats">
-            <button onclick="toggleLike('${post.id}', this)" class="like-btn">
+            <button class="btn-like" onclick="toggleLike('${post.id}', this)">
                 <i class="far fa-heart"></i> <span class="like-count">${formatNumber(post.likes || 0)}</span>
             </button>
-            <button onclick="toggleComments('${post.id}', this)">
+            <button class="btn-comment" onclick="toggleComments('${post.id}', this)">
                 <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
             </button>
-            <button disabled>
-                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
+            <button class="btn-share" onclick="sharePost('${post.id}')">
+                <i class="fas fa-share-alt"></i>
             </button>
         </div>
-        <div class="comments-box" id="comments-${post.id}"></div>
+        <div class="comments-box" id="comments-${post.id}" style="display:none;margin-top:12px;border-top:2px solid var(--border);padding-top:12px;"></div>
     </div>`;
+}
+
+function sharePost(postId) {
+    const url = window.location.href + '?post=' + postId;
+    if (navigator.share) {
+        navigator.share({ title: 'یارِ من', text: 'این پست رو ببین!', url: url });
+    } else {
+        navigator.clipboard.writeText(url).then(() => {
+            showNotification('✅ لینک پست کپی شد');
+        }).catch(() => {
+            showNotification('لینک: ' + url);
+        });
+    }
 }
 
 async function toggleLike(postId, btn) {
@@ -400,7 +508,7 @@ async function toggleLike(postId, btn) {
         });
         const data = await res.json();
         if (data.success) {
-            btn.classList.toggle('liked', data.liked);
+            btn.classList.toggle('active', data.liked);
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
             btn.querySelector('.like-count').textContent = formatNumber(data.likes);
         }
@@ -410,24 +518,26 @@ async function toggleLike(postId, btn) {
 async function toggleComments(postId, btn) {
     const box = document.getElementById(`comments-${postId}`);
     if (!box) return;
-    box.classList.toggle('open');
-    if (box.classList.contains('open') && !box.dataset.loaded) {
+    const isOpen = box.style.display !== 'none';
+    box.style.display = isOpen ? 'none' : 'block';
+    
+    if (!isOpen && !box.dataset.loaded) {
         box.dataset.loaded = '1';
         try {
             const res = await fetch(`/api/post/${postId}/comments`);
             const comments = await res.json();
             box.innerHTML = (comments.map(c => `
-                <div class="comment-item">
-                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                <div style="display:flex;gap:10px;margin-bottom:8px;align-items:flex-start;">
+                    <img src="${c.avatar || defaultAvatar(c.name)}" style="width:32px;height:32px;border-radius:50%;">
                     <div>
-                        <b>${escapeHtml(c.name)}</b>
-                        <span class="comment-text">${escapeHtml(c.text)}</span>
+                        <b style="font-size:13px;">${escapeHtml(c.name)}</b>
+                        <p style="font-size:13px;color:var(--text-2);">${escapeHtml(c.text)}</p>
                     </div>
                 </div>
             `).join('') || '') + `
-                <div class="comment-form">
-                    <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس...">
-                    <button class="btn-secondary" onclick="submitComment('${postId}')">ارسال</button>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس..." style="flex:1;background:var(--bg-soft);border:2px solid var(--border);border-radius:99px;padding:10px 16px;color:var(--text);font-size:14px;outline:none;">
+                    <button class="btn-secondary" onclick="submitComment('${postId}')" style="padding:10px 20px;">ارسال</button>
                 </div>`;
         } catch (e) { showNotification('خطا'); }
     }
@@ -448,15 +558,16 @@ async function submitComment(postId) {
             input.value = '';
             const box = document.getElementById(`comments-${postId}`);
             if (!box) return;
-            const form = box.querySelector('.comment-form');
+            const form = box.querySelector('div:last-child');
             const item = document.createElement('div');
-            item.className = 'comment-item';
+            item.style.cssText = 'display:flex;gap:10px;margin-bottom:8px;align-items:flex-start;';
             item.innerHTML = `
-                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" style="width:32px;height:32px;border-radius:50%;">
                 <div>
-                    <b>${escapeHtml(data.comment.name)}</b>
-                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
-                </div>`;
+                    <b style="font-size:13px;">${escapeHtml(data.comment.name)}</b>
+                    <p style="font-size:13px;color:var(--text-2);">${escapeHtml(data.comment.text)}</p>
+                </div>
+            `;
             box.insertBefore(item, form);
             const card = document.querySelector(`[data-post-id="${postId}"] .comment-count`);
             if (card) card.textContent = formatNumber(parseInt(card.textContent.replace(/,/g, '')) + 1);
@@ -477,27 +588,24 @@ async function loadAssistantData() {
         document.getElementById('statFollowers').textContent = formatNumber(data.stats?.followers ?? 0);
         document.getElementById('statEngagement').textContent = data.stats?.engagementRate ?? '0%';
 
-        document.getElementById('qaList').innerHTML = data.qa?.length ? data.qa.map(q => `
-            <div class="qa-item">
-                <span class="q">❓ ${escapeHtml(q.question)}</span>
-                <span class="a">💬 ${escapeHtml(q.answer)}</span>
-            </div>
-        `).join('') : '<p class="empty-state">هنوز آموزشی ثبت نشده.</p>';
-
-        document.getElementById('keywordList').innerHTML = data.keywords?.length ? data.keywords.map(k => `
-            <div class="keyword-item">
-                <span class="k">🔑 ${escapeHtml(k.keyword)}</span>
-                <span class="r">💬 ${escapeHtml(k.response)}</span>
-            </div>
-        `).join('') : '<p class="empty-state">هنوز کلمه کلیدی ثبت نشده.</p>';
-
-        if (data.posts?.length) {
-            document.getElementById('scheduledPostsList').innerHTML = data.posts.map(p => `
-                <div style="font-size:11px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-                    <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
-                    <span style="font-size:10px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
+        const qaList = document.getElementById('qaList');
+        if (qaList) {
+            qaList.innerHTML = data.qa?.length ? data.qa.map(q => `
+                <div style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;">
+                    <div style="color:var(--text-2);">❓ ${escapeHtml(q.question)}</div>
+                    <div>💬 ${escapeHtml(q.answer)}</div>
                 </div>
-            `).join('');
+            `).join('') : '<div class="empty-state">هنوز آموزشی ثبت نشده.</div>';
+        }
+
+        const keywordList = document.getElementById('keywordList');
+        if (keywordList) {
+            keywordList.innerHTML = data.keywords?.length ? data.keywords.map(k => `
+                <div style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;">
+                    <div style="color:var(--text-2);">🔑 ${escapeHtml(k.keyword)}</div>
+                    <div>💬 ${escapeHtml(k.response)}</div>
+                </div>
+            `).join('') : '<div class="empty-state">هنوز کلمه کلیدی ثبت نشده.</div>';
         }
     } catch (e) { console.error(e); }
 }
@@ -544,13 +652,6 @@ async function trainKeyword() {
     } catch (e) { showNotification('خطا'); }
 }
 
-function toggleAutoPost() {
-    const panel = document.getElementById('autoPostPanel');
-    if (panel) {
-        panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
-    }
-}
-
 async function testAssistant() {
     const input = document.getElementById('assistantPreviewInput');
     const msg = input.value.trim();
@@ -569,77 +670,12 @@ async function testAssistant() {
 }
 
 // ============================================
-// زمان‌بندی پست‌ها
-// ============================================
-document.getElementById('scheduleImages').addEventListener('change', function(e) {
-    for (const file of e.target.files) {
-        readFileAsBase64(file, (b64) => {
-            scheduledMediaFiles.push({ data: b64, type: 'image' });
-        });
-    }
-});
-
-document.getElementById('scheduleVideos').addEventListener('change', function(e) {
-    for (const file of e.target.files) {
-        readFileAsBase64(file, (b64) => {
-            scheduledMediaFiles.push({ data: b64, type: 'video' });
-        });
-    }
-});
-
-async function schedulePosts() {
-    const count = parseInt(document.getElementById('postCount').value);
-    const descriptions = document.getElementById('postDescriptions').value.split('\n').filter(s => s.trim());
-    const time = document.getElementById('postTime').value;
-    const interval = parseInt(document.getElementById('postInterval').value) || 1;
-
-    if (!count || count < 1) { showNotification('تعداد پست‌ها رو مشخص کن!'); return; }
-    if (descriptions.length < count) { showNotification(`حداقل ${count} توضیح وارد کن.`); return; }
-
-    const posts = [];
-    const baseDate = new Date();
-    const [hours, minutes] = time.split(':').map(Number);
-    baseDate.setHours(hours || 9, minutes || 0, 0, 0);
-
-    for (let i = 0; i < count; i++) {
-        const postDate = new Date(baseDate);
-        postDate.setDate(postDate.getDate() + (i * interval));
-        
-        const media = scheduledMediaFiles[i] || null;
-        posts.push({
-            content: descriptions[i] || `پست شماره ${i + 1}`,
-            scheduledTime: postDate.toISOString(),
-            mediaUrl: media ? media.data : null,
-            mediaType: media ? media.type : 'none'
-        });
-    }
-
-    try {
-        const res = await fetch('/api/assistant/schedule', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, posts })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification(`✅ ${count} پست زمان‌بندی شد`);
-            scheduledMediaFiles = [];
-            document.getElementById('scheduleImages').value = '';
-            document.getElementById('scheduleVideos').value = '';
-            await loadAssistantData();
-        } else {
-            showNotification('خطا: ' + data.error);
-        }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
-}
-
-// ============================================
 // اکسپلور
 // ============================================
 async function loadExplore() {
     try {
         const res = await fetch('/api/explore');
         const items = await res.json();
-        const labels = { normal: 'عادی', high: '🔥 داغ', viral: '🚀 وایرال', superstar: '⭐ ستاره' };
         const container = document.getElementById('exploreContent');
         if (!container) return;
         
@@ -654,14 +690,18 @@ async function loadExplore() {
 
         container.innerHTML = items.map(user => {
             const postsHtml = user.recent_posts && user.recent_posts.length ? 
-                user.recent_posts.map(p => `
+                user.recent_posts.map(p => {
+                    let contentHtml = escapeHtml(p.content || '').substring(0, 120);
+                    contentHtml = contentHtml.replace(/#(\w+)/g, '<span class="hashtag">#$1</span>');
+                    
+                    return `
                     <div class="explore-post-mini" onclick="event.stopPropagation(); openPostDetail('${p.id}')">
-                        <p>${escapeHtml(p.content?.substring(0, 120) || '')}${p.content?.length > 120 ? '...' : ''}</p>
+                        <p>${contentHtml}${(p.content || '').length > 120 ? '...' : ''}</p>
                         ${p.media_url ? `
                             <div class="mini-media">
                                 ${p.media_type === 'video' ? 
-                                    `<video src="${p.media_url}" muted preload="metadata"></video>` : 
-                                    `<img src="${p.media_url}" loading="lazy">`}
+                                    `<video src="${p.media_url}" muted preload="metadata" style="width:100%;"></video>` : 
+                                    `<img src="${p.media_url}" loading="lazy" style="width:100%;">`}
                             </div>
                         ` : ''}
                         <div class="mini-stats">
@@ -670,8 +710,8 @@ async function loadExplore() {
                             <span><i class="far fa-eye"></i> ${formatNumber(p.views || 0)}</span>
                         </div>
                     </div>
-                `).join('') : 
-                `<p style="font-size:11px;color:var(--text-3);padding:4px 0;">هنوز پستی منتشر نشده</p>`;
+                `}).join('') : 
+                `<p style="font-size:12px;color:var(--text-3);padding:6px 0;">هنوز پستی منتشر نشده</p>`;
 
             return `
                 <div class="explore-user-card">
@@ -679,9 +719,9 @@ async function loadExplore() {
                         <img src="${user.avatar || defaultAvatar(user.name)}" loading="lazy" onclick="openProfile('${user.user_id}')">
                         <div class="info" onclick="openProfile('${user.user_id}')">
                             <h4>${escapeHtml(user.name)}</h4>
-                            <div class="meta">${labels[user.boost_level] || 'عادی'} · ${formatNumber(user.followers_count || 0)} فالوور</div>
+                            <div class="meta">⭐ ${formatNumber(user.followers_count || 0)} فالوور · ${formatNumber(user.posts_count || 0)} پست</div>
                         </div>
-                        <button class="follow-btn" onclick="event.stopPropagation(); quickFollow('${user.user_id}', this)">
+                        <button class="btn-follow follow" onclick="event.stopPropagation(); quickFollow('${user.user_id}', this)">
                             فالو
                         </button>
                     </div>
@@ -695,25 +735,21 @@ async function loadExplore() {
 }
 
 function openPostDetail(postId) {
-    const postCard = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-    if (postCard) {
-        postCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        postCard.style.border = '2px solid var(--primary)';
-        postCard.style.boxShadow = 'var(--shadow-glow)';
-        setTimeout(() => {
-            postCard.style.border = '';
-            postCard.style.boxShadow = '';
-        }, 3000);
-    } else {
-        showNotification('پست در حال بارگذاری...');
-        document.querySelector('[data-page="channel"]').click();
-        setTimeout(() => {
-            const card = document.querySelector(`.post-card[data-post-id="${postId}"]`);
-            if (card) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }, 500);
-    }
+    document.querySelector('[data-page="channel"]').click();
+    setTimeout(() => {
+        const card = document.querySelector(`.post-card[data-post-id="${postId}"]`);
+        if (card) {
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            card.style.borderColor = 'var(--primary)';
+            card.style.boxShadow = 'var(--shadow-glow)';
+            setTimeout(() => {
+                card.style.borderColor = '';
+                card.style.boxShadow = '';
+            }, 3000);
+        } else {
+            showNotification('پست پیدا نشد');
+        }
+    }, 500);
 }
 
 async function quickFollow(userId, btn) {
@@ -734,16 +770,12 @@ async function quickFollow(userId, btn) {
         if (data.success) {
             if (isFollowing) {
                 btn.textContent = 'فالو';
-                btn.classList.remove('following');
+                btn.className = 'btn-follow follow';
                 showNotification('❌ آنفالو شد');
             } else {
                 btn.textContent = 'فالو شد ✓';
-                btn.classList.add('following');
+                btn.className = 'btn-follow following';
                 showNotification('✅ فالو شد');
-            }
-            const countEl = document.getElementById('viewFollowers');
-            if (countEl) {
-                countEl.textContent = formatNumber(parseInt(countEl.textContent.replace(/,/g, '')) + (isFollowing ? -1 : 1));
             }
         }
     } catch (e) { showNotification('خطا در ارتباط با سرور'); }
@@ -767,7 +799,10 @@ async function openProfile(userId) {
 
         viewingProfileFollowing = data.isFollowing;
         const followBtn = document.getElementById('viewFollowBtn');
-        if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+        if (followBtn) {
+            followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+            followBtn.className = viewingProfileFollowing ? 'btn-follow following' : 'btn-follow follow';
+        }
 
         const container = document.getElementById('viewPostsContainer');
         if (container) {
@@ -793,7 +828,8 @@ function backFromProfile() {
 
 async function toggleFollowView() {
     if (!viewingProfileId) return;
-    const endpoint = viewingProfileFollowing ? '/api/unfollow' : '/api/follow';
+    const isFollowing = viewingProfileFollowing;
+    const endpoint = isFollowing ? '/api/unfollow' : '/api/follow';
     try {
         const res = await fetch(endpoint, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -801,9 +837,12 @@ async function toggleFollowView() {
         });
         const data = await res.json();
         if (data.success) {
-            viewingProfileFollowing = !viewingProfileFollowing;
+            viewingProfileFollowing = !isFollowing;
             const followBtn = document.getElementById('viewFollowBtn');
-            if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+            if (followBtn) {
+                followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+                followBtn.className = viewingProfileFollowing ? 'btn-follow following' : 'btn-follow follow';
+            }
             const count = document.getElementById('viewFollowers');
             if (count) count.textContent = formatNumber(parseInt(count.textContent.replace(/,/g, '')) + (viewingProfileFollowing ? 1 : -1));
             showNotification(viewingProfileFollowing ? '✅ فالو شد' : '❌ آنفالو شد');
@@ -840,7 +879,6 @@ async function loadChatList() {
     try {
         const res = await fetch(`/api/chat/list/${currentUser.id}`);
         const chats = await res.json();
-        chatListCache = chats;
         const container = document.getElementById('chatList');
         if (!container) return;
         
@@ -860,20 +898,9 @@ async function loadChatList() {
                     <strong>${escapeHtml(c.name)}</strong>
                     <p>${escapeHtml(c.lastMessage || '')}</p>
                 </div>
-                ${c.unreadCount > 0 ? `<span class="unread">${c.unreadCount}</span>` : ''}
+                ${c.unreadCount > 0 ? `<span style="background:var(--primary);color:#fff;font-size:12px;padding:2px 10px;border-radius:99px;">${c.unreadCount}</span>` : ''}
             </div>
         `).join('');
-        
-        const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-        const badge = document.getElementById('chatBadge');
-        if (badge) {
-            if (totalUnread > 0) {
-                badge.style.display = 'block';
-                badge.textContent = totalUnread > 99 ? '99+' : totalUnread;
-            } else {
-                badge.style.display = 'none';
-            }
-        }
     } catch (e) { console.error(e); }
 }
 
@@ -882,9 +909,8 @@ async function openChat(userId, name, avatar) {
     document.getElementById('chatWithName').textContent = name || 'کاربر';
     document.getElementById('chatWithAvatar').src = avatar || defaultAvatar(name);
     document.getElementById('chatWindow').classList.add('open');
-    document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
+    document.getElementById('chatMessages').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-3);"><i class="fas fa-spinner fa-spin"></i> بارگذاری...</div>';
 
-    // علامت‌گذاری پیام‌ها به عنوان خوانده شده
     try {
         await fetch('/api/chat/read', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -894,29 +920,17 @@ async function openChat(userId, name, avatar) {
     } catch (e) {}
 
     try {
-        const cacheKey = `${currentUser.id}_${userId}`;
-        if (messagesCache[cacheKey]) {
-            renderMessages(messagesCache[cacheKey]);
-            return;
-        }
-        
         const res = await fetch(`/api/chat/history/${currentUser.id}/${userId}`);
         const messages = await res.json();
-        messagesCache[cacheKey] = messages;
-        renderMessages(messages);
+        const container = document.getElementById('chatMessages');
+        container.innerHTML = messages.map(m => `
+            <div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">
+                ${escapeHtml(m.message)}
+                <span style="font-size:10px;opacity:0.6;display:block;margin-top:2px;">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+        `).join('');
+        container.scrollTop = container.scrollHeight;
     } catch (e) { showNotification('خطا'); }
-}
-
-function renderMessages(messages) {
-    const container = document.getElementById('chatMessages');
-    if (!container) return;
-    container.innerHTML = messages.map(m => `
-        <div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">
-            ${escapeHtml(m.message)}
-            <span class="time">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
-        </div>
-    `).join('');
-    container.scrollTop = container.scrollHeight;
 }
 
 function closeChatWindow() {
@@ -945,22 +959,12 @@ function displayMessage(text, type) {
     if (!container) return;
     const div = document.createElement('div');
     div.className = `message ${type}`;
-    div.innerHTML = `${escapeHtml(text)}<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
+    div.innerHTML = `${escapeHtml(text)}<span style="font-size:10px;opacity:0.6;display:block;margin-top:2px;">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
 
 socket.on('new_message', (data) => {
-    const cacheKey = `${currentUser.id}_${data.from}`;
-    if (messagesCache[cacheKey]) {
-        messagesCache[cacheKey].push({
-            from_user: data.from,
-            to_user: currentUser.id,
-            message: data.message,
-            created_at: new Date().toISOString()
-        });
-    }
-    
     if (currentChatUser && data.from === currentChatUser.id) {
         displayMessage(data.message, 'received');
     } else {
@@ -969,65 +973,61 @@ socket.on('new_message', (data) => {
     }
 });
 
-socket.on('message_sent', (data) => {
-    // پیام ارسال شد
-});
-
 // ============================================
 // جستجو
 // ============================================
 document.getElementById('searchInput').addEventListener('input', debounce(async function(e) {
     const q = e.target.value.trim();
+    const container = document.querySelector('.search-box');
+    let resultsBox = document.getElementById('searchResults');
+    
     if (q.length < 2) {
-        document.getElementById('searchResults')?.remove();
+        if (resultsBox) resultsBox.remove();
         return;
     }
+    
     try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
         const results = await res.json();
-        showSearchResults(results);
+        
+        if (!resultsBox) {
+            resultsBox = document.createElement('div');
+            resultsBox.id = 'searchResults';
+            resultsBox.style.cssText = `
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: var(--bg-card);
+                border: 2px solid var(--border);
+                border-radius: var(--radius-sm);
+                margin-top: 8px;
+                max-height: 300px;
+                overflow-y: auto;
+                z-index: 50;
+                box-shadow: var(--shadow);
+            `;
+            container.style.position = 'relative';
+            container.appendChild(resultsBox);
+        }
+        
+        if (!results.length) {
+            resultsBox.innerHTML = `<div style="padding:12px;color:var(--text-3);">نتیجه‌ای یافت نشد</div>`;
+            return;
+        }
+        
+        resultsBox.innerHTML = results.map(r => `
+            <div style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);transition:var(--transition);"
+                 onclick="openProfile('${r.id}')" 
+                 onmouseover="this.style.background='var(--bg-soft)'"
+                 onmouseout="this.style.background=''">
+                <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}" style="color:var(--primary);"></i>
+                <span style="font-weight:500;">${escapeHtml(r.name)}</span>
+                <span style="font-size:11px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
+            </div>
+        `).join('');
     } catch (e) { console.error(e); }
-}, 500));
-
-function showSearchResults(results) {
-    let container = document.getElementById('searchResults');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'searchResults';
-        container.style.cssText = `
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            margin-top: 4px;
-            max-height: 300px;
-            overflow-y: auto;
-            z-index: 50;
-            display: none;
-        `;
-        document.querySelector('.search-box').appendChild(container);
-    }
-    
-    if (!results.length) {
-        container.style.display = 'none';
-        return;
-    }
-    
-    container.style.display = 'block';
-    container.innerHTML = results.map(r => `
-        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
-             onclick="openProfile('${r.id}')" 
-             onmouseover="this.style.background='var(--bg-soft)'"
-             onmouseout="this.style.background=''">
-            <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}"></i>
-            <span>${escapeHtml(r.name)}</span>
-            <span style="font-size:10px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
-        </div>
-    `).join('');
-}
+}, 400));
 
 function debounce(fn, wait) {
     let t;
@@ -1055,9 +1055,9 @@ function switchAdminTab(tab) {
     const tabBtn = document.querySelector(`.admin-tab[data-tab="${tab}"]`);
     if (tabBtn) tabBtn.classList.add('active');
     
-    document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
     const content = document.getElementById('admin' + tab.charAt(0).toUpperCase() + tab.slice(1));
-    if (content) content.classList.add('active');
+    if (content) content.style.display = 'block';
     loadAdminData(tab);
 }
 
@@ -1069,11 +1069,31 @@ async function loadAdminData(type) {
             const container = document.getElementById('adminStatsContent');
             if (container) {
                 container.innerHTML = `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
-                        <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.messages)}</b><span>پیام‌ها</span></div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--primary);">${formatNumber(stats.users)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">کاربران</span>
+                        </div>
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--success);">${formatNumber(stats.posts)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">پست‌ها</span>
+                        </div>
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--secondary);">${formatNumber(stats.channels)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">کانال‌ها</span>
+                        </div>
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--info);">${formatNumber(stats.messages)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">پیام‌ها</span>
+                        </div>
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--like);">${formatNumber(stats.follows)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">فالوها</span>
+                        </div>
+                        <div class="stat-chip" style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center;">
+                            <b style="font-size:22px;color:var(--warning);">${formatNumber(stats.trainings)}</b>
+                            <span style="display:block;font-size:12px;color:var(--text-3);">آموزش‌ها</span>
+                        </div>
                     </div>
                 `;
             }
@@ -1083,15 +1103,15 @@ async function loadAdminData(type) {
             const container = document.getElementById('adminUsersList');
             if (container) {
                 container.innerHTML = users.map(u => `
-                    <div class="admin-user-item">
-                        <span class="name">${escapeHtml(u.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${u.role || 'user'}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
-                        <div class="actions">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:2px solid var(--border);flex-wrap:wrap;gap:6px;">
+                        <span style="font-weight:500;">${escapeHtml(u.name)}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${u.role || 'user'}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
+                        <div style="display:flex;gap:4px;">
                             ${u.role !== 'admin' ? `
-                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>
-                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>
-                            ` : ''}
+                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')" style="padding:4px 14px;border-radius:99px;font-size:11px;border:none;cursor:pointer;">✓</button>
+                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')" style="padding:4px 14px;border-radius:99px;font-size:11px;border:none;cursor:pointer;">⛔</button>
+                            ` : '<span style="color:var(--secondary);">👑</span>'}
                         </div>
                     </div>
                 `).join('');
@@ -1102,11 +1122,11 @@ async function loadAdminData(type) {
             const container = document.getElementById('adminPostsList');
             if (container) {
                 container.innerHTML = posts.map(p => `
-                    <div class="admin-post-item">
-                        <span>${escapeHtml(p.content?.substring(0, 40) || '')}...</span>
-                        <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
-                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:2px solid var(--border);flex-wrap:wrap;gap:6px;">
+                        <span>${escapeHtml(p.content?.substring(0, 50) || '')}...</span>
+                        <span style="font-size:11px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')" style="padding:4px 14px;border-radius:99px;font-size:11px;border:none;cursor:pointer;">🗑️</button>
                     </div>
                 `).join('');
             }
@@ -1116,11 +1136,11 @@ async function loadAdminData(type) {
             const container = document.getElementById('adminChannelsList');
             if (container) {
                 container.innerHTML = channels.map(c => `
-                    <div class="admin-user-item">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:2px solid var(--border);flex-wrap:wrap;gap:6px;">
                         <span>${escapeHtml(c.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
-                        <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
+                        <span style="font-size:11px;color:var(--text-3);">${c.boost_level}</span>
+                        <span style="font-size:11px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
                     </div>
                 `).join('');
             }
@@ -1157,11 +1177,11 @@ async function sendBroadcast() {
         const res = await fetch('/api/admin/broadcast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
-            body: JSON.stringify({ title: title || 'اعلان سیستمی', message })
+            body: JSON.stringify({ title: title || '📢 اعلان سیستمی', message })
         });
         const data = await res.json();
         if (data.success) {
-            showNotification(`✅ ${data.message}`);
+            showNotification(`✅ ${data.message}`, 'broadcast');
             document.getElementById('broadcastTitle').value = '';
             document.getElementById('broadcastMessage').value = '';
         }
@@ -1174,10 +1194,19 @@ async function sendBroadcast() {
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
     
-    // Auto-refresh chat list
     setInterval(() => {
         if (document.getElementById('chatPage').classList.contains('active')) {
             loadChatList();
         }
     }, 30000);
+});
+
+// ============================================
+// کلیدهای ESC
+// ============================================
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeFullscreen();
+        closeModal();
+    }
 });

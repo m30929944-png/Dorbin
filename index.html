@@ -2,52 +2,69 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>یارِ من - پلتفرم هوشمند اجتماعی</title>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
 /* ============================================
-   تم حرفه‌ای - رنگ‌های مدرن و جذاب
+   تم‌های چهارگانه
    ============================================ */
 :root {
-  /* تم اصلی - Dark Premium */
   --bg: #0a0b1a;
   --bg-soft: #111427;
   --bg-card: #161a33;
   --bg-card-hover: #1e2350;
   --border: #262d55;
   --border-light: #323b6e;
-  
   --text: #eeeffb;
   --text-2: #a8b0d6;
   --text-3: #6b74a8;
-  
   --primary: #7c6cf6;
   --primary-dark: #5b4fd6;
   --primary-light: #9a8cff;
   --primary-glow: rgba(124, 108, 246, 0.3);
-  
   --secondary: #f6b93b;
   --secondary-dark: #d49a2a;
-  
   --success: #4ade80;
   --danger: #f45b69;
   --warning: #fbbf24;
   --info: #60a5fa;
-  
   --like: #ff5c8a;
   --like-glow: rgba(255, 92, 138, 0.3);
-  
-  --radius: 16px;
-  --radius-sm: 10px;
+  --radius: 20px;
+  --radius-sm: 12px;
   --radius-full: 99px;
-  
   --shadow: 0 8px 32px rgba(0,0,0,0.5);
   --shadow-glow: 0 0 40px rgba(124, 108, 246, 0.15);
-  
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* تم دوم - آبی */
+.theme-blue {
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-glow: rgba(59, 130, 246, 0.3);
+  --bg: #0a1628;
+  --bg-card: #0f2140;
+}
+
+/* تم سوم - صورتی */
+.theme-pink {
+  --primary: #ec4899;
+  --primary-dark: #db2777;
+  --primary-glow: rgba(236, 72, 153, 0.3);
+  --bg: #1a0a18;
+  --bg-card: #2a0f26;
+}
+
+/* تم چهارم - سبز */
+.theme-green {
+  --primary: #22d3ee;
+  --primary-dark: #06b6d4;
+  --primary-glow: rgba(34, 211, 238, 0.3);
+  --bg: #0a1a1a;
+  --bg-card: #0f2a2a;
 }
 
 * {
@@ -62,107 +79,112 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  padding-bottom: 80px;
+  padding-bottom: 90px;
   overflow-x: hidden;
-  background-image: 
-    radial-gradient(ellipse at 10% 0%, rgba(124, 108, 246, 0.08) 0%, transparent 60%),
-    radial-gradient(ellipse at 90% 100%, rgba(246, 185, 59, 0.05) 0%, transparent 50%);
+  background-image: radial-gradient(ellipse at 10% 0%, var(--primary-glow) 0%, transparent 60%);
 }
 
 /* ============================================
-   اسکرول بار سفارشی
+   اسکرول
    ============================================ */
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg-soft); }
-::-webkit-scrollbar-thumb { 
-  background: var(--primary);
-  border-radius: 99px;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--primary-dark); }
+::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 99px; }
 
 /* ============================================
-   تایپوگرافی
-   ============================================ */
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-a {
-  color: var(--primary);
-  text-decoration: none;
-}
-
-/* ============================================
-   دکمه‌ها
+   دکمه‌های بزرگ
    ============================================ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 22px;
+  gap: 8px;
+  padding: 14px 28px;
   border: none;
   border-radius: var(--radius-full);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
-  position: relative;
-  overflow: hidden;
+  min-height: 56px;
+  min-width: 60px;
 }
-
-.btn:active {
-  transform: scale(0.95);
-}
+.btn:active { transform: scale(0.95); }
 
 .btn-primary {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
   box-shadow: 0 4px 20px var(--primary-glow);
 }
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px var(--primary-glow);
-}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--primary-glow); }
 
 .btn-secondary {
   background: var(--bg-card);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
 }
-.btn-secondary:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--primary);
-}
+.btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--primary); }
 
 .btn-ghost {
   background: transparent;
   color: var(--text-2);
-  padding: 8px 14px;
+  padding: 10px 18px;
 }
-.btn-ghost:hover {
-  color: var(--text);
-  background: var(--bg-soft);
-}
+.btn-ghost:hover { color: var(--text); background: var(--bg-soft); }
 
 .btn-danger {
   background: linear-gradient(135deg, var(--danger), #d94452);
   color: #fff;
 }
-.btn-danger:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(244, 91, 105, 0.3);
-}
+.btn-danger:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(244, 91, 105, 0.3); }
 
 .btn-success {
   background: linear-gradient(135deg, var(--success), #22c55e);
   color: #0a0b1a;
 }
-.btn-success:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(74, 222, 128, 0.3);
+.btn-success:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(74, 222, 128, 0.3); }
+
+.btn-like {
+  background: transparent;
+  color: var(--text-2);
+  border: none;
+  padding: 12px 18px;
+  font-size: 18px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--transition);
+}
+.btn-like:hover { background: var(--bg-soft); }
+.btn-like.active { color: var(--like); }
+.btn-like.active i { animation: likeAnim 0.4s ease; }
+@keyframes likeAnim {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+.btn-follow {
+  padding: 12px 28px;
+  font-size: 15px;
+  border-radius: var(--radius-full);
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+  min-width: 100px;
+}
+.btn-follow:active { transform: scale(0.95); }
+.btn-follow.follow {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
+}
+.btn-follow.following {
+  background: var(--bg-soft);
+  color: var(--text-2);
+  border: 2px solid var(--border);
 }
 
 /* ============================================
@@ -178,91 +200,56 @@ a {
   padding: 10px 16px;
   background: rgba(10, 11, 26, 0.92);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
 }
 
 .profile-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: none;
   border: none;
   color: var(--text);
-  padding: 0;
-  min-width: 60px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
   transition: var(--transition);
 }
-.profile-btn:hover {
-  opacity: 0.8;
-}
+.profile-btn:hover { background: var(--bg-soft); }
 .profile-btn img {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  border: 2px solid var(--primary);
-  background: var(--bg-card);
-  transition: var(--transition);
-}
-.profile-btn img:hover {
-  border-color: var(--primary-light);
+  border: 3px solid var(--primary);
 }
 .profile-btn span {
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 80px;
+  font-size: 15px;
+  font-weight: 600;
 }
 
-.header-center {
-  flex: 1;
-  max-width: 420px;
-  min-width: 0;
-}
+.header-center { flex: 1; max-width: 420px; }
 .search-box {
   display: flex;
   align-items: center;
   gap: 10px;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-full);
-  padding: 6px 14px;
+  padding: 10px 16px;
   transition: var(--transition);
 }
-.search-box:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 20px var(--primary-glow);
-}
-.search-box i {
-  color: var(--text-3);
-  font-size: 14px;
-}
+.search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 30px var(--primary-glow); }
 .search-box input {
-  background: none;
-  border: none;
-  outline: none;
-  color: var(--text);
-  width: 100%;
-  font-size: 13px;
-  padding: 6px 0;
-}
-.search-box input::placeholder {
-  color: var(--text-3);
+  background: none; border: none; outline: none;
+  color: var(--text); width: 100%; font-size: 14px;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.header-right { display: flex; align-items: center; gap: 10px; }
 .user-score {
-  font-size: 12px;
+  font-size: 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 4px 12px;
+  border: 2px solid var(--border);
+  padding: 6px 16px;
   border-radius: var(--radius-full);
-  white-space: nowrap;
   color: var(--secondary);
   font-weight: 700;
 }
@@ -271,26 +258,34 @@ a {
   color: #0a0b1a;
   border: none;
   border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  font-size: 14px;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
   display: none;
   align-items: center;
   justify-content: center;
+}
+.admin-btn.show { display: flex; }
+.admin-btn:active { transform: scale(0.9); }
+
+.theme-btn {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+  color: var(--text);
+  cursor: pointer;
   transition: var(--transition);
-}
-.admin-btn.show {
   display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.admin-btn:hover {
-  transform: scale(1.05);
-}
-.admin-btn:active {
-  transform: scale(0.9);
-}
+.theme-btn:hover { border-color: var(--primary); }
 
 /* ============================================
-   ناوبری پایین
+   ناوبری
    ============================================ */
 .main-nav {
   position: fixed;
@@ -301,615 +296,238 @@ a {
   display: flex;
   background: rgba(17, 20, 39, 0.95);
   backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border);
-  padding: 4px 4px calc(env(safe-area-inset-bottom) + 4px);
+  border-top: 2px solid var(--border);
+  padding: 6px 4px calc(env(safe-area-inset-bottom) + 6px);
 }
-
 .nav-btn {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   background: none;
   border: none;
   color: var(--text-3);
-  padding: 6px 4px;
+  padding: 8px 4px;
   border-radius: 12px;
-  font-size: 10px;
-  transition: var(--transition);
-  position: relative;
-}
-.nav-btn i {
-  font-size: 20px;
+  font-size: 11px;
   transition: var(--transition);
 }
-.nav-btn span {
-  font-size: 9px;
-  font-weight: 500;
-}
-.nav-btn.active {
-  color: var(--primary);
-}
-.nav-btn.active i {
-  transform: translateY(-3px);
-  text-shadow: 0 0 20px var(--primary-glow);
-}
-.nav-btn:active {
-  transform: scale(0.9);
-}
-.nav-btn .badge {
-  position: absolute;
-  top: 2px;
-  right: 50%;
-  transform: translateX(50%);
-  background: var(--danger);
-  color: #fff;
-  font-size: 8px;
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
-  min-width: 16px;
-  text-align: center;
-}
+.nav-btn i { font-size: 24px; }
+.nav-btn.active { color: var(--primary); }
+.nav-btn.active i { transform: translateY(-3px); text-shadow: 0 0 30px var(--primary-glow); }
+.nav-btn:active { transform: scale(0.9); }
 
 /* ============================================
    صفحات
    ============================================ */
-main {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 12px 14px;
-}
-
-.page {
-  display: none;
-  animation: fadeSlideIn 0.4s ease;
-}
-.page.active {
-  display: block;
-}
-
-@keyframes fadeSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.page-title {
-  font-size: 20px;
-  font-weight: 700;
-  margin-bottom: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.page-title i {
-  color: var(--primary);
+main { max-width: 720px; margin: 0 auto; padding: 12px 14px 100px; }
+.page { display: none; animation: fadeIn 0.4s ease; }
+.page.active { display: block; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ============================================
-   کانال
+   کارت پست - بزرگ و حرفه‌ای
    ============================================ */
-.channel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.channel-header h2 {
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.followers-count {
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--bg-soft);
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border);
-}
-
-.boost-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
-  font-weight: 700;
-  text-transform: uppercase;
-}
-.boost-normal { 
-  background: var(--bg-soft); 
-  color: var(--text-3);
-  border: 1px solid var(--border);
-}
-.boost-high { 
-  background: rgba(96, 165, 250, 0.2); 
-  color: var(--info);
-  border: 1px solid var(--info);
-}
-.boost-viral { 
-  background: rgba(244, 91, 105, 0.2); 
-  color: var(--danger);
-  border: 1px solid var(--danger);
-}
-.boost-superstar { 
-  background: linear-gradient(135deg, var(--secondary), var(--like));
-  color: #0a0b1a;
-  border: none;
-}
-
-/* کامپوزر پست */
-.composer {
+.post-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 20px;
   margin-bottom: 16px;
   transition: var(--transition);
 }
-.composer:focus-within {
-  border-color: var(--primary);
-  box-shadow: var(--shadow-glow);
-}
-.composer textarea {
-  width: 100%;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  padding: 12px;
-  resize: vertical;
-  min-height: 60px;
-  font-size: 14px;
-  transition: var(--transition);
-  font-family: inherit;
-}
-.composer textarea:focus {
-  border-color: var(--primary);
-  outline: none;
-}
-.composer-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.composer-actions .media-buttons {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.composer-actions .media-buttons label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  color: var(--text-2);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.composer-actions .media-buttons label:hover {
-  border-color: var(--primary);
-  color: var(--text);
-}
-.composer-actions .media-buttons label i {
-  font-size: 14px;
-}
-.composer-actions .media-buttons input {
-  display: none;
-}
-
-.media-preview {
-  width: 100%;
-  margin-top: 10px;
-  border-radius: var(--radius-sm);
-  position: relative;
-  background: var(--bg-soft);
-  overflow: hidden;
-}
-.media-preview img,
-.media-preview video {
-  width: 100%;
-  max-height: 300px;
-  display: block;
-  border-radius: var(--radius-sm);
-}
-.media-preview .remove-media {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  border: none;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: var(--transition);
-}
-.media-preview .remove-media:hover {
-  transform: scale(1.1);
-}
-
-/* کارت پست */
-.posts-container {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.post-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  transition: var(--transition);
-}
-.post-card:hover {
-  border-color: var(--border-light);
-}
-.post-card:active {
-  transform: scale(0.99);
-}
+.post-card:hover { border-color: var(--border-light); }
 
 .post-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
   cursor: pointer;
 }
 .post-head img {
-  width: 34px;
-  height: 34px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  border: 2px solid var(--border);
-  background: var(--bg-soft);
-  transition: var(--transition);
+  border: 3px solid var(--border);
 }
-.post-head img:hover {
-  border-color: var(--primary);
-}
-.post-head .name {
-  font-size: 13px;
-  font-weight: 600;
-}
-.post-head .name .verified {
-  color: var(--info);
-  font-size: 11px;
-}
-.post-head .time {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-inline-start: auto;
-}
+.post-head .name { font-size: 16px; font-weight: 700; }
+.post-head .time { font-size: 12px; color: var(--text-3); margin-inline-start: auto; }
 
 .post-card .content {
-  font-size: 14px;
-  line-height: 1.9;
+  font-size: 16px;
+  line-height: 2;
   white-space: pre-wrap;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
+}
+.post-card .content .hashtag {
+  color: var(--primary);
+  font-weight: 600;
 }
 
 .post-card .media-wrapper {
   width: 100%;
   border-radius: var(--radius-sm);
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-bottom: 14px;
   background: var(--bg-soft);
+  position: relative;
 }
 .post-card .media-wrapper img,
 .post-card .media-wrapper video {
   width: 100%;
-  max-height: 450px;
+  max-height: 500px;
   display: block;
+  object-fit: contain;
 }
+.post-card .media-wrapper .fullscreen-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.post-card .media-wrapper .fullscreen-btn:hover { transform: scale(1.1); }
 
 .post-stats {
   display: flex;
-  gap: 16px;
-  font-size: 12px;
+  gap: 20px;
+  font-size: 15px;
   color: var(--text-2);
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
+  border-top: 2px solid var(--border);
+  padding-top: 14px;
 }
-.post-stats button {
+.post-stats .btn-like,
+.post-stats .btn-comment,
+.post-stats .btn-share {
   background: none;
   border: none;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 16px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: var(--radius-full);
-  transition: var(--transition);
-}
-.post-stats button:hover {
-  background: var(--bg-soft);
-}
-.post-stats button:active {
-  transform: scale(0.9);
-}
-.post-stats button.liked {
-  color: var(--like);
-}
-.post-stats button.liked i {
-  animation: likePulse 0.3s ease;
-}
-@keyframes likePulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.4); }
-  100% { transform: scale(1); }
-}
-
-.comments-box {
-  margin-top: 10px;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-  display: none;
-}
-.comments-box.open {
-  display: block;
-}
-
-.comment-item {
-  display: flex;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12.5px;
-  align-items: flex-start;
-}
-.comment-item img {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.comment-item b {
-  color: var(--text);
-}
-.comment-item .comment-text {
-  color: var(--text-2);
-}
-
-.comment-form {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-.comment-form input {
-  flex: 1;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  padding: 8px 16px;
   border-radius: var(--radius-full);
-  padding: 7px 14px;
-  color: var(--text);
-  font-size: 12.5px;
-  outline: none;
   transition: var(--transition);
 }
-.comment-form input:focus {
-  border-color: var(--primary);
+.post-stats .btn-like:hover,
+.post-stats .btn-comment:hover,
+.post-stats .btn-share:hover {
+  background: var(--bg-soft);
 }
-.comment-form button {
-  padding: 7px 16px;
-  border-radius: var(--radius-full);
-  font-size: 12px;
-}
+.post-stats .btn-like.active { color: var(--like); }
+.post-stats .btn-like.active i { animation: likeAnim 0.4s ease; }
 
 /* ============================================
-   دستیار
+   مودال تمام صفحه برای عکس/ویدیو
    ============================================ */
-.assistant-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.stat-chip {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px;
-  text-align: center;
-  transition: var(--transition);
-}
-.stat-chip:hover {
-  border-color: var(--primary);
-}
-.stat-chip b {
-  display: block;
-  font-size: 18px;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-.stat-chip span {
-  font-size: 10px;
-  color: var(--text-3);
-}
-
-.training-section {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  margin-bottom: 12px;
-}
-.training-section h3 {
-  font-size: 14px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.train-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.train-form input,
-.train-form textarea {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  padding: 10px 14px;
-  font-size: 13px;
-  outline: none;
-  transition: var(--transition);
-  font-family: inherit;
-}
-.train-form input:focus,
-.train-form textarea:focus {
-  border-color: var(--primary);
-}
-
-.qa-list,
-.keyword-list {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 180px;
-  overflow-y: auto;
-}
-.qa-item,
-.keyword-item {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  font-size: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.qa-item .q,
-.keyword-item .k {
-  color: var(--text-2);
-  font-size: 11px;
-}
-.qa-item .a,
-.keyword-item .r {
-  color: var(--text);
-}
-
-.auto-post-section {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-}
-.auto-post-section h3 {
-  font-size: 14px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-#autoPostPanel {
+.fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0,0,0,0.95);
   display: none;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
 }
-#autoPostPanel input,
-#autoPostPanel textarea {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+.fullscreen-modal.active { display: flex; }
+.fullscreen-modal img,
+.fullscreen-modal video {
+  max-width: 100%;
+  max-height: 90vh;
+  object-fit: contain;
   border-radius: var(--radius-sm);
-  color: var(--text);
-  padding: 10px 14px;
-  font-size: 13px;
-  outline: none;
-  font-family: inherit;
 }
-#autoPostPanel input:focus,
-#autoPostPanel textarea:focus {
-  border-color: var(--primary);
-}
-#autoPostPanel .row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-#autoPostPanel .row input {
-  flex: 1;
-  min-width: 80px;
-}
-
-.assistant-chat-preview {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  margin-bottom: 12px;
-}
-.assistant-chat-preview .mini-chat {
-  max-height: 180px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.mini-msg {
-  padding: 8px 14px;
-  border-radius: 14px;
-  font-size: 12.5px;
-  max-width: 85%;
-  word-wrap: break-word;
-}
-.mini-msg.me {
-  align-self: flex-end;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+.fullscreen-modal .close-fullscreen {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255,255,255,0.1);
   color: #fff;
-  border-bottom-right-radius: 4px;
-}
-.mini-msg.bot {
-  align-self: flex-start;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
-}
-.mini-chat-input {
-  display: flex;
-  gap: 8px;
-}
-.mini-chat-input input {
-  flex: 1;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  padding: 8px 16px;
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
+  border: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  font-size: 24px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
   transition: var(--transition);
 }
-.mini-chat-input input:focus {
-  border-color: var(--primary);
+.fullscreen-modal .close-fullscreen:hover { background: rgba(255,255,255,0.2); }
+
+/* ============================================
+   اکسپلور با پست‌های کامل
+   ============================================ */
+.explore-grid { display: flex; flex-direction: column; gap: 16px; }
+
+.explore-user-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: var(--transition);
+}
+.explore-user-card:hover { border-color: var(--border-light); }
+
+.explore-user-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.explore-user-header img {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 3px solid var(--primary);
+  cursor: pointer;
+}
+.explore-user-header .info { flex: 1; cursor: pointer; }
+.explore-user-header .info h4 { font-size: 16px; font-weight: 700; }
+.explore-user-header .info .meta { font-size: 12px; color: var(--text-2); }
+
+.explore-posts { display: flex; flex-direction: column; gap: 10px; }
+
+.explore-post-mini {
+  background: var(--bg-soft);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.explore-post-mini:hover { border-color: var(--primary); }
+.explore-post-mini p { font-size: 14px; line-height: 1.8; }
+.explore-post-mini .mini-media {
+  margin-top: 8px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.explore-post-mini .mini-media img,
+.explore-post-mini .mini-media video {
+  width: 100%;
+  max-height: 200px;
+  display: block;
+}
+.explore-post-mini .mini-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 8px;
 }
 
 /* ============================================
@@ -924,646 +542,311 @@ main {
 .chat-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   overflow-y: auto;
   flex: 1;
 }
 .chat-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
+  padding: 14px 16px;
   cursor: pointer;
   transition: var(--transition);
 }
-.chat-item:hover {
-  border-color: var(--primary);
-  background: var(--bg-card-hover);
-}
-.chat-item:active {
-  transform: scale(0.98);
-}
+.chat-item:hover { border-color: var(--primary); }
 .chat-item img {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: var(--bg-soft);
   border: 2px solid var(--border);
 }
-.chat-item .info {
-  flex: 1;
-  min-width: 0;
-}
-.chat-item .info strong {
-  font-size: 13px;
-  display: block;
-}
-.chat-item .info p {
-  font-size: 11.5px;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.chat-item .unread {
-  background: var(--primary);
-  color: #fff;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-}
+.chat-item .info { flex: 1; }
+.chat-item .info strong { font-size: 15px; display: block; }
+.chat-item .info p { font-size: 13px; color: var(--text-2); }
 
 .chat-window {
   display: none;
   flex-direction: column;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   height: 100%;
 }
-.chat-window.open {
-  display: flex;
-}
+.chat-window.open { display: flex; }
 
 .chat-window-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 2px solid var(--border);
 }
 .chat-window-head img {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
 }
-.chat-window-head strong {
-  font-size: 14px;
-}
-.chat-window-head .btn-ghost {
-  margin-inline-start: auto;
-  font-size: 18px;
-  padding: 4px 8px;
-}
+.chat-window-head strong { font-size: 16px; }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-soft);
 }
 .message {
-  padding: 9px 15px;
-  border-radius: 16px;
-  font-size: 13px;
+  padding: 12px 18px;
+  border-radius: 18px;
+  font-size: 15px;
   max-width: 80%;
   line-height: 1.6;
-  word-wrap: break-word;
 }
 .message.sent {
   align-self: flex-end;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
-  border-bottom-right-radius: 4px;
 }
 .message.received {
   align-self: flex-start;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
-}
-.message .time {
-  font-size: 9px;
-  opacity: 0.6;
-  margin-top: 2px;
-  display: block;
+  border: 2px solid var(--border);
 }
 
 .chat-input {
   display: flex;
-  gap: 8px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-  background: var(--bg-card);
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 2px solid var(--border);
 }
 .chat-input input {
   flex: 1;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-full);
-  padding: 9px 16px;
+  padding: 12px 18px;
   color: var(--text);
-  outline: none;
-  font-size: 13px;
-  transition: var(--transition);
-}
-.chat-input input:focus {
-  border-color: var(--primary);
-}
-.chat-input button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #fff;
-  border: none;
   font-size: 15px;
-  transition: var(--transition);
+  outline: none;
 }
-.chat-input button:hover {
-  transform: scale(1.05);
-}
-.chat-input button:active {
-  transform: scale(0.9);
-}
-
-/* ============================================
-   اکسپلور
-   ============================================ */
-.explore-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.explore-user-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  transition: var(--transition);
-}
-.explore-user-card:hover {
-  border-color: var(--border-light);
-}
-
-.explore-user-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.explore-user-header img {
-  width: 44px;
-  height: 44px;
+.chat-input input:focus { border-color: var(--primary); }
+.chat-input button {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  border: 2px solid var(--primary);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.explore-user-header img:hover {
-  transform: scale(1.05);
-}
-.explore-user-header .info {
-  flex: 1;
-  cursor: pointer;
-}
-.explore-user-header .info h4 {
-  font-size: 14px;
-  font-weight: 600;
-}
-.explore-user-header .info .meta {
-  font-size: 11px;
-  color: var(--text-2);
-}
-.explore-user-header .follow-btn {
-  padding: 5px 16px;
-  border-radius: var(--radius-full);
-  font-size: 11.5px;
-  font-weight: 600;
-  border: none;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #fff;
-  transition: var(--transition);
-}
-.explore-user-header .follow-btn:hover {
-  transform: scale(1.05);
-}
-.explore-user-header .follow-btn:active {
-  transform: scale(0.95);
-}
-.explore-user-header .follow-btn.following {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-}
-
-.explore-posts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.explore-post-mini {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: var(--transition);
-}
-.explore-post-mini:hover {
-  border-color: var(--primary);
-}
-.explore-post-mini p {
-  font-size: 12.5px;
-  line-height: 1.7;
-}
-.explore-post-mini .mini-media {
-  margin-top: 6px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.explore-post-mini .mini-media img,
-.explore-post-mini .mini-media video {
-  width: 100%;
-  max-height: 150px;
-  display: block;
-}
-.explore-post-mini .mini-stats {
-  display: flex;
-  gap: 12px;
-  font-size: 10.5px;
-  color: var(--text-3);
-  margin-top: 4px;
-}
-.explore-post-mini .mini-stats i {
-  margin-left: 2px;
-}
-
-/* ============================================
-   پروفایل عمومی
-   ============================================ */
-.profile-header {
-  text-align: center;
-  margin: 16px 0;
-}
-.profile-header img {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  border: 3px solid var(--primary);
-  transition: var(--transition);
-}
-.profile-header img:hover {
-  transform: scale(1.05);
-}
-.profile-header h2 {
+  border: none;
   font-size: 18px;
-  margin-top: 8px;
-}
-.profile-header .bio {
-  color: var(--text-2);
-  font-size: 13px;
-  margin-top: 4px;
-}
-
-.profile-stats {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  margin: 12px 0;
-}
-.profile-stats div {
-  text-align: center;
-}
-.profile-stats b {
-  display: block;
-  font-size: 16px;
-}
-.profile-stats span {
-  font-size: 11px;
-  color: var(--text-3);
-}
-
-.profile-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 12px;
-  flex-wrap: wrap;
 }
 
 /* ============================================
-   مودال
+   مودال ثبت‌نام
    ============================================ */
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0,0,0,0.85);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 200;
-  backdrop-filter: blur(12px);
-  padding: 16px;
-  animation: fadeIn 0.3s ease;
+  backdrop-filter: blur(16px);
+  padding: 20px;
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 .modal-content {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 24px;
-  border-radius: 20px;
-  max-width: 420px;
+  border: 2px solid var(--border);
+  padding: 32px;
+  border-radius: 24px;
+  max-width: 440px;
   width: 100%;
   text-align: center;
-  max-height: 85vh;
-  overflow-y: auto;
-  animation: slideUp 0.3s ease;
 }
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.modal-content h2 {
-  font-size: 18px;
-  margin-bottom: 12px;
-}
-
+.modal-content h2 { font-size: 24px; margin-bottom: 16px; }
 .avatar-upload {
   position: relative;
-  width: 88px;
-  height: 88px;
-  margin: 0 auto 12px;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 16px;
 }
 .avatar-upload img {
-  width: 88px;
-  height: 88px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
-  border: 3px solid var(--primary);
-  background: var(--bg-soft);
+  border: 4px solid var(--primary);
 }
 .avatar-upload label {
   position: absolute;
   bottom: 0;
   left: 0;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   background: var(--primary);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
   color: #fff;
   cursor: pointer;
-  border: 2px solid var(--bg-card);
-  transition: var(--transition);
+  border: 3px solid var(--bg-card);
 }
-.avatar-upload label:hover {
-  transform: scale(1.1);
-}
-.avatar-upload input {
-  display: none;
-}
-
+.avatar-upload input { display: none; }
 .name-input {
   width: 100%;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 12px;
-  font-size: 14px;
-  margin-bottom: 12px;
+  padding: 14px;
+  font-size: 16px;
+  margin-bottom: 16px;
   text-align: center;
   outline: none;
-  transition: var(--transition);
 }
-.name-input:focus {
-  border-color: var(--primary);
-}
+.name-input:focus { border-color: var(--primary); }
 
 /* ============================================
    پنل مدیریت
    ============================================ */
 .admin-panel {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 14px;
+  padding: 20px;
 }
-.admin-panel h3 {
-  font-size: 16px;
-  margin-bottom: 12px;
-  color: var(--secondary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+.admin-panel h3 { font-size: 20px; margin-bottom: 16px; color: var(--secondary); }
 .admin-tabs {
   display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
 }
 .admin-tab {
-  padding: 6px 16px;
+  padding: 10px 20px;
   border-radius: var(--radius-full);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   background: var(--bg-soft);
   color: var(--text-2);
-  font-size: 11.5px;
-  transition: var(--transition);
+  font-size: 13px;
   cursor: pointer;
-}
-.admin-tab:hover {
-  border-color: var(--primary);
-  color: var(--text);
+  transition: var(--transition);
 }
 .admin-tab.active {
   background: var(--primary);
   color: #fff;
   border-color: var(--primary);
 }
-
-.admin-content {
-  max-height: 450px;
-  overflow-y: auto;
-}
-.admin-tab-content {
-  display: none;
-}
-.admin-tab-content.active {
-  display: block;
-}
-
-.admin-user-item,
-.admin-post-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.admin-user-item .name {
-  font-weight: 500;
-}
-.admin-user-item .actions {
-  display: flex;
-  gap: 4px;
-}
-.admin-user-item .actions button {
-  padding: 3px 12px;
-  border-radius: var(--radius-full);
-  border: none;
-  font-size: 10.5px;
-  cursor: pointer;
-  transition: var(--transition);
-}
-.admin-user-item .actions button:hover {
-  transform: scale(1.05);
-}
-
 .broadcast-form {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .broadcast-form input,
 .broadcast-form textarea {
   background: var(--bg-soft);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 10px 14px;
-  font-size: 13px;
+  padding: 12px 16px;
+  font-size: 14px;
   outline: none;
-  font-family: inherit;
-  transition: var(--transition);
 }
 .broadcast-form input:focus,
-.broadcast-form textarea:focus {
-  border-color: var(--primary);
-}
+.broadcast-form textarea:focus { border-color: var(--primary); }
 
 /* ============================================
    نوتیفیکیشن
    ============================================ */
 .notification {
   position: fixed;
-  top: 70px;
+  top: 80px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  padding: 10px 22px;
+  border: 2px solid var(--border);
+  padding: 14px 24px;
   border-radius: var(--radius-full);
   z-index: 999;
-  font-size: 12.5px;
+  font-size: 14px;
   box-shadow: var(--shadow);
-  animation: notificationSlide 0.4s ease;
+  animation: notifIn 0.4s ease;
   max-width: 90%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
-@keyframes notificationSlide {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -20px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+@keyframes notifIn {
+  from { opacity: 0; transform: translate(-50%, -30px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* ============================================
-   وضعیت خالی
-   ============================================ */
+.broadcast-notification {
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15), rgba(34, 197, 94, 0.15));
+  border-color: var(--success);
+  color: var(--success);
+  padding: 16px 24px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.broadcast-notification i { font-size: 24px; }
+
 .empty-state {
   text-align: center;
   color: var(--text-3);
-  font-size: 13px;
-  padding: 30px 10px;
+  padding: 40px 10px;
 }
-.empty-state i {
-  font-size: 32px;
-  display: block;
-  margin-bottom: 8px;
-  opacity: 0.5;
-}
-
-/* ============================================
-   بارگذاری
-   ============================================ */
-.loading {
-  text-align: center;
-  color: var(--text-2);
-  padding: 20px;
-}
-.loading i {
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+.empty-state i { font-size: 48px; display: block; margin-bottom: 12px; }
 
 /* ============================================
    ریسپانسیو
    ============================================ */
 @media (max-width: 600px) {
-  .main-header { padding: 8px 12px; }
-  .profile-btn span { max-width: 50px; font-size: 11px; }
-  .user-score { font-size: 10px; padding: 3px 8px; }
-  .search-box { padding: 4px 10px; }
-  .search-box input { font-size: 11px; }
+  .main-header { padding: 8px 10px; }
+  .profile-btn img { width: 36px; height: 36px; }
+  .profile-btn span { font-size: 13px; max-width: 60px; overflow: hidden; text-overflow: ellipsis; }
+  .user-score { font-size: 12px; padding: 4px 12px; }
+  .admin-btn, .theme-btn { width: 38px; height: 38px; font-size: 14px; }
+  .search-box { padding: 8px 12px; }
+  .search-box input { font-size: 12px; }
   
-  .page-title { font-size: 17px; }
-  .explore-user-header img { width: 36px; height: 36px; }
-  .explore-user-header .info h4 { font-size: 12.5px; }
+  .post-card { padding: 14px; }
+  .post-head img { width: 40px; height: 40px; }
+  .post-head .name { font-size: 14px; }
+  .post-card .content { font-size: 14px; }
+  .post-stats .btn-like,
+  .post-stats .btn-comment,
+  .post-stats .btn-share { font-size: 14px; padding: 6px 12px; }
   
-  .post-card { padding: 10px; }
-  .post-card .content { font-size: 13px; }
-  .post-head img { width: 28px; height: 28px; }
+  .btn { padding: 10px 18px; font-size: 14px; min-height: 44px; }
+  .btn-follow { padding: 10px 20px; font-size: 13px; min-width: 80px; }
   
-  .chat-container { height: calc(100vh - 170px); }
-  .message { max-width: 90%; font-size: 12.5px; }
+  .explore-user-header img { width: 44px; height: 44px; }
+  .explore-user-header .info h4 { font-size: 14px; }
   
-  .assistant-stats { grid-template-columns: repeat(2, 1fr); }
-  .stat-chip b { font-size: 15px; }
+  .chat-item { padding: 10px 12px; }
+  .chat-item img { width: 40px; height: 40px; }
+  .chat-item .info strong { font-size: 13px; }
   
-  .modal-content { padding: 16px; }
-  .admin-tabs { gap: 4px; }
-  .admin-tab { font-size: 10px; padding: 4px 10px; }
-}
-
-@media (max-width: 400px) {
-  .nav-btn i { font-size: 16px; }
-  .nav-btn { font-size: 8px; padding: 4px 2px; }
-  .main-nav { padding: 2px 2px calc(env(safe-area-inset-bottom) + 2px); }
-  .profile-btn img { width: 28px; height: 28px; }
-  .admin-btn { width: 30px; height: 30px; font-size: 12px; }
+  .modal-content { padding: 20px; }
+  .modal-content h2 { font-size: 20px; }
+  .avatar-upload { width: 80px; height: 80px; }
+  .avatar-upload img { width: 80px; height: 80px; }
 }
 </style>
 </head>
 <body>
 
+<!-- ============================================
+   هدر
+   ============================================ -->
 <header class="main-header">
     <button id="profileBtn" class="profile-btn">
         <img src="" alt="پروفایل" id="avatarImg">
@@ -1577,157 +860,108 @@ main {
     </div>
     <div class="header-right">
         <span class="user-score" id="userScore">🏆 ۰</span>
-        <button class="admin-btn" id="adminBtn" onclick="toggleAdminPanel()">
-            <i class="fas fa-crown"></i>
-        </button>
+        <button class="theme-btn" onclick="toggleTheme()" title="تغییر تم"><i class="fas fa-palette"></i></button>
+        <button class="admin-btn" id="adminBtn" onclick="toggleAdminPanel()"><i class="fas fa-crown"></i></button>
     </div>
 </header>
 
+<!-- ============================================
+   ناوبری
+   ============================================ -->
 <nav class="main-nav">
-    <button class="nav-btn active" data-page="channel">
-        <i class="fas fa-bullhorn"></i>
-        <span>کانال</span>
-    </button>
-    <button class="nav-btn" data-page="assistant">
-        <i class="fas fa-robot"></i>
-        <span>دستیار</span>
-    </button>
-    <button class="nav-btn" data-page="chat">
-        <i class="fas fa-envelope"></i>
-        <span>چت</span>
-        <span class="badge" id="chatBadge" style="display:none;">0</span>
-    </button>
-    <button class="nav-btn" data-page="explore">
-        <i class="fas fa-compass"></i>
-        <span>اکسپلور</span>
-    </button>
+    <button class="nav-btn active" data-page="channel"><i class="fas fa-bullhorn"></i><span>کانال</span></button>
+    <button class="nav-btn" data-page="assistant"><i class="fas fa-robot"></i><span>دستیار</span></button>
+    <button class="nav-btn" data-page="chat"><i class="fas fa-envelope"></i><span>چت</span></button>
+    <button class="nav-btn" data-page="explore"><i class="fas fa-compass"></i><span>اکسپلور</span></button>
 </nav>
 
+<!-- ============================================
+   صفحات
+   ============================================ -->
 <main id="mainContent">
+
     <!-- صفحه کانال -->
     <section id="channelPage" class="page active">
-        <div class="channel-header">
-            <h2>
-                📢 کانال من
-                <span id="boostBadge" class="boost-badge boost-normal">عادی</span>
-            </h2>
-            <span class="followers-count" id="followersCount">۰ فالوور</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+            <h2 style="font-size:20px;">📢 کانال من <span id="boostBadge" class="boost-badge" style="font-size:12px;padding:4px 14px;border-radius:99px;background:var(--bg-soft);color:var(--text-2);">عادی</span></h2>
+            <span class="followers-count" style="font-size:14px;background:var(--bg-soft);padding:6px 16px;border-radius:99px;border:2px solid var(--border);" id="followersCount">۰ فالوور</span>
         </div>
 
-        <div class="composer">
-            <textarea id="postContent" placeholder="چه خبر؟ یه پست جدید بنویس..." rows="2"></textarea>
-            <div class="composer-actions">
-                <div class="media-buttons">
-                    <label>
+        <!-- کامپوزر -->
+        <div class="composer" style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;">
+            <textarea id="postContent" placeholder="چه خبر؟ یه پست جدید بنویس..." rows="3" style="width:100%;background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:14px;font-size:15px;resize:vertical;font-family:inherit;"></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <label class="btn-secondary" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:99px;font-size:14px;">
                         <i class="fas fa-image"></i> عکس
-                        <input type="file" id="postImageInput" accept="image/*">
+                        <input type="file" id="postImageInput" accept="image/*" style="display:none;">
                     </label>
-                    <label>
+                    <label class="btn-secondary" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:99px;font-size:14px;">
                         <i class="fas fa-video"></i> ویدیو
-                        <input type="file" id="postVideoInput" accept="video/*">
+                        <input type="file" id="postVideoInput" accept="video/*" style="display:none;">
                     </label>
                 </div>
-                <button class="btn-primary" id="publishPostBtn" onclick="createPost()">
-                    <i class="fas fa-paper-plane"></i> انتشار
-                </button>
+                <button class="btn-primary" onclick="createPost()"><i class="fas fa-paper-plane"></i> انتشار</button>
             </div>
-            <div id="mediaPreview" class="media-preview" style="display:none;">
-                <button class="remove-media" onclick="removeMedia()">✕</button>
+            <div id="mediaPreview" style="display:none;margin-top:12px;position:relative;border-radius:var(--radius-sm);overflow:hidden;background:var(--bg-soft);">
+                <button onclick="removeMedia()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.8);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:16px;cursor:pointer;">✕</button>
                 <div id="mediaPreviewContent"></div>
             </div>
         </div>
 
-        <div id="channelPosts" class="posts-container"></div>
+        <div id="channelPosts"></div>
     </section>
 
     <!-- صفحه دستیار -->
     <section id="assistantPage" class="page">
-        <h2 class="page-title"><i class="fas fa-robot"></i> دستیار من</h2>
-        
-        <div class="assistant-stats">
-            <div class="stat-chip">
-                <b id="statPosts">۰</b>
-                <span>پست</span>
-            </div>
-            <div class="stat-chip">
-                <b id="statTrainings">۰</b>
-                <span>آموزش</span>
-            </div>
-            <div class="stat-chip">
-                <b id="statFollowers">۰</b>
-                <span>فالوور</span>
-            </div>
-            <div class="stat-chip">
-                <b id="statEngagement">۰٪</b>
-                <span>تعامل</span>
-            </div>
+        <h2 style="font-size:20px;margin-bottom:14px;"><i class="fas fa-robot"></i> دستیار من</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-bottom:16px;">
+            <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center;"><b id="statPosts" style="font-size:20px;">۰</b><span style="font-size:11px;color:var(--text-3);">پست</span></div>
+            <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center;"><b id="statTrainings" style="font-size:20px;">۰</b><span style="font-size:11px;color:var(--text-3);">آموزش</span></div>
+            <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center;"><b id="statFollowers" style="font-size:20px;">۰</b><span style="font-size:11px;color:var(--text-3);">فالوور</span></div>
+            <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center;"><b id="statEngagement" style="font-size:20px;">۰٪</b><span style="font-size:11px;color:var(--text-3);">تعامل</span></div>
         </div>
 
-        <div class="assistant-chat-preview">
-            <h3 style="font-size:13px;margin-bottom:8px;">💬 امتحان کن</h3>
-            <div class="mini-chat" id="assistantPreviewChat"></div>
-            <div class="mini-chat-input">
-                <input type="text" id="assistantPreviewInput" placeholder="یه چیزی بپرس...">
+        <div style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
+            <h3 style="font-size:15px;margin-bottom:10px;">💬 امتحان کن</h3>
+            <div id="assistantPreviewChat" style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="assistantPreviewInput" placeholder="یه چیزی بپرس..." style="flex:1;background:var(--bg-soft);border:2px solid var(--border);border-radius:99px;padding:12px 18px;color:var(--text);font-size:14px;outline:none;">
                 <button class="btn-secondary" onclick="testAssistant()">پرسیدن</button>
             </div>
         </div>
 
-        <div class="training-section">
-            <h3>📝 سوال و جواب</h3>
-            <div class="train-form">
-                <input type="text" id="questionInput" placeholder="سوال...">
-                <input type="text" id="answerInput" placeholder="جواب...">
+        <div style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
+            <h3 style="font-size:15px;margin-bottom:10px;">📝 سوال و جواب</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <input type="text" id="questionInput" placeholder="سوال..." style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:12px 16px;font-size:14px;outline:none;">
+                <input type="text" id="answerInput" placeholder="جواب..." style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:12px 16px;font-size:14px;outline:none;">
                 <button class="btn-primary" onclick="trainAssistant()">یاد بده!</button>
             </div>
-            <div id="qaList" class="qa-list"></div>
+            <div id="qaList" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;"></div>
         </div>
 
-        <div class="training-section">
-            <h3>🔑 کلمات کلیدی</h3>
-            <div class="train-form">
-                <input type="text" id="keywordInput" placeholder="کلمه کلیدی...">
-                <input type="text" id="keywordResponseInput" placeholder="پاسخ...">
+        <div style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;">
+            <h3 style="font-size:15px;margin-bottom:10px;">🔑 کلمات کلیدی</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <input type="text" id="keywordInput" placeholder="کلمه کلیدی..." style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:12px 16px;font-size:14px;outline:none;">
+                <input type="text" id="keywordResponseInput" placeholder="پاسخ..." style="background:var(--bg-soft);border:2px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:12px 16px;font-size:14px;outline:none;">
                 <button class="btn-primary" onclick="trainKeyword()">ثبت کن</button>
             </div>
-            <div id="keywordList" class="keyword-list"></div>
-        </div>
-
-        <div class="auto-post-section">
-            <h3>📅 زمان‌بندی پست‌ها</h3>
-            <button class="btn-secondary" onclick="toggleAutoPost()">مدیریت زمان‌بندی</button>
-            <div id="autoPostPanel">
-                <input type="number" id="postCount" placeholder="تعداد پست‌ها..." min="1" max="30">
-                <textarea id="postDescriptions" placeholder="توضیحات هر پست (یک در هر خط)..." rows="3"></textarea>
-                <div class="row">
-                    <input type="time" id="postTime" value="09:00">
-                    <input type="number" id="postInterval" placeholder="فاصله (روز)" min="1" value="1">
-                </div>
-                <div class="row">
-                    <label class="btn-ghost" style="cursor:pointer;display:flex;align-items:center;gap:4px;">
-                        <i class="fas fa-image"></i> عکس‌ها
-                        <input type="file" id="scheduleImages" accept="image/*" multiple style="display:none;">
-                    </label>
-                    <label class="btn-ghost" style="cursor:pointer;display:flex;align-items:center;gap:4px;">
-                        <i class="fas fa-video"></i> ویدیوها
-                        <input type="file" id="scheduleVideos" accept="video/*" multiple style="display:none;">
-                    </label>
-                </div>
-                <button class="btn-primary" onclick="schedulePosts()">زمان‌بندی کن</button>
-            </div>
-            <div id="scheduledPostsList" style="margin-top:8px;"></div>
+            <div id="keywordList" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;"></div>
         </div>
     </section>
 
     <!-- صفحه چت -->
     <section id="chatPage" class="page">
-        <h2 class="page-title"><i class="fas fa-envelope"></i> چت خصوصی</h2>
+        <h2 style="font-size:20px;margin-bottom:14px;"><i class="fas fa-envelope"></i> چت خصوصی</h2>
         <div class="chat-container">
             <div class="chat-list" id="chatList"></div>
             <div class="chat-window" id="chatWindow">
                 <div class="chat-window-head">
                     <img id="chatWithAvatar" src="">
                     <strong id="chatWithName"></strong>
-                    <button class="btn-ghost" onclick="closeChatWindow()">✕</button>
+                    <button class="btn-ghost" onclick="closeChatWindow()" style="margin-inline-start:auto;font-size:20px;">✕</button>
                 </div>
                 <div class="chat-messages" id="chatMessages"></div>
                 <div class="chat-input">
@@ -1740,38 +974,38 @@ main {
 
     <!-- صفحه اکسپلور -->
     <section id="explorePage" class="page">
-        <h2 class="page-title"><i class="fas fa-compass"></i> اکتشاف</h2>
+        <h2 style="font-size:20px;margin-bottom:14px;"><i class="fas fa-compass"></i> اکتشاف</h2>
         <div id="exploreContent" class="explore-grid"></div>
     </section>
 
     <!-- صفحه پروفایل عمومی -->
     <section id="profilePage" class="page">
-        <button class="btn-ghost" onclick="backFromProfile()">← بازگشت</button>
-        <div class="profile-header">
-            <img id="viewAvatar" src="">
-            <h2 id="viewName"></h2>
-            <p class="bio" id="viewBio"></p>
-            <div class="profile-stats">
-                <div><b id="viewFollowers">۰</b><span>فالوور</span></div>
-                <div><b id="viewPosts">۰</b><span>پست</span></div>
-                <div><b id="viewScore">۰</b><span>امتیاز</span></div>
+        <button class="btn-ghost" onclick="backFromProfile()" style="font-size:14px;">← بازگشت</button>
+        <div style="text-align:center;padding:16px 0;">
+            <img id="viewAvatar" src="" style="width:100px;height:100px;border-radius:50%;border:4px solid var(--primary);">
+            <h2 id="viewName" style="font-size:22px;margin-top:10px;"></h2>
+            <p id="viewBio" style="color:var(--text-2);font-size:14px;"></p>
+            <div style="display:flex;justify-content:center;gap:24px;margin:14px 0;">
+                <div><b id="viewFollowers" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-3);display:block;">فالوور</span></div>
+                <div><b id="viewPosts" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-3);display:block;">پست</span></div>
+                <div><b id="viewScore" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-3);display:block;">امتیاز</span></div>
             </div>
-            <div class="profile-actions">
-                <button class="btn-primary" id="viewFollowBtn" onclick="toggleFollowView()">فالو</button>
-                <button class="btn-secondary" onclick="openChatFromProfile()">پیام</button>
+            <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                <button class="btn-follow follow" id="viewFollowBtn" onclick="toggleFollowView()">فالو</button>
+                <button class="btn-secondary" onclick="openChatFromProfile()"><i class="fas fa-comment"></i> پیام</button>
             </div>
         </div>
 
-        <div class="assistant-chat-preview">
-            <h3 style="font-size:13px;margin-bottom:8px;">🤖 از دستیار این کاربر بپرس</h3>
-            <div class="mini-chat" id="viewAssistantChat"></div>
-            <div class="mini-chat-input">
-                <input type="text" id="viewAssistantInput" placeholder="سوالت رو بپرس...">
+        <div style="background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
+            <h3 style="font-size:14px;margin-bottom:10px;">🤖 از دستیار این کاربر بپرس</h3>
+            <div id="viewAssistantChat" style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="viewAssistantInput" placeholder="سوالت رو بپرس..." style="flex:1;background:var(--bg-soft);border:2px solid var(--border);border-radius:99px;padding:10px 16px;color:var(--text);font-size:14px;outline:none;">
                 <button class="btn-secondary" onclick="askOtherAssistant()">پرسیدن</button>
             </div>
         </div>
 
-        <div id="viewPostsContainer" class="posts-container"></div>
+        <div id="viewPostsContainer"></div>
     </section>
 
     <!-- صفحه پنل مدیریت -->
@@ -1809,6 +1043,12 @@ main {
         </div>
     </section>
 </main>
+
+<!-- مودال تمام صفحه برای عکس/ویدیو -->
+<div class="fullscreen-modal" id="fullscreenModal" onclick="closeFullscreen()">
+    <button class="close-fullscreen" onclick="closeFullscreen()">✕</button>
+    <div id="fullscreenContent"></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 <script src="script.js"></script>

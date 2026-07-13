@@ -7,45 +7,40 @@ const crypto = require('crypto');
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const fs = require('fs');
+const path = require('path');
 const DatabaseManager = require('./database');
 const IntelligentAssistant = require('./assistant_logic');
 
-// ============================================
-// تنظیمات سرور
-// ============================================
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
     cors: { origin: "*", methods: ["GET", "POST"] },
     pingTimeout: 60000,
     pingInterval: 25000,
-    maxHttpBufferSize: 1e8 // 100MB
+    maxHttpBufferSize: 1e8
 });
 
-// ============================================
 // امنیت و بهینه‌سازی
-// ============================================
-app.use(helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
-}));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(compression());
 app.use(cors());
 
-// محدودیت نرخ درخواست
 const limiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 200,
+    max: 500,
     message: { error: 'تعداد درخواست‌ها بیش از حد مجاز است' }
 });
 app.use('/api/', limiter);
 
-app.use(bodyParser.json({ limit: '100mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '100mb' }));
-app.use(express.static(__dirname, {
-    maxAge: '1d',
-    etag: true
-}));
+app.use(bodyParser.json({ limit: '200mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '200mb' }));
+app.use(express.static(__dirname, { maxAge: '1d', etag: true }));
+
+// پوشه برای آپلود فایل‌ها
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+app.use('/uploads', express.static(uploadDir));
 
 const db = new DatabaseManager();
 
@@ -54,11 +49,40 @@ const db = new DatabaseManager();
 // ============================================
 function isAdmin(req, res, next) {
     const userId = req.headers.userid || req.body.userId;
-    if (userId === 'admin_milad') {
-        return next();
-    }
+    if (userId === 'admin_milad') return next();
     res.status(403).json({ error: 'دسترسی غیرمجاز' });
 }
+
+// ============================================
+// آپلود فایل (عکس و ویدیو)
+// ============================================
+app.post('/api/upload', async (req, res) => {
+    try {
+        const { file, type, userId } = req.body;
+        if (!file) return res.status(400).json({ error: 'فایلی ارسال نشده' });
+
+        const ext = file.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.]+);base64,/);
+        if (!ext) return res.status(400).json({ error: 'فرمت فایل نامعتبر' });
+
+        const mimeType = ext[1];
+        const base64Data = file.replace(/^data:[a-zA-Z0-9]+\/[a-zA-Z0-9-.]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+
+        const fileExt = mimeType.split('/')[1];
+        const fileName = `${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${fileExt}`;
+        const filePath = path.join(uploadDir, fileName);
+
+        fs.writeFileSync(filePath, buffer);
+
+        res.json({ 
+            success: true, 
+            url: `/uploads/${fileName}`,
+            type: mimeType.startsWith('video') ? 'video' : 'image'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // ============================================
 // API ثبت‌نام
@@ -72,7 +96,7 @@ app.post('/api/user/register', async (req, res) => {
         
         let id;
         const nameLower = name.trim().toLowerCase();
-        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin') {
+        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin' || nameLower === 'جمیل') {
             id = 'admin_milad';
         } else {
             id = 'user_' + crypto.randomBytes(8).toString('hex');
@@ -122,16 +146,6 @@ app.post('/api/user/avatar', async (req, res) => {
     try {
         const { userId, avatar } = req.body;
         await db.query(userId, `UPDATE users SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [avatar, userId]);
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-app.post('/api/user/bio', async (req, res) => {
-    try {
-        const { userId, bio } = req.body;
-        await db.query(userId, `UPDATE users SET bio = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [bio, userId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -189,7 +203,7 @@ app.get('/api/profile/:userId', async (req, res) => {
 });
 
 // ============================================
-// فالو / آنفالو با تراکنش
+// فالو / آنفالو
 // ============================================
 app.post('/api/follow', async (req, res) => {
     try {
@@ -296,18 +310,8 @@ app.post('/api/post/create', async (req, res) => {
     }
 });
 
-app.post('/api/post/:postId/view', async (req, res) => {
-    try {
-        const { postId } = req.params;
-        await db.query(postId, `UPDATE posts SET views = views + 1 WHERE id = $1`, [postId]);
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
 // ============================================
-// لایک و کامنت
+// لایک
 // ============================================
 app.post('/api/post/:postId/like', async (req, res) => {
     try {
@@ -362,6 +366,9 @@ app.post('/api/post/:postId/like', async (req, res) => {
     }
 });
 
+// ============================================
+// کامنت
+// ============================================
 app.post('/api/post/:postId/comment', async (req, res) => {
     try {
         const { postId } = req.params;
@@ -509,10 +516,10 @@ app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
 });
 
 // ============================================
-// کانال و اکسپلور با کش
+// اکسپلور با الگوریتم هوش مصنوعی
 // ============================================
 const exploreCache = new Map();
-const EXPLORE_CACHE_TTL = 15000;
+const EXPLORE_CACHE_TTL = 10000;
 
 app.get('/api/explore', async (req, res) => {
     try {
@@ -521,6 +528,7 @@ app.get('/api/explore', async (req, res) => {
             return res.json(cached.data);
         }
 
+        // الگوریتم هوش مصنوعی برای رتبه‌بندی پست‌ها
         const result = await db.query(null, `
             SELECT 
                 u.id as user_id,
@@ -542,18 +550,21 @@ app.get('/api/explore', async (req, res) => {
                             'likes', p.likes,
                             'comments', p.comments,
                             'views', p.views,
-                            'created_at', p.created_at
+                            'created_at', p.created_at,
+                            'score', (p.likes * 2 + p.comments * 3 + p.views * 0.5)
                         )
                     )
                     FROM posts p
                     WHERE p.channel_id = c.id AND p.is_published = 1
-                    ORDER BY p.created_at DESC
+                    ORDER BY (p.likes * 2 + p.comments * 3 + p.views * 0.5) DESC
                     LIMIT 5
                 ) as recent_posts
             FROM channels c
             JOIN users u ON u.id = c.user_id
             WHERE c.posts_count > 0
-            ORDER BY c.activity_score DESC, c.followers_count DESC
+            ORDER BY (c.activity_score * 0.4 + c.followers_count * 0.3 + 
+                (SELECT COALESCE(SUM(p.likes * 2 + p.comments * 3), 0) FROM posts p 
+                 WHERE p.channel_id = c.id AND p.is_published = 1) * 0.3) DESC
             LIMIT 50
         `);
         
@@ -604,7 +615,7 @@ app.get('/api/search', async (req, res) => {
 });
 
 // ============================================
-// چت خصوصی با تاریخچه کامل
+// چت خصوصی
 // ============================================
 app.post('/api/chat/save', async (req, res) => {
     try {
@@ -686,7 +697,7 @@ app.post('/api/chat/read', async (req, res) => {
 });
 
 // ============================================
-// پنل مدیریت کامل
+// پنل مدیریت
 // ============================================
 app.get('/api/admin/users', isAdmin, async (req, res) => {
     try {
@@ -777,13 +788,17 @@ app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
         const transaction = dbInstance.transaction(() => {
             for (const user of users.rows) {
                 const id = crypto.randomUUID();
-                insert.run(id, user.id, title || 'اعلان سیستمی', message);
-                io.to(`user_${user.id}`).emit('broadcast', { title: title || 'اعلان سیستمی', message });
+                insert.run(id, user.id, title || '📢 اعلان سیستمی', message);
+                io.to(`user_${user.id}`).emit('broadcast', { 
+                    title: title || '📢 اعلان سیستمی', 
+                    message,
+                    time: new Date().toLocaleTimeString('fa-IR')
+                });
             }
         });
         
         transaction();
-        res.json({ success: true, message: `پیام به ${users.rows.length} کاربر ارسال شد` });
+        res.json({ success: true, message: `✅ پیام به ${users.rows.length} کاربر ارسال شد` });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -814,7 +829,7 @@ app.get('/api/admin/stats', isAdmin, async (req, res) => {
 });
 
 // ============================================
-// WebSocket با پشتیبانی از میلیون‌ها کاربر
+// WebSocket
 // ============================================
 io.on('connection', (socket) => {
     console.log('🔌 New client connected:', socket.id);
@@ -852,7 +867,7 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-// راه‌اندازی سرور
+// راه‌اندازی
 // ============================================
 const PORT = process.env.PORT || 3000;
 
@@ -860,13 +875,11 @@ async function startServer() {
     try {
         await db.initTables();
         console.log('✅ Database ready');
-        console.log('✅ Tables created/verified');
 
         server.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📍 http://localhost:${PORT}`);
             console.log(`👑 Admin: milad / M09145978426m`);
-            console.log(`📊 Mode: ${process.env.NODE_ENV || 'development'}`);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);
@@ -875,5 +888,3 @@ async function startServer() {
 }
 
 startServer();
-
-module.exports = { app, server, io };
