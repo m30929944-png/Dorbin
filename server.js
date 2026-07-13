@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(__dirname));
 
 // ================================================================
-= Rate Limiting
+// Rate Limiting
 // ================================================================
 const limiter = rateLimit({ windowMs: 60000, max: 100, message: { error: 'درخواست زیاد!' } });
 app.use('/api/', limiter);
@@ -119,7 +119,6 @@ app.post('/api/post/create', strictLimiter, async (req, res) => {
     const postId = uuidv4();
     let mediaUrl = null;
     if (mediaData) {
-      // ذخیره base64 به عنوان media_url (برای سادگی)
       mediaUrl = mediaData;
     }
     await db.query(`INSERT INTO posts (id, channel_id, content, media_url, media_type, is_published, published_at) VALUES ($1,$2,$3,$4,$5,1,CURRENT_TIMESTAMP)`,
@@ -410,7 +409,6 @@ app.get('/api/search', async (req, res) => {
 // ---------- نوتیفیکیشن‌ها ----------
 app.get('/api/notifications/:userId', async (req, res) => {
   try {
-    // برای سادگی، نوتیفیکیشن‌های پیش‌فرض
     res.json({ notifications: [], unread: 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
