@@ -1,387 +1,137 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>بامگرام</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Vazirmatn:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#0d0d12;
-    --surface:#16161d;
-    --surface-2:#1e1e28;
-    --line:#2a2a36;
-    --text:#f2f1f6;
-    --text-dim:#9694a6;
-    --accent:#8b6bff;
-    --accent-2:#ff9d4d;
-    --danger:#ff5c7a;
-    --radius:16px;
-    --nav-h:64px;
-    --top-h:56px;
-  }
-  *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;}
-  body{
-    background:var(--bg);
-    color:var(--text);
-    font-family:'Vazirmatn','Space Grotesk',sans-serif;
-    -webkit-font-smoothing:antialiased;
-    overflow-x:hidden;
-  }
-  button{font-family:inherit;}
-  .mono{font-family:'JetBrains Mono',monospace;}
-
-  /* ---------- Top bar ---------- */
-  .topbar{
-    position:fixed;top:0;left:0;right:0;height:var(--top-h);
-    display:flex;align-items:center;justify-content:space-between;
-    padding:0 14px;
-    background:rgba(13,13,18,.86);
-    backdrop-filter:blur(14px);
-    border-bottom:1px solid var(--line);
-    z-index:50;
-  }
-  .brand{
-    font-family:'Space Grotesk',sans-serif;
-    font-weight:700;font-size:20px;letter-spacing:.2px;
-    background:linear-gradient(90deg,var(--accent),var(--accent-2));
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-  }
-  .top-actions{display:flex;gap:6px;}
-  .icon-btn{
-    width:38px;height:38px;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;
-    background:transparent;border:none;color:var(--text);
-    cursor:pointer;position:relative;
-    transition:background .15s ease;
-  }
-  .icon-btn:hover{background:var(--surface-2);}
-  .icon-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-  .icon-btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;}
-  .badge-dot{
-    position:absolute;top:6px;right:6px;
-    width:8px;height:8px;border-radius:50%;
-    background:var(--accent-2);border:2px solid var(--bg);
-  }
-
-  /* ---------- Story rail ---------- */
-  .story-rail{
-    position:fixed;top:var(--top-h);left:0;right:0;
-    display:flex;gap:14px;padding:12px 14px;
-    overflow-x:auto;scrollbar-width:none;
-    background:var(--bg);
-    border-bottom:1px solid var(--line);
-    z-index:40;
-  }
-  .story-rail::-webkit-scrollbar{display:none;}
-  .story-item{display:flex;flex-direction:column;align-items:center;gap:6px;flex-shrink:0;width:64px;}
-  .story-ring{
-    width:58px;height:58px;border-radius:50%;
-    padding:2.5px;
-    background:conic-gradient(from 45deg,var(--accent),var(--accent-2),var(--danger),var(--accent));
-    cursor:pointer;
-  }
-  .story-ring.seen{background:var(--line);}
-  .story-ring.self{background:var(--surface-2);}
-  .story-avatar{
-    width:100%;height:100%;border-radius:50%;
-    background:var(--surface-2) center/cover no-repeat;
-    border:2.5px solid var(--bg);
-    display:flex;align-items:center;justify-content:center;
-    font-size:11px;color:var(--text-dim);
-  }
-  .story-item span{font-size:11px;color:var(--text-dim);max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .story-add-badge{
-    position:relative;
-  }
-  .story-add-badge::after{
-    content:'+';
-    position:absolute;bottom:-2px;right:-2px;
-    width:18px;height:18px;border-radius:50%;
-    background:var(--accent);color:#fff;
-    font-size:13px;line-height:18px;text-align:center;
-    border:2px solid var(--bg);
-  }
-
-  /* ---------- Main / views ---------- */
-  main{
-    padding-top:calc(var(--top-h) + 84px);
-    padding-bottom:calc(var(--nav-h) + 14px);
-    min-height:100%;
-  }
-  .view{display:none;}
-  .view.active{display:block;}
-
-  /* Explore grid */
-  #view-explore .grid{
-    display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:0 2px;
-  }
-  #view-explore .cell{
-    aspect-ratio:1/1;background:var(--surface) center/cover no-repeat;
-    position:relative;cursor:pointer;
-  }
-  #view-explore .cell.wide{grid-column:span 2;}
-
-  /* Profile */
-  .profile-header{padding:18px 16px 6px;}
-  .profile-top{display:flex;align-items:center;gap:18px;}
-  .avatar-lg{
-    width:84px;height:84px;border-radius:50%;
-    background:var(--surface-2) center/cover no-repeat;
-    border:2px solid var(--line);flex-shrink:0;
-    cursor:pointer;position:relative;
-  }
-  .avatar-lg .edit-dot{
-    position:absolute;bottom:0;left:0;
-    width:26px;height:26px;border-radius:50%;
-    background:var(--accent);display:flex;align-items:center;justify-content:center;
-    border:2px solid var(--bg);
-  }
-  .avatar-lg .edit-dot svg{width:13px;height:13px;stroke:#fff;fill:none;stroke-width:2;}
-  .stats-row{display:flex;flex:1;justify-content:space-around;text-align:center;}
-  .stat b{display:block;font-size:17px;font-family:'JetBrains Mono',monospace;}
-  .stat span{font-size:12px;color:var(--text-dim);}
-  .display-name{font-weight:700;margin-top:14px;}
-  .bio-text{color:var(--text-dim);font-size:14px;margin-top:4px;white-space:pre-line;}
-  .profile-actions{display:flex;gap:8px;margin-top:14px;}
-  .btn{
-    flex:1;padding:9px 0;border-radius:10px;border:1px solid var(--line);
-    background:var(--surface-2);color:var(--text);font-size:13.5px;font-weight:600;
-    cursor:pointer;transition:transform .1s ease,background .15s ease;
-  }
-  .btn:active{transform:scale(.97);}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
-  .profile-tabs{display:flex;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:16px;}
-  .profile-tabs button{
-    flex:1;padding:11px 0;background:none;border:none;color:var(--text-dim);
-    font-size:13px;cursor:pointer;border-bottom:2px solid transparent;
-  }
-  .profile-tabs button.active{color:var(--text);border-bottom-color:var(--accent);}
-  #view-profile .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px;}
-  #view-profile .cell{aspect-ratio:1/1;background:var(--surface) center/cover no-repeat;cursor:pointer;}
-
-  /* Uploader */
-  .uploader-box{
-    margin:16px;padding:28px 18px;border:1.5px dashed var(--line);
-    border-radius:var(--radius);text-align:center;color:var(--text-dim);
-    cursor:pointer;
-  }
-  .uploader-box svg{width:34px;height:34px;stroke:var(--accent);fill:none;stroke-width:1.6;margin-bottom:10px;}
-  .upload-preview{margin:0 16px;border-radius:var(--radius);overflow:hidden;display:none;}
-  .upload-preview img{width:100%;display:block;max-height:340px;object-fit:cover;}
-  .upload-form{margin:14px 16px;display:none;flex-direction:column;gap:10px;}
-  .upload-form textarea, .upload-form input{
-    width:100%;background:var(--surface);border:1px solid var(--line);
-    border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;
-    font-family:inherit;resize:vertical;
-  }
-  .upload-form textarea{min-height:70px;}
-
-  /* Post detail (fullscreen) */
-  .post-full{
-    position:fixed;inset:0;background:var(--bg);z-index:80;
-    display:none;flex-direction:column;
-  }
-  .post-full.active{display:flex;}
-  .post-full-header{
-    display:flex;align-items:center;gap:10px;padding:12px 14px;
-    border-bottom:1px solid var(--line);
-  }
-  .post-full-header .avatar-sm{width:34px;height:34px;border-radius:50%;background:var(--surface-2) center/cover no-repeat;}
-  .post-full-header b{font-size:14px;}
-  .post-full-header .back-btn{margin-left:auto;background:none;border:none;color:var(--text);cursor:pointer;}
-  .post-full-media{flex:0 0 auto;background:var(--surface) center/cover no-repeat;aspect-ratio:1/1;}
-  .post-full-actions{display:flex;gap:14px;padding:10px 14px;}
-  .post-full-actions button{background:none;border:none;color:var(--text);cursor:pointer;}
-  .post-full-actions svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.7;}
-  .post-full-actions svg.liked{fill:var(--danger);stroke:var(--danger);}
-  .post-full-caption{padding:0 14px 8px;font-size:14px;}
-  .post-full-comments{flex:1;overflow-y:auto;padding:6px 14px 90px;}
-  .comment-row{display:flex;gap:8px;padding:8px 0;font-size:13.5px;}
-  .comment-row .avatar-sm{width:28px;height:28px;border-radius:50%;background:var(--surface-2) center/cover no-repeat;flex-shrink:0;}
-  .comment-reply{padding-inline-start:36px;font-size:13px;}
-  .comment-input-bar{
-    position:absolute;bottom:0;left:0;right:0;
-    display:flex;gap:8px;padding:10px 14px;
-    background:var(--bg);border-top:1px solid var(--line);
-  }
-  .comment-input-bar input{
-    flex:1;background:var(--surface);border:1px solid var(--line);
-    border-radius:20px;padding:9px 14px;color:var(--text);font-size:13.5px;
-  }
-  .comment-input-bar button{background:none;border:none;color:var(--accent);font-weight:700;font-size:13.5px;cursor:pointer;}
-
-  /* ---------- Bottom nav ---------- */
-  .bottom-nav{
-    position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);
-    display:flex;
-    background:rgba(13,13,18,.92);
-    backdrop-filter:blur(14px);
-    border-top:1px solid var(--line);
-    z-index:60;
-    padding-bottom:env(safe-area-inset-bottom);
-  }
-  .nav-btn{
-    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    background:none;border:none;color:var(--text-dim);cursor:pointer;
-  }
-  .nav-btn svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.7;}
-  .nav-btn.active{color:var(--accent);}
-  .nav-btn.active svg{stroke:var(--accent);}
-  .nav-btn span{font-size:11px;}
-  .nav-btn.uploader-btn{color:var(--text);}
-  .nav-btn.uploader-btn svg{width:26px;height:26px;}
-
-  /* Live button (floating, top of feed area is out of scope here; kept simple as a top action) */
-  .live-fab{
-    position:fixed;left:16px;bottom:calc(var(--nav-h) + 16px);
-    background:linear-gradient(90deg,var(--danger),var(--accent-2));
-    color:#fff;border:none;border-radius:24px;
-    padding:10px 16px;font-size:13px;font-weight:700;
-    display:flex;align-items:center;gap:6px;cursor:pointer;z-index:55;
-    box-shadow:0 6px 20px rgba(255,92,122,.35);
-  }
-  .live-fab .dot{width:7px;height:7px;border-radius:50%;background:#fff;animation:pulse 1.4s infinite;}
-  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
-
-  .toast{
-    position:fixed;top:calc(var(--top-h) + 10px);left:50%;transform:translateX(-50%) translateY(-20px);
-    background:var(--surface-2);color:var(--text);padding:10px 16px;border-radius:10px;
-    font-size:13px;border:1px solid var(--line);z-index:200;opacity:0;
-    transition:opacity .25s ease,transform .25s ease;pointer-events:none;
-  }
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-
-  @media (prefers-reduced-motion:reduce){
-    .live-fab .dot{animation:none;}
-    *{transition:none !important;animation:none !important;}
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>یارِ من - پیام‌رسان هوشمند</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Vazir:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 </head>
 <body>
-
-<header class="topbar">
-  <span class="brand">بامگرام</span>
-  <div class="top-actions">
-    <button class="icon-btn" id="btn-search" aria-label="جستجو">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    </button>
-    <button class="icon-btn" id="btn-chat" aria-label="چت">
-      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-      <span class="badge-dot" id="chat-badge" hidden></span>
-    </button>
-  </div>
-</header>
-
-<div class="story-rail" id="story-rail">
-  <!-- populated by m2.js from m1.js data -->
-</div>
-
-<button class="live-fab" id="btn-live">
-  <span class="dot"></span> لایو
-</button>
-
-<main>
-
-  <section id="view-explore" class="view active">
-    <div class="grid" id="explore-grid"></div>
-  </section>
-
-  <section id="view-uploader" class="view">
-    <div class="uploader-box" id="uploader-box">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <div>برای انتخاب عکس از گالری ضربه بزن</div>
-      <input type="file" id="upload-input" accept="image/*" hidden>
-    </div>
-    <div class="upload-preview" id="upload-preview"><img id="upload-preview-img" alt=""></div>
-    <div class="upload-form" id="upload-form">
-      <textarea id="upload-caption" placeholder="توضیحات پست..."></textarea>
-      <input type="text" id="upload-hashtags" placeholder="#هشتگ‌ها (با فاصله جدا کن)">
-      <button class="btn primary" id="btn-submit-upload">انتشار پست</button>
-    </div>
-  </section>
-
-  <section id="view-profile" class="view">
-    <div class="profile-header">
-      <div class="profile-top">
-        <div class="avatar-lg" id="profile-avatar">
-          <div class="edit-dot" id="btn-edit-avatar">
-            <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-          </div>
+    <!-- هدر با جستجو و پروفایل -->
+    <header class="main-header">
+        <div class="header-left">
+            <button id="profileBtn" class="profile-btn">
+                <img src="default-avatar.png" alt="پروفایل" id="avatarImg">
+                <span id="userName">کاربر</span>
+            </button>
         </div>
-        <div class="stats-row">
-          <div class="stat"><b id="stat-posts">0</b><span>پست</span></div>
-          <div class="stat"><b id="stat-followers">0</b><span>فالوور</span></div>
-          <div class="stat"><b id="stat-following">0</b><span>دنبال‌شونده</span></div>
+        <div class="header-center">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="جستجوی کاربر، کانال یا محتوا...">
+            </div>
         </div>
-      </div>
-      <div class="display-name" id="profile-name">در حال بارگذاری...</div>
-      <div class="bio-text" id="profile-bio"></div>
-      <div class="profile-actions">
-        <button class="btn primary" id="btn-edit-bio">ویرایش بیوگرافی</button>
-        <button class="btn" id="btn-share-profile">اشتراک‌گذاری پروفایل</button>
-      </div>
-    </div>
-    <div class="profile-tabs">
-      <button class="active" data-tab="grid">پست‌ها</button>
-      <button data-tab="tagged">تگ‌شده</button>
-    </div>
-    <div class="grid" id="profile-grid"></div>
-  </section>
+        <div class="header-right">
+            <span class="user-score" id="userScore">🏆 ۰ امتیاز</span>
+        </div>
+    </header>
 
-</main>
+    <!-- دکمه‌های اصلی -->
+    <nav class="main-nav">
+        <button class="nav-btn active" data-page="channel">
+            <i class="fas fa-bullhorn"></i>
+            <span>کانال</span>
+        </button>
+        <button class="nav-btn" data-page="assistant">
+            <i class="fas fa-robot"></i>
+            <span>دستیار</span>
+        </button>
+        <button class="nav-btn" data-page="chat">
+            <i class="fas fa-envelope"></i>
+            <span>چت خصوصی</span>
+        </button>
+        <button class="nav-btn" data-page="explore">
+            <i class="fas fa-compass"></i>
+            <span>اکسپلور</span>
+        </button>
+    </nav>
 
-<div class="post-full" id="post-full">
-  <div class="post-full-header">
-    <div class="avatar-sm" id="pf-avatar"></div>
-    <b id="pf-username"></b>
-    <button class="back-btn" id="pf-close" aria-label="بستن">
-      <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" fill="none" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <div class="post-full-media" id="pf-media"></div>
-  <div class="post-full-actions">
-    <button id="pf-like" aria-label="لایک">
-      <svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
-    </button>
-    <button id="pf-comment-focus" aria-label="کامنت">
-      <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-    </button>
-    <button id="pf-share" aria-label="اشتراک‌گذاری">
-      <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>
-    </button>
-    <span class="mono" id="pf-like-count" style="margin-inline-start:auto;align-self:center;color:var(--text-dim);font-size:12.5px;"></span>
-  </div>
-  <div class="post-full-caption" id="pf-caption"></div>
-  <div class="post-full-comments" id="pf-comments"></div>
-  <div class="comment-input-bar">
-    <input type="text" id="pf-comment-input" placeholder="کامنت بنویس...">
-    <button id="pf-comment-send">ارسال</button>
-  </div>
-</div>
+    <!-- محتوای صفحات -->
+    <main id="mainContent">
+        <!-- صفحه‌ی کانال -->
+        <section id="channelPage" class="page active">
+            <div class="channel-header">
+                <h2>📢 کانال من</h2>
+                <span class="followers-count" id="followersCount">۰ فالوور</span>
+            </div>
+            <div id="channelPosts" class="posts-container">
+                <!-- پست‌ها توسط JavaScript بارگذاری می‌شوند -->
+            </div>
+        </section>
 
-<nav class="bottom-nav">
-  <button class="nav-btn" id="nav-profile" data-view="profile">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>
-    <span>پروفایل</span>
-  </button>
-  <button class="nav-btn active" id="nav-explore" data-view="explore">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polygon points="16.24 7.76 14 14 7.76 16.24 10 10 16.24 7.76"/></svg>
-    <span>اکسپلور</span>
-  </button>
-  <button class="nav-btn uploader-btn" id="nav-uploader" data-view="uploader">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-    <span>آپلودر</span>
-  </button>
-</nav>
+        <!-- صفحه‌ی دستیار -->
+        <section id="assistantPage" class="page">
+            <div class="assistant-panel">
+                <h2>🤖 دستیار من</h2>
+                <div class="assistant-stats">
+                    <span id="assistantPostsCount">۰ پست</span>
+                    <span id="assistantTasksCount">۰ وظیفه</span>
+                </div>
+                
+                <!-- بخش آموزش سوال و جواب -->
+                <div class="training-section">
+                    <h3>📝 آموزش سوال و جواب</h3>
+                    <div class="train-form">
+                        <input type="text" id="questionInput" placeholder="سوال...">
+                        <input type="text" id="answerInput" placeholder="جواب...">
+                        <button onclick="trainAssistant()">یاد بده!</button>
+                    </div>
+                    <div id="qaList" class="qa-list"></div>
+                </div>
 
-<div class="toast" id="toast"></div>
+                <!-- بخش آموزش کلمات کلیدی -->
+                <div class="training-section">
+                    <h3>🔑 کلمات کلیدی</h3>
+                    <div class="train-form">
+                        <input type="text" id="keywordInput" placeholder="کلمه کلیدی...">
+                        <input type="text" id="keywordResponseInput" placeholder="پاسخ...">
+                        <button onclick="trainKeyword()">ثبت کن</button>
+                    </div>
+                    <div id="keywordList" class="keyword-list"></div>
+                </div>
 
-<!-- m1.js: لایه ارتباط واقعی با سرور (API client) -->
-<script src="m1.js"></script>
-<!-- m2.js: منطق و رفتار صفحه -->
-<script src="m2.js"></script>
+                <!-- بخش مدیریت پست‌های اتومات -->
+                <div class="auto-post-section">
+                    <h3>📅 پست‌های اتومات</h3>
+                    <button onclick="showAutoPostPanel()">مدیریت پست‌ها</button>
+                    <div id="autoPostPanel" style="display:none;">
+                        <input type="number" id="postCount" placeholder="تعداد پست‌ها...">
+                        <textarea id="postDescriptions" placeholder="توضیحات هر پست (یک در هر خط)..."></textarea>
+                        <input type="time" id="postTime" value="09:00">
+                        <button onclick="schedulePosts()">ثبت و زمان‌بندی</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- صفحه‌ی چت خصوصی -->
+        <section id="chatPage" class="page">
+            <div class="chat-container">
+                <div class="chat-list" id="chatList">
+                    <!-- لیست چت‌ها -->
+                </div>
+                <div class="chat-window" id="chatWindow">
+                    <div class="chat-messages" id="chatMessages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="پیام...">
+                        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- صفحه‌ی اکسپلور -->
+        <section id="explorePage" class="page">
+            <h2>🌍 اکتشاف</h2>
+            <div id="exploreContent" class="explore-grid">
+                <!-- کانال‌های محبوب و پست‌های وایرال -->
+            </div>
+        </section>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
