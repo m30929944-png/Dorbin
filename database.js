@@ -1,123 +1,54 @@
-// ============================================================
-// database.js - نسخه کامل با ۱۵۰۰۰+ خط
-// مدیریت دیتابیس پیشرفته با کش، رمزنگاری و بهینه‌سازی
-// ============================================================
-
-// ============================================================
-// بخش ۱: وابستگی‌ها و تنظیمات اولیه
-// ============================================================
+// ============================================
+// database.js - مدیریت دیتابیس پیشرفته با کش، رمزنگاری و بهینه‌سازی
+// ============================================
 
 const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
-const zlib = require('zlib');
 
 class DatabaseManager {
-    constructor(options = {}) {
-        // تنظیمات پیش‌فرض
-        this.options = {
-            dbPath: options.dbPath || path.join(__dirname, 'data.sqlite'),
-            cacheTTL: options.cacheTTL || 60000, // ۶۰ ثانیه
-            maxCacheSize: options.maxCacheSize || 1000,
-            enableEncryption: options.enableEncryption !== false,
-            backupInterval: options.backupInterval || 3600000, // ۱ ساعت
-            ...options
-        };
-
-        // کش حافظه
+    constructor() {
+        // کش حافظه برای کوئری‌های پرتکرار
         this.cache = new Map();
-        this.cacheStats = {
-            hits: 0,
-            misses: 0,
-            evictions: 0
-        };
-
-        // مسیر دیتابیس
-        this.dbPath = this.options.dbPath;
+        this.cacheTTL = 60000; // 60 ثانیه
         
-        // کلید رمزنگاری
-        this.encryptionKey = this.loadOrCreateKey();
+        // مسیر دیتابیس
+        this.dbPath = path.join(__dirname, 'data.sqlite');
+        
+        // اتصال به دیتابیس با تنظیمات بهینه
+        this.db = new Database(this.dbPath);
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('foreign_keys = ON');
+        this.db.pragma('cache_size = 10000');
+        this.db.pragma('synchronous = NORMAL');
+        this.db.pragma('temp_store = MEMORY');
+        this.db.pragma('mmap_size = 268435456'); // 256MB برای سرعت بیشتر
+        
+        // رمزنگاری کلید برای چت
+        this.encryptionKey = crypto.randomBytes(32);
         this.encryptionIV = crypto.randomBytes(16);
-
-        // اتصال به دیتابیس
-        this.db = this.connect();
         
         // ایجاد جداول
         this.initTables();
         
-        // شروع پشتیبان‌گیری خودکار
-        this.startAutoBackup();
-        
-        // شروع پاکسازی کش
-        this.startCacheCleanup();
-
-        console.log('✅ Database Manager initialized');
-        console.log(`📁 Database path: ${this.dbPath}`);
-        console.log(`🔐 Encryption: ${this.options.enableEncryption ? 'Enabled' : 'Disabled'}`);
+        // پاکسازی دوره‌ای
+        setInterval(() => this.cleanup(), 86400000); // هر روز
+        setInterval(() => this.vacuum(), 604800000); // هر هفته
     }
 
-    // ============================================================
-    // بخش ۲: اتصال به دیتابیس
-    // ============================================================
-
-    connect() {
-        try {
-            // اطمینان از وجود پوشه
-            const dir = path.dirname(this.dbPath);
-            if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir, { recursive: true });
-            }
-
-            const db = new Database(this.dbPath, {
-                verbose: process.env.NODE_ENV === 'development' ? console.log : null
-            });
-
-            // تنظیمات بهینه
-            db.pragma('journal_mode = WAL');
-            db.pragma('foreign_keys = ON');
-            db.pragma('cache_size = 10000');
-            db.pragma('synchronous = NORMAL');
-            db.pragma('temp_store = MEMORY');
-            db.pragma('mmap_size = 268435456'); // 256MB
-            db.pragma('page_size = 4096');
-
-            return db;
-        } catch (error) {
-            console.error('❌ Database connection error:', error);
-            throw error;
-        }
-    }
-
-    // ============================================================
-    // بخش ۳: رمزنگاری
-    // ============================================================
-
-    loadOrCreateKey() {
-        const keyPath = path.join(__dirname, '.encryption_key');
-        try {
-            if (fs.existsSync(keyPath)) {
-                return fs.readFileSync(keyPath);
-            }
-            const key = crypto.randomBytes(32);
-            fs.writeFileSync(keyPath, key, { mode: 0o600 });
-            return key;
-        } catch (error) {
-            console.warn('⚠️ Could not load encryption key, using fallback');
-            return crypto.createHash('sha256')
-                .update(process.env.ENCRYPTION_SECRET || 'yareman_default_secret')
-                .digest();
-        }
-    }
-
+    // ============================================
+    // رمزنگاری و رمزگشایی پیشرفته
+    // ============================================
     encrypt(text) {
-        if (!this.options.enableEncryption || !text) return text;
         try {
-            const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, this.encryptionIV);
+            if (!text) return text;
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
             let encrypted = cipher.update(text, 'utf8', 'hex');
             encrypted += cipher.final('hex');
             const authTag = cipher.getAuthTag().toString('hex');
-            return `${encrypted}:${authTag}`;
+            return `${iv.toString('hex')}:${encrypted}:${authTag}`;
         } catch (error) {
             console.error('Encryption error:', error);
             return text;
@@ -125,15 +56,17 @@ class DatabaseManager {
     }
 
     decrypt(encryptedText) {
-        if (!this.options.enableEncryption || !encryptedText) return encryptedText;
         try {
+            if (!encryptedText) return encryptedText;
             const parts = encryptedText.split(':');
-            if (parts.length !== 2) return encryptedText;
+            if (parts.length < 3) return encryptedText;
             
-            const [encrypted, authTag] = parts;
-            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, this.encryptionIV);
+            const iv = Buffer.from(parts[0], 'hex');
+            const encrypted = parts[1];
+            const authTag = parts[2];
+            
+            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
             decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-            
             let decrypted = decipher.update(encrypted, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
             return decrypted;
@@ -143,143 +76,63 @@ class DatabaseManager {
         }
     }
 
-    // ============================================================
-    // بخش ۴: سیستم کش پیشرفته
-    // ============================================================
-
-    getCacheKey(sql, params) {
-        return `${sql}_${JSON.stringify(params)}`;
+    // ============================================
+    // هش کردن رمز عبور
+    // ============================================
+    hashPassword(password) {
+        return crypto.createHash('sha256').update(password).digest('hex');
     }
 
-    getCached(sql, params) {
-        const key = this.getCacheKey(sql, params);
-        const cached = this.cache.get(key);
+    // ============================================
+    // اجرای کوئری با کش
+    // ============================================
+    async query(userId, text, params = []) {
+        const cacheKey = `${text}_${JSON.stringify(params)}`;
+        const cmd = text.trim().slice(0, 6).toUpperCase();
         
-        if (cached && (Date.now() - cached.timestamp) < this.options.cacheTTL) {
-            this.cacheStats.hits++;
-            return cached.data;
-        }
-        
-        if (cached) {
-            this.cache.delete(key);
-            this.cacheStats.evictions++;
-        }
-        
-        this.cacheStats.misses++;
-        return null;
-    }
-
-    setCached(sql, params, data) {
-        const key = this.getCacheKey(sql, params);
-        
-        // مدیریت حجم کش
-        if (this.cache.size >= this.options.maxCacheSize) {
-            const oldestKey = this.cache.keys().next().value;
-            if (oldestKey) {
-                this.cache.delete(oldestKey);
-                this.cacheStats.evictions++;
+        // بررسی کش برای SELECT
+        if (cmd === 'SELECT') {
+            const cached = this.cache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+                return cached.data;
             }
         }
+
+        const sql = text.replace(/\$(\d+)/g, '?');
         
-        this.cache.set(key, {
-            data,
-            timestamp: Date.now(),
-            hits: 0
-        });
-    }
-
-    invalidateCache(pattern) {
-        if (!pattern) {
-            this.cache.clear();
-            return;
-        }
-        
-        for (const key of this.cache.keys()) {
-            if (key.includes(pattern)) {
-                this.cache.delete(key);
-            }
-        }
-    }
-
-    getCacheStats() {
-        return {
-            ...this.cacheStats,
-            size: this.cache.size,
-            maxSize: this.options.maxCacheSize,
-            hitRate: this.cacheStats.hits + this.cacheStats.misses > 0 
-                ? (this.cacheStats.hits / (this.cacheStats.hits + this.cacheStats.misses) * 100).toFixed(2) + '%'
-                : '0%'
-        };
-    }
-
-    // ============================================================
-    // بخش ۵: اجرای کوئری با کش و بهینه‌سازی
-    // ============================================================
-
-    query(userId, sql, params = []) {
         try {
-            const cmd = sql.trim().slice(0, 6).toUpperCase();
-            const isSelect = cmd === 'SELECT';
-            
-            // بررسی کش برای SELECT
-            if (isSelect) {
-                const cached = this.getCached(sql, params);
-                if (cached !== null) {
-                    return cached;
-                }
-            }
-
-            // تبدیل پارامترهای named به positional
-            const preparedSql = sql.replace(/\$(\d+)/g, '?');
-            
-            const stmt = this.db.prepare(preparedSql);
+            const stmt = this.db.prepare(sql);
             let result;
-
-            if (isSelect) {
+            
+            if (cmd === 'SELECT') {
                 result = { rows: stmt.all(...params) };
                 // ذخیره در کش
-                this.setCached(sql, params, result);
+                this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
             } else {
                 const info = stmt.run(...params);
-                result = {
-                    rows: [],
-                    rowCount: info.changes,
-                    lastID: info.lastInsertRowid,
-                    changes: info.changes
+                result = { 
+                    rows: [], 
+                    rowCount: info.changes, 
+                    lastID: info.lastInsertRowid 
                 };
                 // پاک کردن کش برای تغییرات
                 this.invalidateCache();
             }
-
             return result;
         } catch (error) {
-            console.error('❌ Database query error:', error);
-            console.error('SQL:', sql);
-            console.error('Params:', params);
+            console.error('Database error:', error.message, '\nSQL:', sql);
             throw error;
         }
     }
 
-    // اجرای کوئری با تراکنش
-    transaction(fn) {
-        return this.db.transaction(fn);
+    invalidateCache() {
+        this.cache.clear();
     }
 
-    // اجرای کوئری خام
-    exec(sql) {
-        try {
-            return this.db.exec(sql);
-        } catch (error) {
-            console.error('❌ Database exec error:', error);
-            throw error;
-        }
-    }
-
-    // ============================================================
-    // بخش ۶: ایجاد جداول با ساختار پیشرفته
-    // ============================================================
-
-    initTables() {
+    // ============================================
+    // ایجاد جداول
+    // ============================================
+    async initTables() {
         try {
             this.db.exec(`
                 -- ==========================================
@@ -288,13 +141,13 @@ class DatabaseManager {
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
+                    email TEXT UNIQUE,
+                    password TEXT,
                     avatar TEXT,
                     bio TEXT,
                     score INTEGER DEFAULT 0,
                     role TEXT DEFAULT 'user',
                     is_verified INTEGER DEFAULT 0,
-                    is_banned INTEGER DEFAULT 0,
-                    last_active TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
@@ -317,7 +170,7 @@ class DatabaseManager {
                 );
 
                 -- ==========================================
-                -- جدول پست‌ها با پشتیبانی از ویدیو و آمار
+                -- جدول پست‌ها با پشتیبانی از ویدیو
                 -- ==========================================
                 CREATE TABLE IF NOT EXISTS posts (
                     id TEXT PRIMARY KEY,
@@ -328,8 +181,6 @@ class DatabaseManager {
                     views INTEGER DEFAULT 0,
                     likes INTEGER DEFAULT 0,
                     comments INTEGER DEFAULT 0,
-                    shares INTEGER DEFAULT 0,
-                    saves INTEGER DEFAULT 0,
                     scheduled_time TEXT,
                     is_published INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -338,19 +189,16 @@ class DatabaseManager {
                 );
 
                 -- ==========================================
-                -- جدول آموزش دستیار هوشمند
+                -- جدول آموزش دستیار
                 -- ==========================================
                 CREATE TABLE IF NOT EXISTS assistant_training (
                     id TEXT PRIMARY KEY,
                     user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    type TEXT CHECK (type IN ('qa', 'keyword', 'context')),
+                    type TEXT CHECK (type IN ('qa', 'keyword')),
                     question TEXT,
                     answer TEXT,
                     keyword TEXT,
                     response TEXT,
-                    context TEXT,
-                    weight INTEGER DEFAULT 1,
-                    usage_count INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
@@ -364,7 +212,6 @@ class DatabaseManager {
                     to_user TEXT REFERENCES users(id) ON DELETE CASCADE,
                     message TEXT NOT NULL,
                     is_read INTEGER DEFAULT 0,
-                    is_delivered INTEGER DEFAULT 0,
                     encrypted INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
@@ -397,19 +244,8 @@ class DatabaseManager {
                     post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
                     user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
                     text TEXT NOT NULL,
-                    likes INTEGER DEFAULT 0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول ذخیره‌های پست
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS post_saves (
-                    post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (post_id, user_id)
                 );
 
                 -- ==========================================
@@ -434,35 +270,40 @@ class DatabaseManager {
                     target_id TEXT,
                     target_type TEXT CHECK (target_type IN ('user', 'post', 'comment')),
                     reason TEXT NOT NULL,
-                    details TEXT,
                     status TEXT DEFAULT 'pending',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    resolved_at TEXT,
-                    resolved_by TEXT
+                    resolved_at TEXT
                 );
 
                 -- ==========================================
-                -- جدول فعالیت‌های کاربران
+                -- جدول کاربران مسدود شده موقت
+                -- ==========================================
+                CREATE TABLE IF NOT EXISTS blocked_users (
+                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                    blocked_by TEXT REFERENCES users(id) ON DELETE CASCADE,
+                    reason TEXT,
+                    expires_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, blocked_by)
+                );
+
+                -- ==========================================
+                -- جدول فعالیت‌ها (برای آنالیز)
                 -- ==========================================
                 CREATE TABLE IF NOT EXISTS user_activities (
                     id TEXT PRIMARY KEY,
                     user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    type TEXT CHECK (type IN ('post', 'like', 'comment', 'follow', 'view', 'share', 'save')),
+                    type TEXT CHECK (type IN ('post', 'like', 'comment', 'follow', 'view', 'share')),
                     target_id TEXT,
-                    metadata TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
 
                 -- ==========================================
-                -- جدول تنظیمات کاربران
+                -- جدول تنظیمات سیستم
                 -- ==========================================
-                CREATE TABLE IF NOT EXISTS user_settings (
-                    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                    theme TEXT DEFAULT 'dark',
-                    language TEXT DEFAULT 'fa',
-                    notifications_enabled INTEGER DEFAULT 1,
-                    privacy_level TEXT DEFAULT 'public',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 );
 
@@ -472,32 +313,22 @@ class DatabaseManager {
                 CREATE INDEX IF NOT EXISTS idx_posts_channel ON posts(channel_id);
                 CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(is_published, scheduled_time);
                 CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_posts_likes ON posts(likes DESC);
-                CREATE INDEX IF NOT EXISTS idx_posts_views ON posts(views DESC);
-                
                 CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user);
                 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(to_user, is_read);
-                
                 CREATE INDEX IF NOT EXISTS idx_assistant_user ON assistant_training(user_id);
-                CREATE INDEX IF NOT EXISTS idx_assistant_type ON assistant_training(type);
-                
                 CREATE INDEX IF NOT EXISTS idx_comments_post ON post_comments(post_id);
                 CREATE INDEX IF NOT EXISTS idx_comments_created ON post_comments(created_at DESC);
-                
                 CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id);
                 CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
-                
                 CREATE INDEX IF NOT EXISTS idx_notifications_user ON system_notifications(user_id, is_read);
                 CREATE INDEX IF NOT EXISTS idx_notifications_created ON system_notifications(created_at DESC);
-                
                 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
                 CREATE INDEX IF NOT EXISTS idx_users_score ON users(score DESC);
                 CREATE INDEX IF NOT EXISTS idx_channels_score ON channels(activity_score DESC);
-                CREATE INDEX IF NOT EXISTS idx_channels_followers ON channels(followers_count DESC);
-                
+                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
                 CREATE INDEX IF NOT EXISTS idx_activities_user ON user_activities(user_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_activities_type ON user_activities(type);
+                CREATE INDEX IF NOT EXISTS idx_blocked_expires ON blocked_users(expires_at);
             `);
             
             console.log('✅ All tables created/verified');
@@ -505,654 +336,490 @@ class DatabaseManager {
             // ==========================================
             // ایجاد کاربر ادمین
             // ==========================================
-            this.createAdminUser();
+            const adminCheck = this.db.prepare(`SELECT id FROM users WHERE id = ?`).get(['admin_milad']);
+            
+            if (!adminCheck) {
+                const hashedPass = this.hashPassword('(mortza)#1377[@nik]=admin<');
+                this.db.exec(`
+                    INSERT INTO users (id, name, email, password, avatar, role, is_verified, score, created_at) 
+                    VALUES ('admin_milad', 'مدیر سیستم', 'milad.yari1377m@gmail.com', '${hashedPass}', '/admin-avatar.png', 'admin', 1, 999999, CURRENT_TIMESTAMP);
+                    
+                    INSERT INTO channels (id, user_id, name, boost_level, created_at) 
+                    VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', CURRENT_TIMESTAMP);
+                `);
+                console.log('✅ Admin user created');
+            }
 
             // ==========================================
-            // به‌روزرسانی ساختار (Migration)
+            // به‌روزرسانی ساختار دیتابیس (Migration)
             // ==========================================
             this.runMigrations();
 
         } catch (error) {
-            console.error('❌ Error creating tables:', error);
+            console.error('Error creating tables:', error);
             throw error;
         }
     }
 
-    // ============================================================
-    // بخش ۷: Migration ها
-    // ============================================================
-
+    // ============================================
+    // مهاجرت‌های دیتابیس
+    // ============================================
     runMigrations() {
-        // اضافه کردن ستون‌های جدید
         const migrations = [
-            { sql: `ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0`, name: 'add_is_banned' },
-            { sql: `ALTER TABLE users ADD COLUMN last_active TEXT`, name: 'add_last_active' },
-            { sql: `ALTER TABLE posts ADD COLUMN shares INTEGER DEFAULT 0`, name: 'add_shares' },
-            { sql: `ALTER TABLE posts ADD COLUMN saves INTEGER DEFAULT 0`, name: 'add_saves' },
-            { sql: `ALTER TABLE messages ADD COLUMN is_delivered INTEGER DEFAULT 0`, name: 'add_is_delivered' },
-            { sql: `ALTER TABLE assistant_training ADD COLUMN weight INTEGER DEFAULT 1`, name: 'add_weight' },
-            { sql: `ALTER TABLE assistant_training ADD COLUMN usage_count INTEGER DEFAULT 0`, name: 'add_usage_count' },
-            { sql: `ALTER TABLE post_comments ADD COLUMN likes INTEGER DEFAULT 0`, name: 'add_comment_likes' }
+            { column: 'email', table: 'users', type: 'TEXT UNIQUE' },
+            { column: 'password', table: 'users', type: 'TEXT' },
+            { column: 'bio', table: 'users', type: 'TEXT' },
+            { column: 'encrypted', table: 'messages', type: 'INTEGER DEFAULT 0' },
         ];
 
-        for (const migration of migrations) {
+        for (const mig of migrations) {
             try {
-                this.db.exec(migration.sql);
-                console.log(`✅ Migration: ${migration.name} applied`);
+                this.db.exec(`ALTER TABLE ${mig.table} ADD COLUMN ${mig.column} ${mig.type}`);
+                console.log(`✅ Added ${mig.column} to ${mig.table}`);
             } catch (e) {
                 // ستون قبلاً وجود دارد
             }
         }
     }
 
-    // ============================================================
-    // بخش ۸: ایجاد کاربر ادمین
-    // ============================================================
-
-    createAdminUser() {
-        try {
-            const adminCheck = this.db.prepare(`SELECT id FROM users WHERE id = ?`).get(['admin_milad']);
-            
-            if (!adminCheck) {
-                this.db.exec(`
-                    INSERT INTO users (id, name, avatar, role, is_verified, score, bio, created_at) 
-                    VALUES ('admin_milad', 'مدیر سیستم', '/admin-avatar.png', 'admin', 1, 999999, 'مدیر سیستم پلتفرم یارِ من', CURRENT_TIMESTAMP);
-                    
-                    INSERT INTO channels (id, user_id, name, boost_level, description, created_at) 
-                    VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', 'کانال رسمی مدیریت سیستم', CURRENT_TIMESTAMP);
-                    
-                    INSERT INTO user_settings (user_id, theme, language, notifications_enabled, privacy_level, created_at) 
-                    VALUES ('admin_milad', 'dark', 'fa', 1, 'public', CURRENT_TIMESTAMP);
-                `);
-                console.log('✅ Admin user created');
-            }
-        } catch (error) {
-            console.error('❌ Error creating admin:', error);
-        }
-    }
-
-    // ============================================================
-    // بخش ۹: پشتیبان‌گیری خودکار
-    // ============================================================
-
-    startAutoBackup() {
-        if (this.options.backupInterval > 0) {
-            this.backupInterval = setInterval(() => {
-                this.createBackup();
-            }, this.options.backupInterval);
-        }
-    }
-
-    createBackup() {
-        try {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const backupPath = path.join(__dirname, 'backups', `backup_${timestamp}.sqlite`);
-            
-            // اطمینان از وجود پوشه
-            const backupDir = path.dirname(backupPath);
-            if (!fs.existsSync(backupDir)) {
-                fs.mkdirSync(backupDir, { recursive: true });
-            }
-
-            // ایجاد پشتیبان
-            const backupDb = new Database(backupPath);
-            this.db.backup(backupDb);
-            backupDb.close();
-
-            // فشرده‌سازی پشتیبان
-            const data = fs.readFileSync(backupPath);
-            const compressed = zlib.gzipSync(data);
-            fs.writeFileSync(backupPath + '.gz', compressed);
-            fs.unlinkSync(backupPath);
-
-            // حذف پشتیبان‌های قدیمی (نگهداری ۷ روز اخیر)
-            const files = fs.readdirSync(backupDir);
-            const oldBackups = files
-                .filter(f => f.endsWith('.gz'))
-                .sort()
-                .slice(0, -7);
-            
-            for (const file of oldBackups) {
-                fs.unlinkSync(path.join(backupDir, file));
-            }
-
-            console.log(`✅ Backup created: ${backupPath}.gz`);
-            return backupPath + '.gz';
-        } catch (error) {
-            console.error('❌ Backup error:', error);
-            return null;
-        }
-    }
-
-    // ============================================================
-    // بخش ۱۰: پاکسازی کش خودکار
-    // ============================================================
-
-    startCacheCleanup() {
-        setInterval(() => {
-            const now = Date.now();
-            for (const [key, value] of this.cache) {
-                if (now - value.timestamp > this.options.cacheTTL) {
-                    this.cache.delete(key);
-                    this.cacheStats.evictions++;
-                }
-            }
-        }, this.options.cacheTTL / 2);
-    }
-
-    // ============================================================
-    // بخش ۱۱: متدهای کمکی پیشرفته
-    // ============================================================
-
+    // ============================================
+    // متدهای کمکی
+    // ============================================
     getDb() {
         return this.db;
     }
 
     clearCache() {
         this.cache.clear();
-        this.cacheStats.evictions += this.cache.size;
     }
 
     close() {
-        if (this.backupInterval) {
-            clearInterval(this.backupInterval);
-        }
         this.db.close();
-        this.cache.clear();
     }
 
+    // ============================================
+    // متدهای Transaction
+    // ============================================
+    transaction(fn) {
+        return this.db.transaction(fn);
+    }
+
+    // ============================================
+    // متدهای پشتیبان‌گیری
+    // ============================================
+    backup() {
+        try {
+            const backupPath = path.join(__dirname, `backup_${Date.now()}.sqlite`);
+            const backup = new Database(backupPath);
+            this.db.backup(backup);
+            backup.close();
+            
+            // حذف پشتیبان‌های قدیمی (فقط ۵ عدد آخر)
+            const backups = fs.readdirSync(__dirname)
+                .filter(f => f.startsWith('backup_') && f.endsWith('.sqlite'))
+                .sort()
+                .reverse();
+            
+            for (const file of backups.slice(5)) {
+                fs.unlinkSync(path.join(__dirname, file));
+            }
+            
+            return backupPath;
+        } catch (error) {
+            console.error('Backup error:', error);
+            return null;
+        }
+    }
+
+    // ============================================
+    // پاکسازی دیتابیس
+    // ============================================
+    cleanup() {
+        try {
+            // حذف پیام‌های قدیمی (بیش از ۳ ماه)
+            this.db.prepare(`
+                DELETE FROM messages WHERE created_at < datetime('now', '-3 months')
+            `).run();
+            
+            // حذف نوتیفیکیشن‌های قدیمی (بیش از ۱ ماه)
+            this.db.prepare(`
+                DELETE FROM system_notifications WHERE created_at < datetime('now', '-1 months')
+            `).run();
+            
+            // حذف گزارش‌های حل شده قدیمی (بیش از ۱ ماه)
+            this.db.prepare(`
+                DELETE FROM reports WHERE status = 'resolved' AND created_at < datetime('now', '-1 months')
+            `).run();
+            
+            // حذف مسدودیت‌های منقضی شده
+            this.db.prepare(`
+                DELETE FROM blocked_users WHERE expires_at < datetime('now')
+            `).run();
+            
+            // حذف فعالیت‌های قدیمی (بیش از ۶ ماه)
+            this.db.prepare(`
+                DELETE FROM user_activities WHERE created_at < datetime('now', '-6 months')
+            `).run();
+            
+            console.log('🧹 Database cleanup completed');
+        } catch (error) {
+            console.error('Cleanup error:', error);
+        }
+    }
+
+    // ============================================
+    // Vacuum دیتابیس
+    // ============================================
     vacuum() {
         try {
             this.db.exec('VACUUM');
             console.log('✅ Database vacuum completed');
-            return true;
         } catch (error) {
-            console.error('❌ Vacuum error:', error);
-            return false;
+            console.error('Vacuum error:', error);
         }
     }
 
+    // ============================================
+    // متدهای آماری
+    // ============================================
     getStats() {
+        const stats = {};
+        
         try {
             const tables = this.db.prepare(`
                 SELECT name FROM sqlite_master WHERE type='table'
             `).all();
             
-            const stats = {};
             for (const table of tables) {
                 const count = this.db.prepare(`SELECT COUNT(*) as count FROM ${table.name}`).get();
                 stats[table.name] = count.count;
             }
             
-            return stats;
+            // افزودن اطلاعات حجم
+            const size = fs.statSync(this.dbPath).size;
+            stats.totalSize = size;
+            stats.totalSizeMB = (size / 1024 / 1024).toFixed(2);
+            
         } catch (error) {
             console.error('Stats error:', error);
-            return {};
         }
+        
+        return stats;
     }
 
-    getDatabaseSize() {
+    // ============================================
+    // ثبت فعالیت کاربر
+    // ============================================
+    logActivity(userId, type, targetId = null) {
         try {
-            const stats = fs.statSync(this.dbPath);
-            return {
-                size: stats.size,
-                sizeFormatted: this.formatSize(stats.size)
-            };
+            const id = crypto.randomUUID();
+            this.db.prepare(`
+                INSERT INTO user_activities (id, user_id, type, target_id, created_at) 
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `).run(id, userId, type, targetId);
         } catch (error) {
-            return { size: 0, sizeFormatted: '0 B' };
+            console.error('Log activity error:', error);
         }
     }
 
-    formatSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    // ============================================================
-    // بخش ۱۲: متدهای بازیابی اطلاعات
-    // ============================================================
-
-    // دریافت کاربر با کش
-    getUser(userId) {
-        const result = this.query(userId, `SELECT * FROM users WHERE id = $1`, [userId]);
-        return result.rows.length > 0 ? result.rows[0] : null;
-    }
-
-    // دریافت کانال کاربر
-    getUserChannel(userId) {
-        const result = this.query(userId, `SELECT * FROM channels WHERE user_id = $1`, [userId]);
-        return result.rows.length > 0 ? result.rows[0] : null;
-    }
-
-    // دریافت پست‌های کاربر
-    getUserPosts(userId, limit = 20) {
-        const result = this.query(userId, `
-            SELECT p.*, u.name as user_name, u.avatar as user_avatar
-            FROM posts p
-            JOIN channels c ON p.channel_id = c.id
-            JOIN users u ON c.user_id = u.id
-            WHERE c.user_id = $1 AND p.is_published = 1
-            ORDER BY p.created_at DESC
-            LIMIT $2
-        `, [userId, limit]);
-        return result.rows;
-    }
-
-    // دریافت فالوورهای کاربر
-    getUserFollowers(userId, limit = 20) {
-        const result = this.query(userId, `
-            SELECT u.id, u.name, u.avatar, f.created_at
-            FROM follows f
-            JOIN users u ON u.id = f.follower_id
-            WHERE f.following_id = $1
-            ORDER BY f.created_at DESC
-            LIMIT $2
-        `, [userId, limit]);
-        return result.rows;
-    }
-
-    // دریافت فالوینگ‌های کاربر
-    getUserFollowing(userId, limit = 20) {
-        const result = this.query(userId, `
-            SELECT u.id, u.name, u.avatar, f.created_at
-            FROM follows f
-            JOIN users u ON u.id = f.following_id
-            WHERE f.follower_id = $1
-            ORDER BY f.created_at DESC
-            LIMIT $2
-        `, [userId, limit]);
-        return result.rows;
-    }
-
-    // بررسی فالو
-    isFollowing(followerId, followingId) {
-        const result = this.query(followerId, `
-            SELECT 1 FROM follows WHERE follower_id = $1 AND following_id = $2
-        `, [followerId, followingId]);
-        return result.rows.length > 0;
-    }
-
-    // دریافت تعداد فالوورها
-    getFollowersCount(userId) {
-        const result = this.query(userId, `
-            SELECT COUNT(*) as count FROM follows WHERE following_id = $1
-        `, [userId]);
-        return result.rows[0]?.count || 0;
-    }
-
-    // دریافت تعداد فالوینگ‌ها
-    getFollowingCount(userId) {
-        const result = this.query(userId, `
-            SELECT COUNT(*) as count FROM follows WHERE follower_id = $1
-        `, [userId]);
-        return result.rows[0]?.count || 0;
-    }
-
-    // ============================================================
-    // بخش ۱۳: متدهای مدیریت محتوا
-    // ============================================================
-
-    // دریافت پست با کش
-    getPost(postId, viewerId = null) {
-        const result = this.query(postId, `
-            SELECT 
-                p.*,
-                u.id as user_id,
-                u.name,
-                u.avatar,
-                c.name as channel_name,
-                EXISTS(SELECT 1 FROM post_likes WHERE post_id = p.id AND user_id = $2) as is_liked
-            FROM posts p
-            JOIN channels c ON p.channel_id = c.id
-            JOIN users u ON c.user_id = u.id
-            WHERE p.id = $1
-        `, [postId, viewerId || '']);
-        return result.rows.length > 0 ? result.rows[0] : null;
-    }
-
-    // دریافت کامنت‌های پست
-    getPostComments(postId, limit = 50) {
-        const result = this.query(postId, `
-            SELECT 
-                c.id,
-                c.text,
-                c.created_at,
-                c.likes,
-                u.id as user_id,
-                u.name,
-                u.avatar
-            FROM post_comments c
-            JOIN users u ON u.id = c.user_id
-            WHERE c.post_id = $1
-            ORDER BY c.likes DESC, c.created_at ASC
-            LIMIT $2
-        `, [postId, limit]);
-        return result.rows;
-    }
-
-    // دریافت پست‌های محبوب
-    getTrendingPosts(limit = 20) {
-        const result = this.query(null, `
-            SELECT 
-                p.*,
-                u.id as user_id,
-                u.name,
-                u.avatar,
-                c.name as channel_name,
-                (p.likes * 2 + p.comments * 3 + p.views * 0.5 + p.shares * 4) as score
-            FROM posts p
-            JOIN channels c ON p.channel_id = c.id
-            JOIN users u ON c.user_id = u.id
-            WHERE p.is_published = 1
-                AND p.created_at > datetime('now', '-7 days')
-            ORDER BY score DESC
-            LIMIT $1
-        `, [limit]);
-        return result.rows;
-    }
-
-    // ============================================================
-    // بخش ۱۴: متدهای فعالیت‌ها
-    // ============================================================
-
-    logActivity(userId, type, targetId, metadata = null) {
-        const id = crypto.randomUUID();
-        this.query(userId, `
-            INSERT INTO user_activities (id, user_id, type, target_id, metadata, created_at)
-            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-        `, [id, userId, type, targetId, metadata ? JSON.stringify(metadata) : null]);
-    }
-
-    getUserActivities(userId, limit = 20) {
-        const result = this.query(userId, `
-            SELECT * FROM user_activities
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            LIMIT $2
-        `, [userId, limit]);
-        return result.rows;
-    }
-
-    // ============================================================
-    // بخش ۱۵: متدهای تنظیمات
-    // ============================================================
-
-    getUserSettings(userId) {
-        const result = this.query(userId, `
-            SELECT * FROM user_settings WHERE user_id = $1
-        `, [userId]);
-        if (result.rows.length === 0) {
-            // ایجاد تنظیمات پیش‌فرض
-            this.query(userId, `
-                INSERT INTO user_settings (user_id, theme, language, notifications_enabled, privacy_level, created_at)
-                VALUES ($1, 'dark', 'fa', 1, 'public', CURRENT_TIMESTAMP)
-            `, [userId]);
-            return {
-                user_id: userId,
-                theme: 'dark',
-                language: 'fa',
-                notifications_enabled: 1,
-                privacy_level: 'public'
-            };
-        }
-        return result.rows[0];
-    }
-
-    updateUserSettings(userId, settings) {
-        const fields = [];
-        const values = [];
-        let paramIndex = 1;
-        
-        for (const [key, value] of Object.entries(settings)) {
-            fields.push(`${key} = $${paramIndex}`);
-            values.push(value);
-            paramIndex++;
-        }
-        
-        if (fields.length === 0) return;
-        
-        values.push(userId);
-        this.query(userId, `
-            UPDATE user_settings SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = $${paramIndex}
-        `, values);
-    }
-
-    // ============================================================
-    // بخش ۱۶: متدهای جستجوی پیشرفته
-    // ============================================================
-
-    searchUsers(query, limit = 20) {
-        const searchTerm = `%${query.trim()}%`;
-        const result = this.query(null, `
-            SELECT id, name, avatar, score, is_verified
-            FROM users
-            WHERE name LIKE $1
-                AND id != 'admin_milad'
-                AND is_banned = 0
-            ORDER BY 
-                CASE 
-                    WHEN name LIKE $2 THEN 1
-                    WHEN name LIKE $3 THEN 2
-                    ELSE 3
-                END,
-                score DESC
-            LIMIT $4
-        `, [
-            searchTerm,
-            query.trim() + '%',
-            '%' + query.trim() + '%',
-            limit
-        ]);
-        return result.rows;
-    }
-
-    searchPosts(query, limit = 20) {
-        const searchTerm = `%${query.trim()}%`;
-        const result = this.query(null, `
-            SELECT 
-                p.*,
-                u.id as user_id,
-                u.name as user_name,
-                u.avatar as user_avatar,
-                c.name as channel_name
-            FROM posts p
-            JOIN channels c ON p.channel_id = c.id
-            JOIN users u ON c.user_id = u.id
-            WHERE p.content LIKE $1
-                AND p.is_published = 1
-            ORDER BY 
-                p.likes DESC,
-                p.created_at DESC
-            LIMIT $2
-        `, [searchTerm, limit]);
-        return result.rows;
-    }
-
-    // ============================================================
-    // بخش ۱۷: متدهای آماری
-    // ============================================================
-
-    getPlatformStats() {
+    // ============================================
+    // دریافت فعالیت‌های کاربر
+    // ============================================
+    getUserActivities(userId, limit = 50) {
         try {
-            const users = this.db.prepare(`SELECT COUNT(*) as count FROM users`).get();
-            const posts = this.db.prepare(`SELECT COUNT(*) as count FROM posts WHERE is_published = 1`).get();
-            const channels = this.db.prepare(`SELECT COUNT(*) as count FROM channels`).get();
-            const messages = this.db.prepare(`SELECT COUNT(*) as count FROM messages`).get();
-            const follows = this.db.prepare(`SELECT COUNT(*) as count FROM follows`).get();
-            const likes = this.db.prepare(`SELECT COUNT(*) as count FROM post_likes`).get();
-            const comments = this.db.prepare(`SELECT COUNT(*) as count FROM post_comments`).get();
-            
-            // کاربران فعال امروز
-            const todayActive = this.db.prepare(`
-                SELECT COUNT(DISTINCT user_id) as count 
-                FROM posts 
-                WHERE DATE(created_at) = DATE('now')
-            `).get();
-
-            // پست‌های امروز
-            const todayPosts = this.db.prepare(`
-                SELECT COUNT(*) as count 
-                FROM posts 
-                WHERE DATE(created_at) = DATE('now') AND is_published = 1
-            `).get();
-
-            return {
-                users: users.count || 0,
-                posts: posts.count || 0,
-                channels: channels.count || 0,
-                messages: messages.count || 0,
-                follows: follows.count || 0,
-                likes: likes.count || 0,
-                comments: comments.count || 0,
-                todayActive: todayActive.count || 0,
-                todayPosts: todayPosts.count || 0,
-                timestamp: Date.now()
-            };
+            return this.db.prepare(`
+                SELECT * FROM user_activities 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC LIMIT ?
+            `).all(userId, limit);
         } catch (error) {
-            console.error('Stats error:', error);
-            return {};
+            console.error('Get activities error:', error);
+            return [];
         }
     }
 
-    // ============================================================
-    // بخش ۱۸: متدهای نگهداری و بهینه‌سازی
-    // ============================================================
-
-    optimize() {
+    // ============================================
+    // دریافت تنظیمات سیستم
+    // ============================================
+    getSetting(key, defaultValue = null) {
         try {
-            console.log('🔄 Optimizing database...');
-            
-            // Vacuum
-            this.db.exec('VACUUM');
-            
-            // Reindex
-            this.db.exec('REINDEX');
-            
-            // Analyze
-            this.db.exec('ANALYZE');
-            
-            console.log('✅ Database optimization completed');
+            const result = this.db.prepare(`
+                SELECT value FROM system_settings WHERE key = ?
+            `).get(key);
+            return result ? result.value : defaultValue;
+        } catch (error) {
+            console.error('Get setting error:', error);
+            return defaultValue;
+        }
+    }
+
+    // ============================================
+    // تنظیم تنظیمات سیستم
+    // ============================================
+    setSetting(key, value) {
+        try {
+            this.db.prepare(`
+                INSERT OR REPLACE INTO system_settings (key, value, updated_at) 
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            `).run(key, value);
             return true;
         } catch (error) {
-            console.error('❌ Optimization error:', error);
+            console.error('Set setting error:', error);
             return false;
         }
     }
 
-    checkIntegrity() {
+    // ============================================
+    // بررسی وضعیت کاربر (مسدود/تایید شده)
+    // ============================================
+    getUserStatus(userId) {
         try {
-            const result = this.db.prepare('PRAGMA integrity_check').get();
-            return result.integrity_check === 'ok';
+            const user = this.db.prepare(`
+                SELECT id, role, is_verified FROM users WHERE id = ?
+            `).get(userId);
+            
+            if (!user) return null;
+            
+            const blocked = this.db.prepare(`
+                SELECT 1 FROM blocked_users 
+                WHERE user_id = ? AND expires_at > datetime('now')
+            `).get(userId);
+            
+            return {
+                ...user,
+                isBlocked: !!blocked,
+                isAdmin: user.role === 'admin',
+                isBanned: user.role === 'banned'
+            };
         } catch (error) {
-            console.error('Integrity check error:', error);
+            console.error('Get user status error:', error);
+            return null;
+        }
+    }
+
+    // ============================================
+    // دریافت آمار کانال
+    // ============================================
+    getChannelStats(userId) {
+        try {
+            return this.db.prepare(`
+                SELECT 
+                    c.*,
+                    (SELECT COUNT(*) FROM posts WHERE channel_id = c.id AND is_published = 1) as total_posts,
+                    (SELECT COUNT(*) FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE channel_id = c.id)) as total_likes,
+                    (SELECT COUNT(*) FROM post_comments WHERE post_id IN (SELECT id FROM posts WHERE channel_id = c.id)) as total_comments,
+                    (SELECT COUNT(*) FROM follows WHERE following_id = c.user_id) as total_followers
+                FROM channels c
+                WHERE c.user_id = ?
+            `).get(userId);
+        } catch (error) {
+            console.error('Get channel stats error:', error);
+            return null;
+        }
+    }
+
+    // ============================================
+    // جستجوی پیشرفته
+    // ============================================
+    advancedSearch(query, type = 'all', limit = 20) {
+        try {
+            const searchQuery = `%${query}%`;
+            let results = [];
+            
+            if (type === 'all' || type === 'users') {
+                const users = this.db.prepare(`
+                    SELECT id, name, avatar, 'user' as type, is_verified, score
+                    FROM users 
+                    WHERE name LIKE ? AND role != 'admin' AND role != 'banned'
+                    ORDER BY score DESC
+                    LIMIT ?
+                `).all(searchQuery, limit);
+                results = results.concat(users);
+            }
+            
+            if (type === 'all' || type === 'posts') {
+                const posts = this.db.prepare(`
+                    SELECT p.id, p.content, p.created_at, 'post' as type,
+                           u.name as user_name, u.avatar as user_avatar,
+                           c.name as channel_name
+                    FROM posts p
+                    JOIN channels c ON p.channel_id = c.id
+                    JOIN users u ON c.user_id = u.id
+                    WHERE p.content LIKE ? AND p.is_published = 1
+                    ORDER BY p.created_at DESC
+                    LIMIT ?
+                `).all(searchQuery, limit);
+                results = results.concat(posts);
+            }
+            
+            if (type === 'all' || type === 'channels') {
+                const channels = this.db.prepare(`
+                    SELECT c.id, c.name, 'channel' as type, c.followers_count, c.boost_level,
+                           u.name as user_name, u.avatar as user_avatar
+                    FROM channels c
+                    JOIN users u ON c.user_id = u.id
+                    WHERE c.name LIKE ?
+                    ORDER BY c.followers_count DESC
+                    LIMIT ?
+                `).all(searchQuery, limit);
+                results = results.concat(channels);
+            }
+            
+            return results;
+        } catch (error) {
+            console.error('Advanced search error:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // دریافت پست‌های پرطرفدار
+    // ============================================
+    getTrendingPosts(limit = 20) {
+        try {
+            return this.db.prepare(`
+                SELECT 
+                    p.*,
+                    u.name as user_name,
+                    u.avatar as user_avatar,
+                    (p.likes + p.comments * 2 + p.views * 0.1) as engagement_score
+                FROM posts p
+                JOIN channels c ON p.channel_id = c.id
+                JOIN users u ON c.user_id = u.id
+                WHERE p.is_published = 1
+                AND p.created_at > datetime('now', '-7 days')
+                ORDER BY engagement_score DESC, p.created_at DESC
+                LIMIT ?
+            `).all(limit);
+        } catch (error) {
+            console.error('Get trending posts error:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // دریافت کاربران برتر
+    // ============================================
+    getTopUsers(limit = 20) {
+        try {
+            return this.db.prepare(`
+                SELECT 
+                    u.id, u.name, u.avatar, u.score, u.is_verified,
+                    c.followers_count, c.posts_count, c.boost_level,
+                    (u.score + c.followers_count * 2 + c.posts_count * 3) as total_score
+                FROM users u
+                JOIN channels c ON u.id = c.user_id
+                WHERE u.role != 'admin' AND u.role != 'banned'
+                ORDER BY total_score DESC
+                LIMIT ?
+            `).all(limit);
+        } catch (error) {
+            console.error('Get top users error:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // دریافت نوتیفیکیشن‌های کاربر
+    // ============================================
+    getUserNotifications(userId, limit = 50) {
+        try {
+            return this.db.prepare(`
+                SELECT * FROM system_notifications 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            `).all(userId, limit);
+        } catch (error) {
+            console.error('Get notifications error:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // علامت‌گذاری نوتیفیکیشن به عنوان خوانده شده
+    // ============================================
+    markNotificationRead(notificationId) {
+        try {
+            this.db.prepare(`
+                UPDATE system_notifications SET is_read = 1 
+                WHERE id = ?
+            `).run(notificationId);
+            return true;
+        } catch (error) {
+            console.error('Mark notification read error:', error);
             return false;
         }
     }
 
-    // ============================================================
-    // بخش ۱۹: مدیریت خطاها
-    // ============================================================
-
-    handleError(error, context = '') {
-        console.error(`❌ Database error${context ? ' (' + context + ')' : ''}:`, error);
-        
-        // Log to file
+    // ============================================
+    // دریافت آمار تعاملات
+    // ============================================
+    getEngagementStats(userId) {
         try {
-            const logPath = path.join(__dirname, 'logs', 'db_errors.log');
-            const logDir = path.dirname(logPath);
-            if (!fs.existsSync(logDir)) {
-                fs.mkdirSync(logDir, { recursive: true });
-            }
-            fs.appendFileSync(logPath, 
-                `[${new Date().toISOString()}] ${context}: ${error.message}\n${error.stack}\n\n`
-            );
-        } catch (e) {
-            console.error('Could not write error log:', e);
-        }
-        
-        // بازسازی اتصال در صورت قطع شدن
-        if (error.code === 'SQLITE_BUSY' || error.code === 'SQLITE_LOCKED') {
-            console.log('🔄 Database busy, retrying...');
-            setTimeout(() => {
-                this.connect();
-            }, 1000);
-        }
-        
-        throw error;
-    }
-
-    // ============================================================
-    // بخش ۲۰: متدهای ابزاری
-    // ============================================================
-
-    // تبدیل به JSON ایمن
-    toJSON(data) {
-        try {
-            return JSON.stringify(data);
+            const stats = this.db.prepare(`
+                SELECT 
+                    (SELECT COUNT(*) FROM posts WHERE channel_id IN (SELECT id FROM channels WHERE user_id = ?) AND is_published = 1) as total_posts,
+                    (SELECT COUNT(*) FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE channel_id IN (SELECT id FROM channels WHERE user_id = ?))) as total_likes,
+                    (SELECT COUNT(*) FROM post_comments WHERE post_id IN (SELECT id FROM posts WHERE channel_id IN (SELECT id FROM channels WHERE user_id = ?))) as total_comments,
+                    (SELECT COUNT(*) FROM follows WHERE following_id = ?) as total_followers
+            `).get(userId, userId, userId, userId);
+            
+            const totalEngagement = (stats.total_likes || 0) + (stats.total_comments || 0) * 2;
+            const engagementRate = stats.total_posts > 0 ? 
+                (totalEngagement / stats.total_posts).toFixed(2) : 0;
+            
+            return {
+                ...stats,
+                totalEngagement,
+                engagementRate: parseFloat(engagementRate)
+            };
         } catch (error) {
+            console.error('Get engagement stats error:', error);
             return null;
         }
     }
 
-    // تبدیل از JSON
-    fromJSON(json) {
+    // ============================================
+    // پشتیبانی از Full-Text Search
+    // ============================================
+    enableFullTextSearch() {
         try {
-            return JSON.parse(json);
-        } catch (error) {
-            return null;
-        }
-    }
-
-    // تولید ID یکتا
-    generateId() {
-        return crypto.randomUUID();
-    }
-
-    // تولید ID کوتاه
-    generateShortId(length = 8) {
-        return crypto.randomBytes(Math.ceil(length / 2))
-            .toString('hex')
-            .substring(0, length);
-    }
-
-    // هش کردن
-    hash(text) {
-        return crypto.createHash('sha256')
-            .update(text + process.env.HASH_SALT || 'yareman_salt')
-            .digest('hex');
-    }
-
-    // ============================================================
-    // بخش ۲۱: تخریب و پاکسازی
-    // ============================================================
-
-    destroy() {
-        try {
-            this.close();
+            // ایجاد جدول FTS برای جستجوی سریع
+            this.db.exec(`
+                CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
+                    content,
+                    content=posts,
+                    content_rowid=rowid
+                );
+                
+                INSERT OR REPLACE INTO posts_fts(rowid, content)
+                SELECT rowid, content FROM posts WHERE is_published = 1;
+            `);
             
-            // حذف فایل‌های موقت
-            const tempDir = path.join(__dirname, 'temp');
-            if (fs.existsSync(tempDir)) {
-                fs.rmSync(tempDir, { recursive: true, force: true });
-            }
+            // تریگر برای به‌روزرسانی خودکار
+            this.db.exec(`
+                CREATE TRIGGER IF NOT EXISTS posts_fts_insert AFTER INSERT ON posts
+                BEGIN
+                    INSERT INTO posts_fts(rowid, content) VALUES (new.rowid, new.content);
+                END;
+                
+                CREATE TRIGGER IF NOT EXISTS posts_fts_update AFTER UPDATE ON posts
+                BEGIN
+                    UPDATE posts_fts SET content = new.content WHERE rowid = new.rowid;
+                END;
+                
+                CREATE TRIGGER IF NOT EXISTS posts_fts_delete AFTER DELETE ON posts
+                BEGIN
+                    DELETE FROM posts_fts WHERE rowid = old.rowid;
+                END;
+            `);
             
-            console.log('✅ Database manager destroyed');
+            console.log('✅ Full-Text Search enabled');
         } catch (error) {
-            console.error('❌ Destroy error:', error);
+            console.error('FTS error:', error);
         }
     }
 }
 
-// ============================================================
-// بخش ۲۲: صادرات
-// ============================================================
-
 module.exports = DatabaseManager;
-
-// ============================================================
-// پایان فایل database.js
-// ============================================================

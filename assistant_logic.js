@@ -1,340 +1,242 @@
-// ============================================================
-// assistant.js - نسخه کامل با ۱۰۰۰۰+ خط
-// دستیار هوشمند پیشرفته با ML ساده و پاسخ‌دهی خودکار
-// ============================================================
-
-// ============================================================
-// بخش ۱: وابستگی‌ها و تنظیمات اولیه
-// ============================================================
+// ============================================
+// assistant_logic.js - دستیار هوشمند پیشرفته با الگوریتم‌های AI
+// ============================================
 
 const crypto = require('crypto');
 
 class IntelligentAssistant {
-    constructor(userId, db, options = {}) {
+    constructor(userId, db) {
         this.userId = userId;
         this.db = db;
-        this.options = {
-            autoReplyEnabled: true,
-            maxTrainingData: 1000,
-            cacheTTL: 30000,
-            maxKeywords: 100,
-            maxQA: 100,
-            ...options
-        };
-        
         this.trainingData = null;
-        this.cache = new Map();
+        this.autoReplyEnabled = true;
         this.scheduleJobs = new Map();
-        this.stats = {
-            totalQueries: 0,
-            autoReplies: 0,
-            keywordMatches: 0,
-            qaMatches: 0,
-            noMatches: 0
-        };
-        
-        this.loadTrainingData();
+        this.cache = new Map();
+        this.cacheTTL = 30000;
+        this.contextMemory = new Map(); // حافظه مکالمه
+        this.learningRate = 0.85;
+        this.confidenceThreshold = 0.6;
     }
 
-    // ============================================================
-    // بخش ۲: بارگذاری داده‌های آموزشی با کش
-    // ============================================================
-
-    loadTrainingData() {
-        try {
-            const cacheKey = `training_${this.userId}`;
-            const cached = this.cache.get(cacheKey);
-            
-            if (cached && (Date.now() - cached.timestamp) < this.options.cacheTTL) {
-                this.trainingData = cached.data;
-                return this.trainingData;
-            }
-
-            const result = this.db.query(this.userId, `
-                SELECT 
-                    id,
-                    type,
-                    question,
-                    answer,
-                    keyword,
-                    response,
-                    context,
-                    weight,
-                    usage_count
-                FROM assistant_training 
-                WHERE user_id = $1
-                ORDER BY 
-                    weight DESC,
-                    usage_count DESC,
-                    created_at DESC
-            `, [this.userId]);
-
-            this.trainingData = result.rows || [];
-            this.cache.set(cacheKey, {
-                data: this.trainingData,
-                timestamp: Date.now()
-            });
-            
+    // ============================================
+    // بارگذاری داده‌های آموزشی با کش
+    // ============================================
+    async loadTrainingData() {
+        const cacheKey = `training_${this.userId}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+            this.trainingData = cached.data;
             return this.trainingData;
-        } catch (error) {
-            console.error('Load training data error:', error);
-            this.trainingData = [];
-            return [];
         }
+
+        const result = await this.db.query(this.userId, `
+            SELECT * FROM assistant_training 
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+        `, [this.userId]);
+
+        this.trainingData = result.rows;
+        this.cache.set(cacheKey, { data: this.trainingData, timestamp: Date.now() });
+        return this.trainingData;
     }
 
-    // ============================================================
-    // بخش ۳: پاسخ‌دهی خودکار پیشرفته
-    // ============================================================
-
+    // ============================================
+    // پاسخ‌دهی خودکار با هوش مصنوعی
+    // ============================================
     async autoReply(message) {
-        if (!this.options.autoReplyEnabled) return null;
-        if (!message || !message.trim()) return null;
-        
-        this.stats.totalQueries++;
-        const cleanMsg = message.trim().toLowerCase();
-        
-        // ۱. بررسی کلمات کلیدی با اولویت
-        const keywordMatch = this.matchKeyword(cleanMsg);
-        if (keywordMatch) {
-            this.stats.keywordMatches++;
-            this.stats.autoReplies++;
-            this.updateUsage(keywordMatch.id);
-            return keywordMatch.response;
-        }
+        if (!this.autoReplyEnabled) return null;
+        await this.loadTrainingData();
 
-        // ۲. بررسی سوالات مشابه با الگوریتم تطابق پیشرفته
-        const qaMatch = this.matchQA(cleanMsg);
-        if (qaMatch) {
-            this.stats.qaMatches++;
-            this.stats.autoReplies++;
-            this.updateUsage(qaMatch.id);
-            return qaMatch.answer;
-        }
+        const cleanMsg = (message || '').trim();
+        if (!cleanMsg) return null;
 
-        // ۳. بررسی کلمات کلیدی با تطابق نسبی
-        const fuzzyMatch = this.fuzzyMatch(cleanMsg);
-        if (fuzzyMatch) {
-            this.stats.keywordMatches++;
-            this.stats.autoReplies++;
-            this.updateUsage(fuzzyMatch.id);
-            return fuzzyMatch.response;
-        }
-
-        this.stats.noMatches++;
-        return null;
-    }
-
-    // ============================================================
-    // بخش ۴: تطابق کلمات کلیدی
-    // ============================================================
-
-    matchKeyword(message) {
-        const keywords = this.trainingData.filter(t => t.type === 'keyword' && t.keyword);
-        
-        // مرتب‌سازی بر اساس وزن
-        keywords.sort((a, b) => (b.weight || 1) - (a.weight || 1));
-        
+        // 1. بررسی کلمات کلیدی (دقیق)
+        const keywords = this.trainingData.filter(t => t.type === 'keyword');
         for (const kw of keywords) {
-            if (!kw.keyword) continue;
-            const keywordLower = kw.keyword.toLowerCase();
-            
-            // تطابق کامل
-            if (message === keywordLower) {
-                return kw;
-            }
-            
-            // تطابق شامل
-            if (message.includes(keywordLower) || keywordLower.includes(message)) {
-                return kw;
-            }
-            
-            // تطابق کلمه به کلمه
-            const words = message.split(' ');
-            for (const word of words) {
-                if (word.length < 3) continue;
-                if (keywordLower.includes(word) || word.includes(keywordLower)) {
-                    return kw;
-                }
+            if (kw.keyword && cleanMsg.toLowerCase().includes(kw.keyword.toLowerCase())) {
+                return this.formatResponse(kw.response, 'keyword');
             }
         }
-        
-        return null;
-    }
 
-    // ============================================================
-    // بخش ۵: تطابق سوالات (QA)
-    // ============================================================
-
-    matchQA(message) {
-        const qaList = this.trainingData.filter(t => t.type === 'qa' && t.question);
-        
-        // مرتب‌سازی بر اساس وزن
-        qaList.sort((a, b) => (b.weight || 1) - (a.weight || 1));
-        
-        for (const qa of qaList) {
-            if (!qa.question) continue;
-            const questionLower = qa.question.toLowerCase();
+        // 2. بررسی سوالات (تطابق دقیق)
+        const qa = this.trainingData.filter(t => t.type === 'qa');
+        for (const q of qa) {
+            if (!q.question) continue;
+            const questionLower = q.question.toLowerCase();
+            const msgLower = cleanMsg.toLowerCase();
             
             // تطابق کامل
-            if (message === questionLower) {
-                return qa;
+            if (msgLower === questionLower) {
+                return this.formatResponse(q.answer, 'qa');
             }
             
-            // تطابق شامل
-            if (message.includes(questionLower) || questionLower.includes(message)) {
-                return qa;
-            }
-            
-            // تطابق با حذف کلمات اضافی
-            const msgWords = message.split(' ');
+            // تطابق جزئی (حداقل 70% کلمات)
             const qWords = questionLower.split(' ');
-            const commonWords = msgWords.filter(w => qWords.includes(w));
+            const mWords = msgLower.split(' ');
+            const matchCount = qWords.filter(w => mWords.includes(w)).length;
+            const matchPercent = matchCount / qWords.length;
             
-            if (commonWords.length >= Math.min(msgWords.length, qWords.length) * 0.5) {
-                return qa;
+            if (matchPercent >= 0.7) {
+                return this.formatResponse(q.answer, 'qa');
             }
         }
-        
-        return null;
-    }
 
-    // ============================================================
-    // بخش ۶: تطابق فازی (Fuzzy Match)
-    // ============================================================
-
-    fuzzyMatch(message) {
-        const keywords = this.trainingData.filter(t => t.type === 'keyword' && t.keyword);
-        const words = message.split(' ');
-        
-        let bestMatch = null;
-        let bestScore = 0;
-        
+        // 3. بررسی کلمات کلیدی با تطابق جزئی
         for (const kw of keywords) {
             if (!kw.keyword) continue;
-            const keywordLower = kw.keyword.toLowerCase();
+            const kwLower = kw.keyword.toLowerCase();
+            const msgLower = cleanMsg.toLowerCase();
             
-            // محاسبه امتیاز تطابق
-            let score = 0;
-            for (const word of words) {
-                if (word.length < 2) continue;
-                if (keywordLower.includes(word) || word.includes(keywordLower)) {
-                    score += word.length / keywordLower.length;
-                }
+            // اگر کلمه کلیدی در پیام وجود دارد
+            if (msgLower.includes(kwLower) || kwLower.includes(msgLower)) {
+                return this.formatResponse(kw.response, 'keyword');
             }
             
-            if (score > bestScore) {
-                bestScore = score;
-                bestMatch = kw;
+            // بررسی کلمات جداگانه
+            const kwWords = kwLower.split(' ');
+            const msgWords = msgLower.split(' ');
+            const matchCount = kwWords.filter(w => msgWords.includes(w)).length;
+            
+            if (kwWords.length > 1 && matchCount / kwWords.length >= 0.5) {
+                return this.formatResponse(kw.response, 'keyword');
             }
         }
+
+        // 4. حافظه مکالمه (Context Memory)
+        const context = this.contextMemory.get(this.userId) || [];
+        if (context.length > 0) {
+            const lastContext = context[context.length - 1];
+            for (const q of qa) {
+                if (!q.question) continue;
+                if (lastContext.includes(q.question.toLowerCase().split(' ').slice(0, 3).join(' '))) {
+                    return this.formatResponse(q.answer, 'context');
+                }
+            }
+        }
+
+        // 5. پاسخ‌های هوشمند (بر اساس دسته‌بندی)
+        const categoryResponse = this.getCategoryResponse(cleanMsg);
+        if (categoryResponse) {
+            return this.formatResponse(categoryResponse, 'category');
+        }
+
+        return null;
+    }
+
+    // ============================================
+    // دسته‌بندی پیام‌ها برای پاسخ‌های هوشمند
+    // ============================================
+    getCategoryResponse(message) {
+        const msg = message.toLowerCase();
         
-        // آستانه تطابق: حداقل ۳۰٪
-        if (bestScore > 0.3) {
-            return bestMatch;
+        // احوالپرسی
+        if (this.matchAny(msg, ['سلام', 'درود', 'هی', 'سلامت', 'چطوری', 'چه خبر', 'خوبی'])) {
+            return this.getRandomResponse([
+                'سلام! چطور می‌توانم کمک کنم؟',
+                'درود بر شما! چه سوالی دارید؟',
+                'سلام وقت بخیر! در خدمت شما هستم'
+            ]);
+        }
+        
+        // خداحافظی
+        if (this.matchAny(msg, ['خداحافظ', 'بای', 'فعلا', 'بعدا', 'خدا نگهدار'])) {
+            return this.getRandomResponse([
+                'خداحافظ! موفق باشید',
+                'به امید دیدار مجدد',
+                'موفق باشید!'
+            ]);
+        }
+        
+        // تشکر
+        if (this.matchAny(msg, ['مرسی', 'ممنون', 'سپاس', 'متشکرم', 'دمت گرم'])) {
+            return this.getRandomResponse([
+                'خواهش می‌کنم! خوشحالم که کمک کردم',
+                'قابل شما را نداشت',
+                'خوشحالم که مفید بودم'
+            ]);
+        }
+        
+        // سوالات عمومی
+        if (this.matchAny(msg, ['کی هستی', 'تو کی هستی', 'دستیار', 'چیستی'])) {
+            return 'من دستیار هوشمند یارِ من هستم! برای کمک به شما طراحی شده‌ام. می‌توانم به سوالات شما پاسخ دهم و اطلاعات مفید ارائه کنم.';
+        }
+        
+        if (this.matchAny(msg, ['چیکار میکنی', 'چه کاری انجام میدی', 'کارت چیه'])) {
+            return 'من به کاربران کمک می‌کنم! می‌توانم به سوالات پاسخ دهم، اطلاعات ارائه کنم، پست‌ها را زمان‌بندی کنم و در تعاملات اجتماعی کمک کنم.';
         }
         
         return null;
     }
 
-    // ============================================================
-    // بخش ۷: به‌روزرسانی آمار استفاده
-    // ============================================================
-
-    updateUsage(trainingId) {
-        try {
-            this.db.query(this.userId, `
-                UPDATE assistant_training 
-                SET 
-                    usage_count = usage_count + 1,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = $1 AND user_id = $2
-            `, [trainingId, this.userId]);
-            
-            // به‌روزرسانی کش
-            this.cache.delete(`training_${this.userId}`);
-        } catch (error) {
-            console.error('Update usage error:', error);
-        }
+    // ============================================
+    // توابع کمکی برای دسته‌بندی
+    // ============================================
+    matchAny(text, patterns) {
+        return patterns.some(p => text.includes(p));
     }
 
-    // ============================================================
-    // بخش ۸: مدیریت زمان‌بندی پست‌ها
-    // ============================================================
-
-    async schedulePosts(postsData) {
-        try {
-            const channel = await this.db.query(this.userId, `
-                SELECT id FROM channels WHERE user_id = $1
-            `, [this.userId]);
-
-            if (channel.rows.length === 0) {
-                throw new Error('کانالی برای این کاربر وجود ندارد');
-            }
-
-            const channelId = channel.rows[0].id;
-            const scheduled = [];
-
-            for (const post of postsData) {
-                const id = crypto.randomUUID();
-                const mediaType = this.detectMediaType(post.mediaUrl);
-                const scheduledTime = post.scheduledTime || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-                await this.db.query(this.userId, `
-                    INSERT INTO posts (
-                        id, 
-                        channel_id, 
-                        content, 
-                        media_url, 
-                        media_type, 
-                        scheduled_time, 
-                        is_published, 
-                        created_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, 0, CURRENT_TIMESTAMP)
-                `, [
-                    id, 
-                    channelId, 
-                    post.content, 
-                    post.mediaUrl || null, 
-                    mediaType, 
-                    scheduledTime
-                ]);
-
-                scheduled.push({
-                    id,
-                    mediaType,
-                    scheduledTime,
-                    content: post.content
-                });
-            }
-
-            // تنظیم زمان‌بندی
-            this.setupScheduler(channelId, scheduled);
-
-            return scheduled;
-        } catch (error) {
-            console.error('Schedule posts error:', error);
-            throw error;
-        }
+    getRandomResponse(responses) {
+        return responses[Math.floor(Math.random() * responses.length)];
     }
 
-    detectMediaType(url) {
-        if (!url) return 'none';
-        const videoExts = ['.mp4', '.webm', '.ogv', '.mov', '.avi'];
-        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
-        const audioExts = ['.mp3', '.wav', '.ogg', '.m4a', '.aac'];
+    // ============================================
+    // فرمت کردن پاسخ
+    // ============================================
+    formatResponse(response, source) {
+        // اضافه کردن اعتماد به پاسخ
+        let confidence = 0.7;
+        if (source === 'keyword') confidence = 0.9;
+        if (source === 'qa') confidence = 0.85;
+        if (source === 'context') confidence = 0.75;
+        if (source === 'category') confidence = 0.6;
         
-        const lower = url.toLowerCase();
-        if (videoExts.some(ext => lower.includes(ext))) return 'video';
-        if (imageExts.some(ext => lower.includes(ext))) return 'image';
-        if (audioExts.some(ext => lower.includes(ext))) return 'audio';
-        return 'none';
+        return {
+            text: response,
+            source: source,
+            confidence: confidence,
+            timestamp: new Date().toISOString()
+        };
     }
 
-    setupScheduler(channelId, posts) {
-        // پاک کردن زمان‌بندی‌های قبلی
-        this.clearSchedules();
+    // ============================================
+    // زمان‌بندی پست‌ها
+    // ============================================
+    async schedulePosts(postsData) {
+        const channel = await this.db.query(this.userId, `
+            SELECT id FROM channels WHERE user_id = $1
+        `, [this.userId]);
 
+        if (channel.rows.length === 0) {
+            throw new Error('کانالی برای این کاربر وجود ندارد');
+        }
+
+        const channelId = channel.rows[0].id;
+        const scheduled = [];
+
+        for (const post of postsData) {
+            const id = crypto.randomUUID();
+            const mediaType = post.mediaUrl ? 
+                (post.mediaUrl.match(/\.(mp4|webm|ogg|mov|avi)$/i) ? 'video' : 
+                 post.mediaUrl.match(/\.(mp3|wav|ogg|m4a)$/i) ? 'audio' : 'image') : 'none';
+
+            await this.db.query(this.userId, `
+                INSERT INTO posts (id, channel_id, content, media_url, media_type, scheduled_time, is_published, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, 0, CURRENT_TIMESTAMP)
+            `, [id, channelId, post.content, post.mediaUrl || null, mediaType, post.scheduledTime]);
+
+            scheduled.push({ id, mediaType, scheduledTime: post.scheduledTime });
+        }
+
+        // تنظیم زمان‌بندی برای ارسال خودکار
+        this.setupScheduler(channelId, scheduled);
+
+        return scheduled;
+    }
+
+    // ============================================
+    // تنظیم زمان‌بندی ارسال خودکار
+    // ============================================
+    setupScheduler(channelId, posts) {
         for (const post of posts) {
             const scheduleTime = new Date(post.scheduledTime).getTime();
             const now = Date.now();
@@ -349,27 +251,23 @@ class IntelligentAssistant {
         }
     }
 
+    // ============================================
+    // انتشار یک پست زمان‌بندی شده
+    // ============================================
     async publishSinglePost(postId) {
         try {
-            // انتشار پست
             await this.db.query(this.userId, `
-                UPDATE posts 
-                SET 
-                    is_published = 1, 
-                    published_at = CURRENT_TIMESTAMP, 
-                    updated_at = CURRENT_TIMESTAMP
+                UPDATE posts SET is_published = 1, published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [postId]);
 
-            // به‌روزرسانی تعداد پست‌های کانال
             const post = await this.db.query(this.userId, `
                 SELECT channel_id FROM posts WHERE id = $1
             `, [postId]);
 
             if (post.rows.length > 0) {
                 await this.db.query(this.userId, `
-                    UPDATE channels 
-                    SET posts_count = posts_count + 1, updated_at = CURRENT_TIMESTAMP
+                    UPDATE channels SET posts_count = posts_count + 1, updated_at = CURRENT_TIMESTAMP
                     WHERE id = $1
                 `, [post.rows[0].channel_id]);
                 
@@ -380,13 +278,14 @@ class IntelligentAssistant {
 
             this.scheduleJobs.delete(postId);
             this.cache.clear();
-            
-            console.log(`✅ Scheduled post ${postId} published`);
         } catch (error) {
-            console.error('Publish scheduled post error:', error);
+            console.error('Error publishing scheduled post:', error);
         }
     }
 
+    // ============================================
+    // انتشار پست‌های زمان‌بندی شده (فراخوانی دوره‌ای)
+    // ============================================
     async publishScheduledPosts() {
         const now = new Date().toISOString();
         const result = await this.db.query(this.userId, `
@@ -407,6 +306,390 @@ class IntelligentAssistant {
         return published;
     }
 
+    // ============================================
+    // به‌روزرسانی فعالیت کاربر
+    // ============================================
+    async updateUserActivity(type) {
+        const scoreMap = { 
+            post: 20, 
+            like: 2, 
+            comment: 5, 
+            follow: 15, 
+            train: 10,
+            view: 1,
+            share: 8,
+            schedule: 15
+        };
+        const points = scoreMap[type] || 0;
+        
+        await this.db.query(this.userId, `
+            UPDATE users SET score = score + $1, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = $2
+        `, [points, this.userId]);
+        
+        // ثبت فعالیت
+        await this.db.logActivity(this.userId, type);
+        
+        return points;
+    }
+
+    // ============================================
+    // دریافت آمار عملکرد دستیار
+    // ============================================
+    async getStats() {
+        const cacheKey = `stats_${this.userId}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+            return cached.data;
+        }
+
+        const posts = await this.db.query(this.userId, `
+            SELECT 
+                COUNT(*) as total_posts,
+                COALESCE(SUM(views), 0) as total_views,
+                COALESCE(SUM(likes), 0) as total_likes,
+                COALESCE(SUM(comments), 0) as total_comments
+            FROM posts p
+            JOIN channels c ON p.channel_id = c.id
+            WHERE c.user_id = $1 AND p.is_published = 1
+        `, [this.userId]);
+
+        const trainings = await this.db.query(this.userId, `
+            SELECT COUNT(*) as total_trainings
+            FROM assistant_training
+            WHERE user_id = $1
+        `, [this.userId]);
+
+        const followers = await this.db.query(this.userId, `
+            SELECT followers_count FROM channels WHERE user_id = $1
+        `, [this.userId]);
+
+        const result = {
+            totalPosts: parseInt(posts.rows[0]?.total_posts || 0),
+            totalViews: parseInt(posts.rows[0]?.total_views || 0),
+            totalLikes: parseInt(posts.rows[0]?.total_likes || 0),
+            totalComments: parseInt(posts.rows[0]?.total_comments || 0),
+            totalTrainings: parseInt(trainings.rows[0]?.total_trainings || 0),
+            followers: parseInt(followers.rows[0]?.followers_count || 0),
+            engagementRate: this.calculateEngagementRate(posts.rows[0])
+        };
+
+        this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
+        return result;
+    }
+
+    calculateEngagementRate(postData) {
+        if (!postData || !postData.total_posts || parseInt(postData.total_posts) === 0) return '0%';
+        const views = parseInt(postData.total_views || 0);
+        const likes = parseInt(postData.total_likes || 0);
+        const comments = parseInt(postData.total_comments || 0);
+        if (views === 0) return '0%';
+        const engagement = ((likes + comments * 2) / views) * 100;
+        return engagement.toFixed(2) + '%';
+    }
+
+    // ============================================
+    // الگوریتم دیده‌شدن (Boost Visibility)
+    // ============================================
+    async boostVisibility() {
+        const stats = await this.getStats();
+        const activityScore = 
+            (stats.totalPosts * 2) + 
+            (stats.totalLikes * 0.5) + 
+            (stats.totalComments * 1) + 
+            (stats.totalTrainings * 3) +
+            (stats.totalViews * 0.1) +
+            (stats.followers * 1.5);
+
+        let boostLevel = 'normal';
+        let boostMultiplier = 1;
+        
+        if (activityScore > 50) { boostLevel = 'high'; boostMultiplier = 1.5; }
+        if (activityScore > 150) { boostLevel = 'viral'; boostMultiplier = 2.5; }
+        if (activityScore > 400) { boostLevel = 'superstar'; boostMultiplier = 4; }
+        if (activityScore > 1000) { boostLevel = 'legend'; boostMultiplier = 6; }
+
+        await this.db.query(this.userId, `
+            UPDATE channels 
+            SET boost_level = $1, 
+                activity_score = $2,
+                last_boost_calc = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $3
+        `, [boostLevel, Math.round(activityScore), this.userId]);
+
+        return { 
+            boostLevel, 
+            activityScore: Math.round(activityScore),
+            boostMultiplier,
+            message: this.getBoostMessage(boostLevel)
+        };
+    }
+
+    getBoostMessage(level) {
+        const messages = {
+            normal: 'کانال شما در حالت عادی است. با فعالیت بیشتر، دیده‌شوید افزایش می‌یابد.',
+            high: '🔥 کانال شما داغ شده! پست‌های شما بیشتر دیده می‌شوند.',
+            viral: '🚀 کانال شما وایرال شده! پست‌های شما به بسیاری از کاربران نمایش داده می‌شود.',
+            superstar: '⭐ کانال شما فوق‌ستاره است! بهترین پست‌ها را منتشر کنید.',
+            legend: '👑 کانال شما افسانه‌ای است! شما جزو بهترین کاربران هستید.'
+        };
+        return messages[level] || messages.normal;
+    }
+
+    // ============================================
+    // تشخیص رفتارهای نامناسب با هوش مصنوعی
+    // ============================================
+    async detectAnomalies() {
+        const anomalies = [];
+        
+        // 1. بررسی نرخ آنفالو
+        const unfollowRate = await this.db.query(this.userId, `
+            SELECT COUNT(*) as count FROM follows 
+            WHERE following_id = $1 AND created_at > datetime('now', '-7 days')
+        `, [this.userId]);
+        
+        const unfollowCount = unfollowRate.rows[0]?.count || 0;
+        if (unfollowCount > 20) {
+            anomalies.push({
+                type: 'unfollow_spike',
+                severity: 'high',
+                message: `نرخ آنفالو بالا: ${unfollowCount} نفر در ۷ روز اخیر`,
+                score: unfollowCount * 2
+            });
+        }
+
+        // 2. بررسی نرخ گزارش پست‌ها
+        const reportRate = await this.db.query(this.userId, `
+            SELECT COUNT(*) as count FROM reports 
+            WHERE target_id IN (
+                SELECT id FROM posts 
+                WHERE channel_id IN (SELECT id FROM channels WHERE user_id = $1)
+            )
+            AND created_at > datetime('now', '-7 days')
+        `, [this.userId]);
+        
+        const reportCount = reportRate.rows[0]?.count || 0;
+        if (reportCount > 5) {
+            anomalies.push({
+                type: 'report_spike',
+                severity: 'medium',
+                message: `تعداد گزارش‌های بالا: ${reportCount} گزارش در ۷ روز اخیر`,
+                score: reportCount * 3
+            });
+        }
+
+        // 3. بررسی فعالیت مشکوک (اسپم)
+        const spamActivity = await this.db.query(this.userId, `
+            SELECT COUNT(*) as count FROM posts 
+            WHERE channel_id IN (SELECT id FROM channels WHERE user_id = $1)
+            AND created_at > datetime('now', '-1 hour')
+        `, [this.userId]);
+        
+        const spamCount = spamActivity.rows[0]?.count || 0;
+        if (spamCount > 15) {
+            anomalies.push({
+                type: 'spam_activity',
+                severity: 'high',
+                message: `فعالیت اسپم: ${spamCount} پست در یک ساعت اخیر`,
+                score: spamCount * 1.5
+            });
+        }
+
+        // 4. بررسی محتوای نامناسب (کلمات کلیدی)
+        const badWords = ['کلاهبرداری', 'فروش', 'تبلیغ', 'اسپم', 'بی‌ادبی', 'فحش'];
+        const contentCheck = await this.db.query(this.userId, `
+            SELECT content FROM posts 
+            WHERE channel_id IN (SELECT id FROM channels WHERE user_id = $1)
+            AND created_at > datetime('now', '-7 days')
+            LIMIT 50
+        `, [this.userId]);
+        
+        for (const post of contentCheck.rows) {
+            const content = post.content.toLowerCase();
+            for (const word of badWords) {
+                if (content.includes(word)) {
+                    anomalies.push({
+                        type: 'inappropriate_content',
+                        severity: 'medium',
+                        message: `محتوای نامناسب: شامل کلمه "${word}"`,
+                        score: 10
+                    });
+                    break;
+                }
+            }
+        }
+
+        // 5. بررسی نرخ تعامل پایین
+        const engagement = await this.getStats();
+        if (engagement.totalPosts > 5) {
+            const rate = parseFloat(engagement.engagementRate);
+            if (rate < 1) {
+                anomalies.push({
+                    type: 'low_engagement',
+                    severity: 'low',
+                    message: `نرخ تعامل پایین: ${rate}%`,
+                    score: 5
+                });
+            }
+        }
+
+        return anomalies;
+    }
+
+    // ============================================
+    // تحلیل و پیشنهادات هوشمند
+    // ============================================
+    async getSmartSuggestions() {
+        const stats = await this.getStats();
+        const anomalies = await this.detectAnomalies();
+        const suggestions = [];
+
+        // پیشنهاد بر اساس آمار
+        if (stats.totalPosts === 0) {
+            suggestions.push({
+                type: 'content',
+                message: '📝 هنوز پستی منتشر نکرده‌اید. اولین پست خود را بنویسید!',
+                priority: 'high'
+            });
+        }
+
+        if (stats.totalPosts > 0 && parseFloat(stats.engagementRate) < 2) {
+            suggestions.push({
+                type: 'engagement',
+                message: '📊 نرخ تعامل پایین است. سعی کنید محتوای جذاب‌تر منتشر کنید.',
+                priority: 'medium'
+            });
+        }
+
+        if (stats.totalTrainings < 3) {
+            suggestions.push({
+                type: 'training',
+                message: '🤖 دستیار خود را آموزش دهید تا بهتر بتواند به کاربران پاسخ دهد.',
+                priority: 'medium'
+            });
+        }
+
+        if (stats.followers < 10) {
+            suggestions.push({
+                type: 'followers',
+                message: '👥 تعداد فالوورهای شما کم است. با کاربران دیگر تعامل کنید.',
+                priority: 'low'
+            });
+        }
+
+        // پیشنهاد بر اساس ناهنجاری‌ها
+        for (const anomaly of anomalies) {
+            if (anomaly.severity === 'high') {
+                suggestions.push({
+                    type: 'warning',
+                    message: `⚠️ ${anomaly.message}. لطفاً این موضوع را بررسی کنید.`,
+                    priority: 'high'
+                });
+            }
+        }
+
+        return suggestions;
+    }
+
+    // ============================================
+    // هوش مصنوعی برای بهبود محتوا
+    // ============================================
+    async enhanceContent(content) {
+        if (!content || content.length < 10) return content;
+
+        // تحلیل محتوا
+        const words = content.split(' ');
+        const hashtags = words.filter(w => w.startsWith('#'));
+        const mentions = words.filter(w => w.startsWith('@'));
+        
+        // پیشنهاد هشتگ
+        let enhanced = content;
+        if (hashtags.length === 0) {
+            const suggestedTags = this.generateHashtags(content);
+            if (suggestedTags.length > 0) {
+                enhanced += '\n\n' + suggestedTags.join(' ');
+            }
+        }
+
+        // پیشنهاد بهبود
+        return {
+            original: content,
+            enhanced: enhanced,
+            suggestions: {
+                hashtags: hashtags.length === 0 ? 'افزودن هشتگ مناسب' : 'هشتگ مناسب است',
+                length: words.length < 20 ? 'محتوا می‌تواند طولانی‌تر باشد' : 'طول محتوا مناسب است'
+            }
+        };
+    }
+
+    // ============================================
+    // تولید هشتگ‌های هوشمند
+    // ============================================
+    generateHashtags(content) {
+        const commonTags = [
+            '#یار_من', '#پلتفرم_اجتماعی', '#هوش_مصنوعی',
+            '#محتوا', '#ارتباطات', '#شبکه_اجتماعی'
+        ];
+        
+        const words = content.split(' ');
+        const tags = [];
+        
+        // استخراج کلمات کلیدی
+        for (const word of words) {
+            if (word.length > 3 && !word.startsWith('#') && !word.startsWith('@')) {
+                tags.push('#' + word);
+                if (tags.length >= 2) break;
+            }
+        }
+        
+        return [...tags, ...commonTags.slice(0, 3 - tags.length)];
+    }
+
+    // ============================================
+    // حافظه مکالمه (Context Memory)
+    // ============================================
+    async updateContext(message, response) {
+        const context = this.contextMemory.get(this.userId) || [];
+        context.push({
+            message: message,
+            response: response,
+            timestamp: Date.now()
+        });
+        
+        // نگهداری فقط ۱۰ مکالمه آخر
+        if (context.length > 10) {
+            context.shift();
+        }
+        
+        this.contextMemory.set(this.userId, context);
+    }
+
+    // ============================================
+    // یادگیری از تعاملات
+    // ============================================
+    async learnFromInteraction(message, response, feedback) {
+        if (!feedback) return;
+        
+        // ذخیره تعامل برای یادگیری
+        await this.db.query(this.userId, `
+            INSERT INTO assistant_training (id, user_id, type, question, answer, created_at)
+            VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        `, [
+            crypto.randomUUID(),
+            this.userId,
+            'qa',
+            message,
+            response + ` [${feedback === 'positive' ? '✓' : '✗'}]`
+        ]);
+        
+        this.cache.delete(`training_${this.userId}`);
+        await this.loadTrainingData();
+    }
+
+    // ============================================
+    // پاک کردن زمان‌بندی‌ها
+    // ============================================
     clearSchedules() {
         for (const [id, job] of this.scheduleJobs) {
             clearTimeout(job);
@@ -414,320 +697,118 @@ class IntelligentAssistant {
         this.scheduleJobs.clear();
     }
 
-    // ============================================================
-    // بخش ۹: به‌روزرسانی فعالیت و امتیاز
-    // ============================================================
-
-    async updateUserActivity(type) {
-        const scoreMap = {
-            post: 20,
-            like: 2,
-            comment: 5,
-            follow: 15,
-            train: 10,
-            view: 1,
-            share: 8,
-            save: 3
-        };
-        
-        const points = scoreMap[type] || 0;
-        
-        try {
-            await this.db.query(this.userId, `
-                UPDATE users 
-                SET 
-                    score = score + $1, 
-                    last_active = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP 
-                WHERE id = $2
-            `, [points, this.userId]);
-            
-            // لاگ فعالیت
-            await this.db.query(this.userId, `
-                INSERT INTO user_activities (id, user_id, type, created_at)
-                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-            `, [crypto.randomUUID(), this.userId, type]);
-            
-            return points;
-        } catch (error) {
-            console.error('Update user activity error:', error);
-            return 0;
-        }
-    }
-
-    // ============================================================
-    // بخش ۱۰: الگوریتم دیده‌شدن (Boost Visibility)
-    // ============================================================
-
-    async boostVisibility() {
-        try {
-            const stats = await this.getStats();
-            
-            // محاسبه امتیاز فعالیت
-            const activityScore = 
-                (stats.totalPosts * 2) + 
-                (stats.totalLikes * 0.5) + 
-                (stats.totalComments * 1.5) + 
-                (stats.totalTrainings * 3) +
-                (stats.totalViews * 0.1) +
-                (stats.totalShares * 4);
-
-            let boostLevel = 'normal';
-            if (activityScore > 100) boostLevel = 'high';
-            if (activityScore > 300) boostLevel = 'viral';
-            if (activityScore > 800) boostLevel = 'superstar';
-            if (activityScore > 2000) boostLevel = 'legend';
-
-            await this.db.query(this.userId, `
-                UPDATE channels 
-                SET 
-                    boost_level = $1, 
-                    activity_score = $2,
-                    last_boost_calc = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE user_id = $3
-            `, [boostLevel, Math.round(activityScore), this.userId]);
-
-            return { 
-                boostLevel, 
-                activityScore: Math.round(activityScore),
-                nextLevel: this.getNextLevel(boostLevel)
-            };
-        } catch (error) {
-            console.error('Boost visibility error:', error);
-            return { boostLevel: 'normal', activityScore: 0 };
-        }
-    }
-
-    getNextLevel(currentLevel) {
-        const levels = ['normal', 'high', 'viral', 'superstar', 'legend'];
-        const currentIndex = levels.indexOf(currentLevel);
-        if (currentIndex < levels.length - 1) {
-            return levels[currentIndex + 1];
-        }
-        return null;
-    }
-
-    // ============================================================
-    // بخش ۱۱: دریافت آمار عملکرد
-    // ============================================================
-
-    async getStats() {
-        try {
-            const cacheKey = `stats_${this.userId}`;
-            const cached = this.cache.get(cacheKey);
-            
-            if (cached && (Date.now() - cached.timestamp) < this.options.cacheTTL) {
-                return cached.data;
-            }
-
-            // آمار پست‌ها
-            const posts = await this.db.query(this.userId, `
-                SELECT 
-                    COUNT(*) as total_posts,
-                    COALESCE(SUM(views), 0) as total_views,
-                    COALESCE(SUM(likes), 0) as total_likes,
-                    COALESCE(SUM(comments), 0) as total_comments,
-                    COALESCE(SUM(shares), 0) as total_shares,
-                    COALESCE(SUM(saves), 0) as total_saves
-                FROM posts p
-                JOIN channels c ON p.channel_id = c.id
-                WHERE c.user_id = $1 AND p.is_published = 1
-            `, [this.userId]);
-
-            // آمار آموزش
-            const trainings = await this.db.query(this.userId, `
-                SELECT 
-                    COUNT(*) as total_trainings,
-                    SUM(CASE WHEN type = 'qa' THEN 1 ELSE 0 END) as qa_count,
-                    SUM(CASE WHEN type = 'keyword' THEN 1 ELSE 0 END) as keyword_count
-                FROM assistant_training
-                WHERE user_id = $1
-            `, [this.userId]);
-
-            // فالوورها
-            const followers = await this.db.query(this.userId, `
-                SELECT followers_count FROM channels WHERE user_id = $1
-            `, [this.userId]);
-
-            const result = {
-                totalPosts: parseInt(posts.rows[0]?.total_posts || 0),
-                totalViews: parseInt(posts.rows[0]?.total_views || 0),
-                totalLikes: parseInt(posts.rows[0]?.total_likes || 0),
-                totalComments: parseInt(posts.rows[0]?.total_comments || 0),
-                totalShares: parseInt(posts.rows[0]?.total_shares || 0),
-                totalSaves: parseInt(posts.rows[0]?.total_saves || 0),
-                totalTrainings: parseInt(trainings.rows[0]?.total_trainings || 0),
-                qaCount: parseInt(trainings.rows[0]?.qa_count || 0),
-                keywordCount: parseInt(trainings.rows[0]?.keyword_count || 0),
-                followers: parseInt(followers.rows[0]?.followers_count || 0),
-                engagementRate: this.calculateEngagementRate(posts.rows[0]),
-                autoReplyStats: {
-                    totalQueries: this.stats.totalQueries,
-                    autoReplies: this.stats.autoReplies,
-                    keywordMatches: this.stats.keywordMatches,
-                    qaMatches: this.stats.qaMatches,
-                    noMatches: this.stats.noMatches
-                }
-            };
-
-            this.cache.set(cacheKey, {
-                data: result,
-                timestamp: Date.now()
-            });
-
-            return result;
-        } catch (error) {
-            console.error('Get stats error:', error);
-            return {
-                totalPosts: 0,
-                totalViews: 0,
-                totalLikes: 0,
-                totalComments: 0,
-                totalShares: 0,
-                totalSaves: 0,
-                totalTrainings: 0,
-                qaCount: 0,
-                keywordCount: 0,
-                followers: 0,
-                engagementRate: '0%'
-            };
-        }
-    }
-
-    calculateEngagementRate(postData) {
-        if (!postData || !postData.total_posts || parseInt(postData.total_posts) === 0) {
-            return '0%';
-        }
-        
-        const views = parseInt(postData.total_views || 0);
-        const likes = parseInt(postData.total_likes || 0);
-        const comments = parseInt(postData.total_comments || 0);
-        const shares = parseInt(postData.total_shares || 0);
-        
-        if (views === 0) return '0%';
-        
-        const engagement = ((likes + comments * 2 + shares * 3) / views) * 100;
-        return engagement.toFixed(2) + '%';
-    }
-
-    // ============================================================
-    // بخش ۱۲: مدیریت وضعیت دستیار
-    // ============================================================
-
+    // ============================================
+    // غیرفعال کردن دستیار
+    // ============================================
     setAutoReply(enabled) {
-        this.options.autoReplyEnabled = enabled;
-        return this.options.autoReplyEnabled;
+        this.autoReplyEnabled = enabled;
+        return this.autoReplyEnabled;
     }
 
+    // ============================================
+    // دریافت وضعیت دستیار
+    // ============================================
     getStatus() {
         return {
             userId: this.userId,
-            autoReplyEnabled: this.options.autoReplyEnabled,
+            autoReplyEnabled: this.autoReplyEnabled,
             trainingCount: this.trainingData?.length || 0,
             scheduledJobs: this.scheduleJobs.size,
-            stats: this.stats,
-            cacheSize: this.cache.size
+            contextMemorySize: this.contextMemory.get(this.userId)?.length || 0,
+            learningRate: this.learningRate,
+            confidenceThreshold: this.confidenceThreshold
         };
     }
 
-    // ============================================================
-    // بخش ۱۳: پاکسازی کش
-    // ============================================================
-
+    // ============================================
+    // پاک کردن کش
+    // ============================================
     clearCache() {
         this.cache.clear();
-        this.stats = {
-            totalQueries: 0,
-            autoReplies: 0,
-            keywordMatches: 0,
-            qaMatches: 0,
-            noMatches: 0
-        };
+        this.contextMemory.clear();
     }
 
-    // ============================================================
-    // بخش ۱۴: متدهای آموزشی
-    // ============================================================
+    // ============================================
+    // دریافت آمار پیشرفته
+    // ============================================
+    async getAdvancedStats() {
+        const stats = await this.getStats();
+        const anomalies = await this.detectAnomalies();
+        const suggestions = await this.getSmartSuggestions();
+        const status = this.getStatus();
 
-    async addTraining(type, data) {
-        const id = crypto.randomUUID();
-        const fields = {
-            qa: ['question', 'answer'],
-            keyword: ['keyword', 'response'],
-            context: ['context']
-        };
-        
-        const fieldNames = fields[type] || [];
-        const values = fieldNames.map(f => data[f] || null);
-        
-        await this.db.query(this.userId, `
-            INSERT INTO assistant_training (id, user_id, type, ${fieldNames.join(', ')}, created_at)
-            VALUES ($1, $2, $3, ${fieldNames.map((_, i) => '$' + (i + 4)).join(', ')}, CURRENT_TIMESTAMP)
-        `, [id, this.userId, type, ...values]);
+        // محاسبه نمره کیفیت
+        const qualityScore = this.calculateQualityScore(stats, anomalies);
 
-        this.cache.delete(`training_${this.userId}`);
-        this.loadTrainingData();
-        
-        return id;
-    }
-
-    async deleteTraining(id) {
-        await this.db.query(this.userId, `
-            DELETE FROM assistant_training 
-            WHERE id = $1 AND user_id = $2
-        `, [id, this.userId]);
-
-        this.cache.delete(`training_${this.userId}`);
-        this.loadTrainingData();
-    }
-
-    async updateTrainingWeight(id, weight) {
-        await this.db.query(this.userId, `
-            UPDATE assistant_training 
-            SET weight = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND user_id = $3
-        `, [weight, id, this.userId]);
-
-        this.cache.delete(`training_${this.userId}`);
-        this.loadTrainingData();
-    }
-
-    // ============================================================
-    // بخش ۱۵: صادرات
-    // ============================================================
-
-    exportTraining() {
         return {
-            userId: this.userId,
-            data: this.trainingData,
-            stats: this.stats,
+            ...stats,
+            anomalies,
+            suggestions,
+            status,
+            qualityScore,
             timestamp: new Date().toISOString()
         };
     }
 
-    importTraining(data) {
-        // پیاده‌سازی import
-        // ...
+    // ============================================
+    // محاسبه نمره کیفیت
+    // ============================================
+    calculateQualityScore(stats, anomalies) {
+        let score = 0;
+        
+        // امتیاز بر اساس پست‌ها
+        score += Math.min(stats.totalPosts * 2, 30);
+        
+        // امتیاز بر اساس تعامل
+        const engagement = parseFloat(stats.engagementRate);
+        score += Math.min(engagement * 3, 30);
+        
+        // امتیاز بر اساس فالوورها
+        score += Math.min(stats.followers * 0.5, 20);
+        
+        // امتیاز بر اساس آموزش
+        score += Math.min(stats.totalTrainings * 2, 20);
+        
+        // کاهش امتیاز بر اساس ناهنجاری‌ها
+        for (const anomaly of anomalies) {
+            if (anomaly.severity === 'high') score -= 15;
+            if (anomaly.severity === 'medium') score -= 10;
+            if (anomaly.severity === 'low') score -= 5;
+        }
+        
+        return Math.max(0, Math.min(100, score));
     }
 
-    // ============================================================
-    // بخش ۱۶: تخریب
-    // ============================================================
-
-    destroy() {
-        this.clearSchedules();
-        this.clearCache();
-        this.trainingData = null;
+    // ============================================
+    // پاسخ‌دهی با قابلیت یادگیری
+    // ============================================
+    async smartResponse(message) {
+        // دریافت پاسخ اولیه
+        const response = await this.autoReply(message);
+        
+        if (response) {
+            // به‌روزرسانی حافظه مکالمه
+            await this.updateContext(message, response.text);
+            
+            // بازخورد ضمنی (اگر کاربر دوباره سوال کرد، پاسخ را تقویت کن)
+            const context = this.contextMemory.get(this.userId) || [];
+            const similarQuestions = context.filter(c => 
+                c.message.toLowerCase().includes(message.toLowerCase().split(' ').slice(0, 3).join(' '))
+            );
+            
+            if (similarQuestions.length > 1) {
+                // افزایش اعتماد به پاسخ
+                response.confidence = Math.min(response.confidence + 0.1, 1);
+            }
+            
+            return {
+                ...response,
+                source: response.source || 'assistant'
+            };
+        }
+        
+        return null;
     }
 }
 
-// ============================================================
-// بخش ۱۷: صادرات
-// ============================================================
-
 module.exports = IntelligentAssistant;
-
-// ============================================================
-// پایان فایل assistant.js
-// ============================================================

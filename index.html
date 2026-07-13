@@ -1,2013 +1,1292 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>یارِ من - پلتفرم هوشمند اجتماعی</title>
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <style>
-        /* ============================================================
-           تم روشن - Light Mode با چیدمان باز
-           ============================================================ */
-        :root {
-            --bg-primary: #f0f2f8;
-            --bg-secondary: #ffffff;
-            --bg-card: #ffffff;
-            --bg-card-hover: #f5f7ff;
-            --bg-soft: #e8ebf4;
-            
-            --text-primary: #1a1a2e;
-            --text-secondary: #4a4a6a;
-            --text-muted: #8a8aaa;
-            --text-light: #b0b0cc;
-            
-            --primary: #6c5ce7;
-            --primary-dark: #5a4bd1;
-            --primary-light: #a29bfe;
-            --primary-glow: rgba(108, 92, 231, 0.2);
-            
-            --secondary: #fdcb6e;
-            --secondary-dark: #f9a825;
-            
-            --success: #00b894;
-            --danger: #e17055;
-            --info: #0984e3;
-            --like: #fd79a8;
-            --like-glow: rgba(253, 121, 168, 0.25);
-            
-            --shadow: 0 4px 20px rgba(0,0,0,0.06);
-            --shadow-hover: 0 8px 40px rgba(108, 92, 231, 0.12);
-            --shadow-3d: 0 8px 30px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.02);
-            
-            --radius-3d: 20px;
-            --radius-sm: 12px;
-            --radius-full: 99px;
-            
-            --transition-spring: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            --transition-smooth: all 0.3s ease;
-            
-            --border-color: #e8ecf4;
-            --border-focus: #6c5ce7;
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
-        body {
-            font-family: 'Vazirmatn', sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
-            padding-bottom: 100px;
-            overflow-x: hidden;
-        }
-
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: var(--bg-primary); }
-        ::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 99px; }
-
-        /* ============================================================
-           انیمیشن‌ها
-           ============================================================ */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(-20px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.08); }
-        }
-
-        .animate-in { animation: fadeInUp 0.5s ease forwards; }
-        .animate-slide { animation: slideIn 0.4s ease forwards; }
-
-        /* ============================================================
-           دکمه‌های تیره روی پس‌زمینه روشن
-           ============================================================ */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 12px 28px;
-            border: none;
-            border-radius: var(--radius-full);
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: var(--transition-spring);
-            min-height: 50px;
-            letter-spacing: 0.3px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            color: #fff;
-            box-shadow: 0 4px 20px var(--primary-glow);
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 8px 35px var(--primary-glow);
-        }
-
-        .btn-primary:active {
-            transform: scale(0.95);
-            box-shadow: 0 2px 10px var(--primary-glow);
-        }
-
-        .btn-secondary {
-            background: var(--text-primary);
-            color: #fff;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-
-        .btn-secondary:hover {
-            transform: translateY(-3px) scale(1.02);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-
-        .btn-outline {
-            background: transparent;
-            color: var(--text-primary);
-            border: 2px solid var(--border-color);
-        }
-
-        .btn-outline:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            transform: translateY(-2px);
-        }
-
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-            padding: 8px 16px;
-            min-height: 40px;
-        }
-
-        .btn-ghost:hover {
-            background: var(--bg-soft);
-            color: var(--text-primary);
-        }
-
-        /* دکمه‌های اکشن (لایک، کامنت، اشتراک‌گذاری) */
-        .btn-action {
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            color: var(--text-secondary);
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: var(--transition-spring);
-            cursor: pointer;
-            box-shadow: var(--shadow);
-        }
-
-        .btn-action:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            transform: translateY(-3px) scale(1.04);
-            box-shadow: var(--shadow-hover);
-        }
-
-        .btn-action:active {
-            transform: scale(0.88);
-        }
-
-        .btn-action.liked {
-            color: var(--like);
-            border-color: var(--like);
-            background: rgba(253, 121, 168, 0.08);
-            box-shadow: 0 0 30px var(--like-glow);
-            animation: pulse 1.5s ease infinite;
-        }
-
-        /* ============================================================
-           هدر - روشن
-           ============================================================ */
-        .main-header {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px 20px;
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--border-color);
-            box-shadow: 0 2px 20px rgba(0,0,0,0.04);
-        }
-
-        .profile-btn {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: none;
-            border: none;
-            color: var(--text-primary);
-            padding: 4px 14px 4px 4px;
-            border-radius: var(--radius-full);
-            transition: var(--transition-smooth);
-            cursor: pointer;
-        }
-
-        .profile-btn:hover { background: var(--bg-soft); }
-
-        .profile-btn .avatar {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            flex-shrink: 0;
-        }
-
-        .profile-btn .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .profile-btn .info { text-align: right; }
-        .profile-btn .info .name { font-size: 14px; font-weight: 700; }
-        .profile-btn .info .status { font-size: 11px; color: var(--text-muted); }
-
-        .header-center { flex: 1; max-width: 420px; min-width: 0; }
-
-        .search-box {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-full);
-            padding: 8px 18px;
-            transition: var(--transition-smooth);
-        }
-
-        .search-box:focus-within {
-            border-color: var(--primary);
-            background: #fff;
-            box-shadow: 0 0 30px var(--primary-glow);
-        }
-
-        .search-box i { color: var(--text-muted); font-size: 15px; }
-        .search-box input {
-            background: none;
-            border: none;
-            outline: none;
-            color: var(--text-primary);
-            width: 100%;
-            font-size: 13px;
-            padding: 4px 0;
-        }
-        .search-box input::placeholder { color: var(--text-muted); }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .user-score {
-            font-size: 12px;
-            background: var(--bg-soft);
-            padding: 6px 16px;
-            border-radius: var(--radius-full);
-            color: var(--primary);
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .admin-btn {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--secondary), var(--secondary-dark));
-            border: none;
-            color: #fff;
-            font-size: 16px;
-            cursor: pointer;
-            transition: var(--transition-spring);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 15px rgba(253, 203, 110, 0.3);
-        }
-
-        .admin-btn.show { display: flex; }
-        .admin-btn:hover { transform: scale(1.08); }
-
-        /* ============================================================
-           ناوبری پایین - بزرگ و خوانا
-           ============================================================ */
-        .main-nav {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            display: flex;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(20px);
-            border-top: 1px solid var(--border-color);
-            padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
-            gap: 8px;
-            box-shadow: 0 -4px 30px rgba(0,0,0,0.04);
-        }
-
-        .nav-btn {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            padding: 12px 6px;
-            border-radius: 16px;
-            font-size: 11px;
-            transition: var(--transition-spring);
-            position: relative;
-            min-height: 64px;
-        }
-
-        .nav-btn i {
-            font-size: 26px;
-            transition: var(--transition-spring);
-        }
-
-        .nav-btn span {
-            font-size: 10px;
-            font-weight: 600;
-            opacity: 0.6;
-            transition: var(--transition-smooth);
-        }
-
-        .nav-btn.active {
-            color: var(--primary);
-            background: var(--bg-soft);
-        }
-
-        .nav-btn.active i {
-            transform: translateY(-4px) scale(1.1);
-        }
-
-        .nav-btn.active span {
-            opacity: 1;
-            color: var(--primary);
-        }
-
-        .nav-btn:hover {
-            color: var(--text-primary);
-            background: var(--bg-soft);
-        }
-
-        .nav-btn:active { transform: scale(0.92); }
-
-        .nav-btn .badge {
-            position: absolute;
-            top: 6px;
-            right: 50%;
-            transform: translateX(50%);
-            background: var(--danger);
-            color: #fff;
-            font-size: 9px;
-            font-weight: 700;
-            padding: 2px 10px;
-            border-radius: var(--radius-full);
-            min-width: 22px;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(225, 112, 85, 0.3);
-            display: none;
-        }
-
-        .nav-btn .badge.show { display: block; }
-
-        /* ============================================================
-           دکمه آپلود شناور
-           ============================================================ */
-        .floating-upload {
-            position: fixed;
-            bottom: 110px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            color: #fff;
-            border: none;
-            border-radius: var(--radius-full);
-            padding: 14px 32px;
-            font-family: inherit;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 8px 35px var(--primary-glow);
-            transition: var(--transition-spring);
-            z-index: 50;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .floating-upload:hover {
-            transform: translateX(-50%) scale(1.05);
-            box-shadow: 0 12px 50px var(--primary-glow);
-        }
-
-        .floating-upload:active { transform: translateX(-50%) scale(0.95); }
-
-        /* ============================================================
-           محتوای اصلی - فاصله باز
-           ============================================================ */
-        main {
-            max-width: 740px;
-            margin: 0 auto;
-            padding: 16px 18px 20px;
-        }
-
-        .page { display: none; animation: fadeInUp 0.4s ease; }
-        .page.active { display: block; }
-
-        .page-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 20px;
-            padding: 0 4px;
-        }
-
-        .page-header h1 {
-            font-size: 22px;
-            font-weight: 900;
-            color: var(--text-primary);
-        }
-
-        .page-header .subtitle {
-            font-size: 12px;
-            color: var(--text-muted);
-            background: var(--bg-soft);
-            padding: 6px 18px;
-            border-radius: var(--radius-full);
-            font-weight: 500;
-        }
-
-        /* ============================================================
-           کامپوزر
-           ============================================================ */
-        .composer {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-3d);
-            padding: 20px;
-            margin-bottom: 22px;
-            transition: var(--transition-smooth);
-            box-shadow: var(--shadow);
-        }
-
-        .composer:focus-within {
-            border-color: var(--primary);
-            box-shadow: var(--shadow-hover);
-        }
-
-        .composer textarea {
-            width: 100%;
-            background: var(--bg-soft);
-            border: none;
-            border-radius: var(--radius-sm);
-            color: var(--text-primary);
-            padding: 16px;
-            resize: vertical;
-            min-height: 70px;
-            font-size: 14px;
-            font-family: inherit;
-            transition: var(--transition-smooth);
-            line-height: 1.9;
-        }
-
-        .composer textarea:focus {
-            outline: none;
-            background: #fff;
-            box-shadow: inset 0 0 0 2px var(--primary);
-        }
-
-        .composer textarea::placeholder { color: var(--text-muted); }
-
-        .composer-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 14px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-
-        .media-buttons {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .media-buttons label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 20px;
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-full);
-            font-size: 13px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: var(--transition-smooth);
-            font-weight: 500;
-        }
-
-        .media-buttons label:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            background: #fff;
-        }
-
-        .media-buttons input { display: none; }
-
-        .media-preview {
-            margin-top: 14px;
-            border-radius: var(--radius-sm);
-            overflow: hidden;
-            background: var(--bg-soft);
-            position: relative;
-            border: 2px solid var(--border-color);
-        }
-
-        .media-preview img,
-        .media-preview video {
-            width: 100%;
-            max-height: 300px;
-            display: block;
-        }
-
-        .media-preview .remove-media {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(0,0,0,0.7);
-            color: #fff;
-            border: none;
-            border-radius: 50%;
-            width: 36px;
-            height: 36px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: var(--transition-smooth);
-        }
-
-        .media-preview .remove-media:hover {
-            transform: scale(1.1);
-            background: var(--danger);
-        }
-
-        /* ============================================================
-           اکسپلور - گرید ۳ ستونه با فاصله باز
-           ============================================================ */
-        .explore-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-        }
-
-        .explore-item {
-            position: relative;
-            aspect-ratio: 1/1;
-            overflow: hidden;
-            cursor: pointer;
-            border-radius: var(--radius-sm);
-            background: var(--bg-soft);
-            transition: var(--transition-spring);
-            box-shadow: var(--shadow);
-            border: 2px solid transparent;
-        }
-
-        .explore-item:hover {
-            transform: scale(1.03);
-            border-color: var(--primary);
-            box-shadow: var(--shadow-hover);
-            z-index: 5;
-        }
-
-        .explore-item img,
-        .explore-item video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .explore-item .overlay {
-            position: absolute;
-            inset: 0;
-            background: rgba(0,0,0,0.35);
-            backdrop-filter: blur(3px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 20px;
-            opacity: 0;
-            transition: var(--transition-smooth);
-            color: #fff;
-            font-size: 14px;
-            font-weight: 700;
-        }
-
-        .explore-item:hover .overlay { opacity: 1; }
-
-        .explore-item .overlay span {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(0,0,0,0.3);
-            padding: 5px 14px;
-            border-radius: var(--radius-full);
-        }
-
-        .explore-item .overlay i { font-size: 16px; }
-
-        /* ============================================================
-           پست
-           ============================================================ */
-        .post-card {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-3d);
-            padding: 20px;
-            margin-bottom: 18px;
-            transition: var(--transition-spring);
-            box-shadow: var(--shadow);
-        }
-
-        .post-card:hover {
-            border-color: var(--primary);
-            box-shadow: var(--shadow-hover);
-            transform: translateY(-2px);
-        }
-
-        .post-head {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            margin-bottom: 12px;
-        }
-
-        .post-head .avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            flex-shrink: 0;
-            cursor: pointer;
-        }
-
-        .post-head .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .post-head .name {
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-        }
-
-        .post-head .time {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-inline-start: auto;
-        }
-
-        .post-card .content {
-            font-size: 14.5px;
-            line-height: 2.1;
-            white-space: pre-wrap;
-            margin-bottom: 14px;
-            color: var(--text-primary);
-        }
-
-        .post-card .media-wrapper {
-            width: 100%;
-            border-radius: var(--radius-sm);
-            overflow: hidden;
-            margin-bottom: 14px;
-            background: var(--bg-soft);
-            cursor: pointer;
-            border: 2px solid var(--border-color);
-        }
-
-        .post-card .media-wrapper img,
-        .post-card .media-wrapper video {
-            width: 100%;
-            max-height: 480px;
-            display: block;
-            object-fit: cover;
-        }
-
-        .post-stats {
-            display: flex;
-            gap: 14px;
-            align-items: center;
-            border-top: 2px solid var(--border-color);
-            padding-top: 14px;
-        }
-
-        .post-stats button {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border-radius: var(--radius-full);
-            transition: var(--transition-smooth);
-            cursor: pointer;
-            font-weight: 500;
-        }
-
-        .post-stats button:hover {
-            background: var(--bg-soft);
-            color: var(--text-primary);
-        }
-
-        .post-stats button:active { transform: scale(0.92); }
-
-        .post-stats button.liked {
-            color: var(--like);
-            background: rgba(253, 121, 168, 0.08);
-        }
-
-        .post-stats button.liked i {
-            animation: pulse 0.4s ease;
-        }
-
-        .post-stats .spacer { flex: 1; }
-
-        /* ============================================================
-           کامنت‌ها
-           ============================================================ */
-        .comments-box {
-            margin-top: 14px;
-            border-top: 2px solid var(--border-color);
-            padding-top: 14px;
-            display: none;
-        }
-
-        .comments-box.open { display: block; }
-
-        .comment-item {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 12px;
-            font-size: 13px;
-            align-items: flex-start;
-        }
-
-        .comment-item .avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            flex-shrink: 0;
-        }
-
-        .comment-item .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .comment-item .comment-author {
-            font-weight: 700;
-            font-size: 12px;
-        }
-
-        .comment-item .comment-text {
-            color: var(--text-secondary);
-            font-size: 13px;
-        }
-
-        .comment-form {
-            display: flex;
-            gap: 10px;
-            margin-top: 12px;
-        }
-
-        .comment-form input {
-            flex: 1;
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-full);
-            padding: 10px 18px;
-            color: var(--text-primary);
-            font-size: 13px;
-            outline: none;
-            transition: var(--transition-smooth);
-        }
-
-        .comment-form input:focus {
-            border-color: var(--primary);
-            background: #fff;
-        }
-
-        .comment-form button {
-            padding: 10px 24px;
-            border-radius: var(--radius-full);
-            font-size: 13px;
-            font-weight: 700;
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            transition: var(--transition-spring);
-        }
-
-        .comment-form button:hover { transform: scale(1.03); }
-        .comment-form button:active { transform: scale(0.95); }
-
-        /* ============================================================
-           چت
-           ============================================================ */
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            height: calc(100vh - 190px);
-        }
-
-        .chat-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            overflow-y: auto;
-            flex: 1;
-        }
-
-        .chat-item {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 14px 18px;
-            cursor: pointer;
-            transition: var(--transition-spring);
-            box-shadow: var(--shadow);
-        }
-
-        .chat-item:hover {
-            border-color: var(--primary);
-            box-shadow: var(--shadow-hover);
-            transform: translateX(-4px);
-        }
-
-        .chat-item .avatar {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            flex-shrink: 0;
-        }
-
-        .chat-item .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .chat-item .info { flex: 1; min-width: 0; }
-        .chat-item .info strong { font-size: 15px; display: block; }
-        .chat-item .info p {
-            font-size: 12px;
-            color: var(--text-secondary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .chat-item .unread {
-            background: var(--primary);
-            color: #fff;
-            font-size: 11px;
-            font-weight: 700;
-            padding: 4px 14px;
-            border-radius: var(--radius-full);
-        }
-
-        .chat-window {
-            display: none;
-            flex-direction: column;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-3d);
-            overflow: hidden;
-            height: 100%;
-            box-shadow: var(--shadow);
-        }
-
-        .chat-window.open { display: flex; }
-
-        .chat-window-head {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px 18px;
-            border-bottom: 2px solid var(--border-color);
-            flex-shrink: 0;
-            background: var(--bg-soft);
-        }
-
-        .chat-window-head .avatar {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-        }
-
-        .chat-window-head .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .chat-window-head strong { font-size: 15px; flex: 1; }
-        .chat-window-head .close-btn {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 22px;
-            cursor: pointer;
-            padding: 4px 8px;
-            transition: var(--transition-smooth);
-        }
-
-        .chat-window-head .close-btn:hover {
-            color: var(--danger);
-            transform: rotate(90deg);
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px 18px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            background: var(--bg-primary);
-        }
-
-        .message {
-            padding: 12px 18px;
-            border-radius: 20px;
-            font-size: 13.5px;
-            max-width: 80%;
-            line-height: 1.8;
-            word-wrap: break-word;
-        }
-
-        .message.sent {
-            align-self: flex-end;
-            background: var(--primary);
-            color: #fff;
-            border-bottom-right-radius: 4px;
-        }
-
-        .message.received {
-            align-self: flex-start;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-bottom-left-radius: 4px;
-            color: var(--text-primary);
-        }
-
-        .message .time {
-            font-size: 9px;
-            opacity: 0.5;
-            margin-top: 3px;
-            display: block;
-        }
-
-        .chat-input {
-            display: flex;
-            gap: 12px;
-            padding: 12px 18px;
-            border-top: 2px solid var(--border-color);
-            flex-shrink: 0;
-            background: var(--bg-soft);
-        }
-
-        .chat-input input {
-            flex: 1;
-            background: #fff;
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-full);
-            padding: 10px 20px;
-            color: var(--text-primary);
-            outline: none;
-            font-size: 13px;
-            transition: var(--transition-smooth);
-        }
-
-        .chat-input input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 20px var(--primary-glow);
-        }
-
-        .chat-input button {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            font-size: 17px;
-            transition: var(--transition-spring);
-            cursor: pointer;
-            flex-shrink: 0;
-        }
-
-        .chat-input button:hover { transform: scale(1.05); }
-        .chat-input button:active { transform: scale(0.9); }
-
-        /* ============================================================
-           دستیار
-           ============================================================ */
-        .assistant-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-            gap: 14px;
-            margin-bottom: 20px;
-        }
-
-        .stat-chip {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 18px;
-            text-align: center;
-            transition: var(--transition-smooth);
-            box-shadow: var(--shadow);
-        }
-
-        .stat-chip:hover {
-            border-color: var(--primary);
-            transform: translateY(-3px);
-            box-shadow: var(--shadow-hover);
-        }
-
-        .stat-chip b {
-            display: block;
-            font-size: 22px;
-            font-weight: 900;
-            color: var(--text-primary);
-        }
-
-        .stat-chip span {
-            font-size: 11px;
-            color: var(--text-muted);
-            font-weight: 500;
-        }
-
-        .training-section {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-3d);
-            padding: 20px;
-            margin-bottom: 16px;
-            box-shadow: var(--shadow);
-        }
-
-        .training-section h3 {
-            font-size: 15px;
-            margin-bottom: 14px;
-            color: var(--text-secondary);
-            font-weight: 700;
-        }
-
-        .train-form {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .train-form input,
-        .train-form textarea {
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-sm);
-            color: var(--text-primary);
-            padding: 12px 16px;
-            font-size: 13px;
-            outline: none;
-            font-family: inherit;
-            transition: var(--transition-smooth);
-        }
-
-        .train-form input:focus,
-        .train-form textarea:focus {
-            border-color: var(--primary);
-            background: #fff;
-        }
-
-        .qa-list,
-        .keyword-list {
-            margin-top: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            max-height: 180px;
-            overflow-y: auto;
-        }
-
-        .qa-item,
-        .keyword-item {
-            background: var(--bg-soft);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 10px 14px;
-            font-size: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-
-        .qa-item .q,
-        .keyword-item .k {
-            color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .qa-item .a,
-        .keyword-item .r {
-            color: var(--text-primary);
-        }
-
-        /* ============================================================
-           مودال پست - تمام صفحه
-           ============================================================ */
-        .post-modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(30px);
-            z-index: 300;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            animation: fadeInUp 0.3s ease;
-        }
-
-        .post-modal.open { display: flex; }
-
-        .post-modal-content {
-            width: 100%;
-            max-width: 620px;
-            max-height: 100vh;
-            background: var(--bg-secondary);
-            border-radius: 0;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 0 80px rgba(0,0,0,0.1);
-        }
-
-        .post-modal-header {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 16px 20px;
-            background: var(--bg-secondary);
-            flex-shrink: 0;
-            border-bottom: 2px solid var(--border-color);
-        }
-
-        .post-modal-header .avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            cursor: pointer;
-        }
-
-        .post-modal-header .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .post-modal-header .name {
-            flex: 1;
-            font-weight: 700;
-            font-size: 15px;
-            cursor: pointer;
-        }
-
-        .post-modal-header .time {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .post-modal-header .close-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 26px;
-            cursor: pointer;
-            padding: 4px 8px;
-            transition: var(--transition-smooth);
-        }
-
-        .post-modal-header .close-btn:hover {
-            transform: rotate(90deg);
-            color: var(--danger);
-        }
-
-        .post-modal-media {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--bg-primary);
-            min-height: 300px;
-            max-height: 60vh;
-        }
-
-        .post-modal-media img,
-        .post-modal-media video {
-            max-width: 100%;
-            max-height: 60vh;
-            object-fit: contain;
-        }
-
-        .post-modal-body {
-            padding: 18px 20px;
-            background: var(--bg-secondary);
-            border-top: 2px solid var(--border-color);
-            flex-shrink: 0;
-            max-height: 45vh;
-            overflow-y: auto;
-        }
-
-        .post-modal-body .content {
-            font-size: 14.5px;
-            line-height: 2;
-            margin-bottom: 14px;
-        }
-
-        .post-modal-actions {
-            display: flex;
-            gap: 14px;
-            padding: 10px 0;
-            border-bottom: 2px solid var(--border-color);
-        }
-
-        .post-modal-actions .btn-action {
-            width: 48px;
-            height: 48px;
-            font-size: 20px;
-        }
-
-        .post-modal-comments {
-            max-height: 170px;
-            overflow-y: auto;
-            margin: 12px 0;
-        }
-
-        .post-modal-comment {
-            display: flex;
-            gap: 12px;
-            padding: 8px 0;
-            font-size: 13px;
-        }
-
-        .post-modal-comment .avatar {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            padding: 2px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            flex-shrink: 0;
-        }
-
-        .post-modal-comment .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #fff;
-        }
-
-        .post-modal-comment .comment-text {
-            color: var(--text-secondary);
-        }
-
-        .post-modal-input {
-            display: flex;
-            gap: 12px;
-            padding-top: 12px;
-            border-top: 2px solid var(--border-color);
-        }
-
-        .post-modal-input input {
-            flex: 1;
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-full);
-            padding: 12px 20px;
-            color: var(--text-primary);
-            font-size: 13px;
-            outline: none;
-            transition: var(--transition-smooth);
-        }
-
-        .post-modal-input input:focus {
-            border-color: var(--primary);
-            background: #fff;
-        }
-
-        .post-modal-input button {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            font-size: 17px;
-            transition: var(--transition-spring);
-            cursor: pointer;
-            flex-shrink: 0;
-        }
-
-        .post-modal-input button:hover { transform: scale(1.05); }
-        .post-modal-input button:active { transform: scale(0.9); }
-
-        /* ============================================================
-           پروفایل
-           ============================================================ */
-        .profile-header {
-            text-align: center;
-            margin: 16px 0 24px;
-            padding: 24px;
-            background: var(--bg-secondary);
-            border-radius: var(--radius-3d);
-            border: 2px solid var(--border-color);
-            box-shadow: var(--shadow);
-        }
-
-        .profile-header .avatar {
-            width: 88px;
-            height: 88px;
-            border-radius: 50%;
-            padding: 3px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            margin: 0 auto;
-        }
-
-        .profile-header .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 3px solid #fff;
-        }
-
-        .profile-header h2 { font-size: 20px; margin-top: 14px; }
-        .profile-header .bio { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-
-        .profile-stats {
-            display: flex;
-            justify-content: center;
-            gap: 36px;
-            margin: 16px 0;
-        }
-
-        .profile-stats b { display: block; font-size: 20px; font-weight: 900; }
-        .profile-stats span { font-size: 12px; color: var(--text-muted); }
-
-        /* ============================================================
-           مدیریت
-           ============================================================ */
-        .admin-panel {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            border-radius: var(--radius-3d);
-            padding: 20px;
-            box-shadow: var(--shadow);
-        }
-
-        .admin-tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 18px;
-            flex-wrap: wrap;
-        }
-
-        .admin-tab {
-            padding: 8px 22px;
-            border-radius: var(--radius-full);
-            border: 2px solid var(--border-color);
-            background: transparent;
-            color: var(--text-secondary);
-            font-size: 12px;
-            font-weight: 600;
-            transition: var(--transition-smooth);
-            cursor: pointer;
-        }
-
-        .admin-tab:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-        }
-
-        .admin-tab.active {
-            background: var(--primary);
-            color: #fff;
-            border-color: var(--primary);
-        }
-
-        .admin-content { max-height: 420px; overflow-y: auto; }
-        .admin-tab-content { display: none; }
-        .admin-tab-content.active { display: block; }
-
-        .admin-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 14px;
-            border-bottom: 1px solid var(--border-color);
-            font-size: 13px;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .admin-item .actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        .admin-item .actions button {
-            padding: 4px 16px;
-            border-radius: var(--radius-full);
-            border: none;
-            font-size: 11px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition-smooth);
-        }
-
-        .admin-item .actions button:hover { transform: scale(1.05); }
-
-        /* ============================================================
-           نوتیفیکیشن
-           ============================================================ */
-        .notification {
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            padding: 14px 28px;
-            border-radius: var(--radius-3d);
-            z-index: 999;
-            font-size: 13px;
-            box-shadow: var(--shadow-hover);
-            animation: fadeInUp 0.4s ease;
-            max-width: 90%;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: var(--text-primary);
-            font-weight: 500;
-        }
-
-        /* ============================================================
-           حالت خالی
-           ============================================================ */
-        .empty-state {
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 13px;
-            padding: 50px 10px;
-        }
-
-        .empty-state i {
-            font-size: 48px;
-            display: block;
-            margin-bottom: 14px;
-            opacity: 0.3;
-        }
-
-        /* ============================================================
-           مودال ثبت‌نام
-           ============================================================ */
-        .modal-3d {
-            position: fixed;
-            inset: 0;
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(30px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 500;
-            padding: 20px;
-        }
-
-        .modal-box-3d {
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            padding: 32px;
-            border-radius: var(--radius-3d);
-            max-width: 440px;
-            width: 100%;
-            text-align: center;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: var(--shadow-hover);
-            animation: fadeInUp 0.4s ease;
-        }
-
-        .modal-box-3d h2 {
-            font-size: 26px;
-            font-weight: 900;
-            color: var(--text-primary);
-            margin-bottom: 8px;
-        }
-
-        .modal-box-3d .sub {
-            color: var(--text-secondary);
-            font-size: 13px;
-            margin-bottom: 20px;
-        }
-
-        .avatar-upload-3d {
-            position: relative;
-            width: 100px;
-            height: 100px;
-            margin: 0 auto 18px;
-        }
-
-        .avatar-upload-3d .avatar {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            padding: 3px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-        }
-
-        .avatar-upload-3d .avatar img {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 3px solid #fff;
-        }
-
-        .avatar-upload-3d label {
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            width: 36px;
-            height: 36px;
-            background: var(--primary);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            color: #fff;
-            cursor: pointer;
-            border: 3px solid #fff;
-            transition: var(--transition-smooth);
-        }
-
-        .avatar-upload-3d label:hover { transform: scale(1.1); }
-        .avatar-upload-3d input { display: none; }
-
-        .modal-box-3d .name-input-3d {
-            width: 100%;
-            background: var(--bg-soft);
-            border: 2px solid transparent;
-            border-radius: var(--radius-sm);
-            color: var(--text-primary);
-            padding: 14px;
-            font-size: 15px;
-            margin-bottom: 18px;
-            text-align: center;
-            outline: none;
-            transition: var(--transition-smooth);
-        }
-
-        .modal-box-3d .name-input-3d:focus {
-            border-color: var(--primary);
-            background: #fff;
-        }
-
-        /* ============================================================
-           اسکرول به بالا
-           ============================================================ */
-        .scroll-top {
-            position: fixed;
-            bottom: 120px;
-            right: 20px;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--bg-secondary);
-            border: 2px solid var(--border-color);
-            color: var(--text-secondary);
-            font-size: 20px;
-            cursor: pointer;
-            transition: var(--transition-spring);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            box-shadow: var(--shadow);
-            z-index: 50;
-        }
-
-        .scroll-top:hover {
-            border-color: var(--primary);
-            color: var(--primary);
-            transform: translateY(-4px);
-            box-shadow: var(--shadow-hover);
-        }
-
-        .scroll-top.show { display: flex; }
-
-        /* ============================================================
-           ریسپانسیو
-           ============================================================ */
-        @media (max-width: 600px) {
-            .main-header { padding: 10px 14px; gap: 10px; }
-            .profile-btn .avatar { width: 36px; height: 36px; }
-            .profile-btn .info .name { font-size: 12px; }
-            .user-score { font-size: 10px; padding: 4px 12px; }
-            .search-box { padding: 6px 14px; }
-            .search-box input { font-size: 11px; }
-            
-            .page-header h1 { font-size: 18px; }
-            .explore-grid { gap: 8px; }
-            
-            .main-nav { padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px); gap: 6px; }
-            .nav-btn { min-height: 56px; padding: 10px 4px; }
-            .nav-btn i { font-size: 22px; }
-            .nav-btn span { font-size: 9px; }
-            
-            .post-card { padding: 14px; }
-            .post-card .content { font-size: 13.5px; }
-            .post-head .avatar { width: 34px; height: 34px; }
-            .post-stats button { font-size: 12px; padding: 6px 12px; }
-            
-            .btn { padding: 10px 20px; font-size: 12px; min-height: 42px; }
-            .btn-action { width: 44px; height: 44px; font-size: 17px; }
-            
-            .chat-container { height: calc(100vh - 170px); }
-            .chat-item { padding: 12px 14px; }
-            .chat-item .avatar { width: 40px; height: 40px; }
-            .message { max-width: 92%; font-size: 12.5px; }
-            
-            .assistant-stats { grid-template-columns: repeat(2, 1fr); }
-            .stat-chip b { font-size: 18px; }
-            .stat-chip { padding: 14px; }
-            
-            .modal-box-3d { padding: 20px; }
-            .modal-box-3d h2 { font-size: 20px; }
-            
-            .post-modal-content { max-width: 100%; border-radius: 0; }
-            .post-modal-media { min-height: 200px; max-height: 40vh; }
-            .post-modal-media img,
-            .post-modal-media video { max-height: 40vh; }
-            
-            .floating-upload { padding: 12px 24px; font-size: 13px; bottom: 95px; }
-            .scroll-top { bottom: 105px; right: 14px; width: 44px; height: 44px; font-size: 17px; }
-        }
-
-        @media (max-width: 400px) {
-            .nav-btn i { font-size: 18px; }
-            .nav-btn span { font-size: 8px; }
-            .nav-btn { min-height: 48px; padding: 8px 2px; }
-            .explore-grid { gap: 5px; }
-            .btn-action { width: 38px; height: 38px; font-size: 15px; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<title>یارِ من - پلتفرم هوشمند اجتماعی</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+/* ============================================
+   تم حرفه‌ای 3D - نسخه نهایی
+   ============================================ */
+:root {
+  --bg-primary: #0b0d1a;
+  --bg-secondary: #12152a;
+  --bg-card: #181d3a;
+  --bg-card-hover: #1f2650;
+  --border-color: #2a3266;
+  --border-glow: rgba(108, 92, 231, 0.3);
+  
+  --text-primary: #f0f2ff;
+  --text-secondary: #a8b0e0;
+  --text-muted: #5a6490;
+  
+  --gradient-main: linear-gradient(135deg, #6c5ce7, #a855f7, #ec4899);
+  --gradient-secondary: linear-gradient(135deg, #f59e0b, #f97316);
+  --gradient-danger: linear-gradient(135deg, #ef4444, #dc2626);
+  --gradient-success: linear-gradient(135deg, #22c55e, #16a34a);
+  
+  --shadow-3d: 0 8px 32px rgba(0,0,0,0.6), 0 0 60px rgba(108, 92, 231, 0.1);
+  --shadow-glow: 0 0 40px rgba(108, 92, 231, 0.2);
+  --shadow-btn: 0 4px 15px rgba(108, 92, 231, 0.4);
+  
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-full: 999px;
+  
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: 'Vazirmatn', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image: 
+    radial-gradient(ellipse at 20% 0%, rgba(108, 92, 231, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(236, 72, 153, 0.05) 0%, transparent 50%);
+}
+
+/* ============================================
+   اسکرول بار
+   ============================================ */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { 
+  background: var(--gradient-main);
+  border-radius: 999px;
+}
+
+/* ============================================
+   دکمه‌های 3D استخوانی
+   ============================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border: none;
+  border-radius: var(--radius-full);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+  text-transform: none;
+  letter-spacing: 0.3px;
+  min-height: 56px;
+  min-width: 56px;
+  box-shadow: var(--shadow-btn);
+  transform: translateY(0);
+}
+
+.btn:active {
+  transform: scale(0.95) translateY(2px);
+}
+
+.btn i {
+  font-size: 20px;
+}
+
+/* دکمه اصلی */
+.btn-primary {
+  background: var(--gradient-main);
+  color: #fff;
+  box-shadow: 0 6px 25px rgba(108, 92, 231, 0.4);
+}
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 40px rgba(108, 92, 231, 0.5);
+}
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* دکمه ثانویه */
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 2px solid var(--border-color);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+.btn-secondary:hover {
+  border-color: #6c5ce7;
+  background: var(--bg-card-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 30px rgba(108, 92, 231, 0.2);
+}
+
+/* دکمه موفقیت */
+.btn-success {
+  background: var(--gradient-success);
+  color: #fff;
+  box-shadow: 0 6px 25px rgba(34, 197, 94, 0.4);
+}
+.btn-success:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 40px rgba(34, 197, 94, 0.5);
+}
+
+/* دکمه خطر */
+.btn-danger {
+  background: var(--gradient-danger);
+  color: #fff;
+  box-shadow: 0 6px 25px rgba(239, 68, 68, 0.4);
+}
+.btn-danger:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 40px rgba(239, 68, 68, 0.5);
+}
+
+/* دکمه طلایی */
+.btn-gold {
+  background: var(--gradient-secondary);
+  color: #0b0d1a;
+  box-shadow: 0 6px 25px rgba(245, 158, 11, 0.4);
+}
+.btn-gold:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 40px rgba(245, 158, 11, 0.5);
+}
+
+/* دکمه شیشه‌ای */
+.btn-glass {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+}
+.btn-glass:hover {
+  background: rgba(255,255,255,0.1);
+  transform: translateY(-3px);
+}
+
+/* ============================================
+   هدر
+   ============================================ */
+.main-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(11, 13, 26, 0.92);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  padding: 0;
+  transition: var(--transition);
+}
+.profile-btn:hover {
+  transform: scale(1.02);
+}
+.profile-btn img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--bg-card);
+  transition: var(--transition);
+  background-image: var(--gradient-main);
+  padding: 2px;
+}
+.profile-btn img:hover {
+  transform: scale(1.05);
+}
+.profile-btn span {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-center {
+  flex: 1;
+  max-width: 420px;
+  min-width: 0;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 8px 18px;
+  transition: var(--transition);
+}
+.search-box:focus-within {
+  border-color: #6c5ce7;
+  box-shadow: 0 0 30px rgba(108, 92, 231, 0.15);
+}
+.search-box i {
+  color: var(--text-muted);
+  font-size: 16px;
+}
+.search-box input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  width: 100%;
+  font-size: 14px;
+  padding: 6px 0;
+}
+.search-box input::placeholder {
+  color: var(--text-muted);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-score {
+  font-size: 14px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  color: #f59e0b;
+  font-weight: 700;
+}
+.admin-btn {
+  background: var(--gradient-main);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  box-shadow: 0 4px 20px rgba(108, 92, 231, 0.3);
+}
+.admin-btn.show {
+  display: flex;
+}
+.admin-btn:hover {
+  transform: scale(1.08) rotate(-5deg);
+  box-shadow: 0 8px 30px rgba(108, 92, 231, 0.5);
+}
+
+/* ============================================
+   ناوبری پایین - بزرگ و حرفه‌ای
+   ============================================ */
+.main-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  background: rgba(18, 21, 42, 0.95);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border-color);
+  padding: 8px 4px calc(env(safe-area-inset-bottom) + 8px);
+  gap: 4px;
+}
+
+.nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 8px 4px;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  transition: var(--transition);
+  position: relative;
+  min-height: 60px;
+}
+.nav-btn i {
+  font-size: 24px;
+  transition: var(--transition);
+}
+.nav-btn span {
+  font-size: 10px;
+  font-weight: 600;
+}
+.nav-btn.active {
+  color: #fff;
+  background: rgba(108, 92, 231, 0.15);
+}
+.nav-btn.active i {
+  transform: translateY(-4px);
+  text-shadow: 0 0 30px rgba(108, 92, 231, 0.5);
+}
+.nav-btn:active {
+  transform: scale(0.92);
+}
+.nav-btn .badge {
+  position: absolute;
+  top: 4px;
+  right: 50%;
+  transform: translateX(50%);
+  background: var(--gradient-danger);
+  color: #fff;
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  min-width: 18px;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* ============================================
+   صفحات
+   ============================================ */
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12px 14px 80px;
+}
+
+.page {
+  display: none;
+  animation: fadeSlideUp 0.5s ease;
+}
+.page.active {
+  display: block;
+}
+
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--gradient-main);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.page-title i {
+  -webkit-text-fill-color: initial;
+  color: #6c5ce7;
+}
+
+/* ============================================
+   کامپوزر پست - بزرگ و حرفه‌ای
+   ============================================ */
+.composer {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 20px;
+  transition: var(--transition);
+  box-shadow: var(--shadow-3d);
+}
+.composer:focus-within {
+  border-color: #6c5ce7;
+  box-shadow: var(--shadow-glow);
+}
+.composer textarea {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 16px;
+  resize: vertical;
+  min-height: 80px;
+  font-size: 16px;
+  transition: var(--transition);
+  font-family: inherit;
+}
+.composer textarea:focus {
+  border-color: #6c5ce7;
+  outline: none;
+}
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.composer-actions .media-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.composer-actions .media-buttons label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  min-height: 48px;
+}
+.composer-actions .media-buttons label:hover {
+  border-color: #6c5ce7;
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+.composer-actions .media-buttons label i {
+  font-size: 18px;
+}
+.composer-actions .media-buttons input {
+  display: none;
+}
+
+.media-preview {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: var(--radius-md);
+  position: relative;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.media-preview img,
+.media-preview video {
+  width: 100%;
+  max-height: 400px;
+  display: block;
+  border-radius: var(--radius-md);
+}
+.media-preview .remove-media {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.8);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.media-preview .remove-media:hover {
+  transform: scale(1.1);
+}
+
+/* ============================================
+   کارت پست - بزرگ و حرفه‌ای
+   ============================================ */
+.post-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  transition: var(--transition);
+  box-shadow: var(--shadow-3d);
+  margin-bottom: 16px;
+}
+.post-card:hover {
+  border-color: var(--border-glow);
+  transform: translateY(-2px);
+}
+
+.post-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+.post-head img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background-image: var(--gradient-main);
+  padding: 2px;
+  background-clip: padding-box;
+  transition: var(--transition);
+}
+.post-head img:hover {
+  transform: scale(1.05);
+}
+.post-head .name {
+  font-size: 15px;
+  font-weight: 700;
+}
+.post-head .name .verified {
+  color: #60a5fa;
+  font-size: 13px;
+}
+.post-head .time {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-inline-start: auto;
+}
+
+.post-card .content {
+  font-size: 16px;
+  line-height: 2;
+  white-space: pre-wrap;
+  margin-bottom: 14px;
+}
+
+.post-card .media-wrapper {
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 14px;
+  background: var(--bg-secondary);
+}
+.post-card .media-wrapper img,
+.post-card .media-wrapper video {
+  width: 100%;
+  max-height: 500px;
+  display: block;
+}
+
+/* دکمه‌های تعامل - بزرگ و استخوانی */
+.post-stats {
+  display: flex;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 2px solid var(--border-color);
+  flex-wrap: wrap;
+}
+.post-stats button {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-full);
+  transition: var(--transition);
+  cursor: pointer;
+  min-height: 48px;
+}
+.post-stats button:hover {
+  border-color: #6c5ce7;
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+}
+.post-stats button:active {
+  transform: scale(0.95);
+}
+.post-stats button i {
+  font-size: 18px;
+}
+.post-stats button.liked {
+  color: #ec4899;
+  border-color: #ec4899;
+  background: rgba(236, 72, 153, 0.1);
+}
+.post-stats button.liked i {
+  animation: likePulse 0.4s ease;
+}
+@keyframes likePulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.5); }
+  100% { transform: scale(1); }
+}
+
+/* ============================================
+   مودال پست کامل (اکسپلور)
+   ============================================ */
+.post-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.9);
+  backdrop-filter: blur(20px);
+  z-index: 500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.4s ease;
+}
+.post-modal-overlay.open {
+  display: flex;
+}
+.post-modal-overlay .post-modal-content {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  box-shadow: var(--shadow-3d);
+  animation: slideUp 0.4s ease;
+}
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.post-modal-content .post-head img {
+  width: 52px;
+  height: 52px;
+}
+.post-modal-content .content {
+  font-size: 18px;
+  line-height: 2.2;
+}
+.post-modal-content .media-wrapper img,
+.post-modal-content .media-wrapper video {
+  max-height: 600px;
+}
+.post-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  font-size: 24px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.post-modal-close:hover {
+  transform: rotate(90deg);
+  background: rgba(0,0,0,0.8);
+}
+
+/* ============================================
+   اکسپلور - گرید پست‌ها
+   ============================================ */
+.explore-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.explore-post-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-3d);
+  position: relative;
+}
+.explore-post-card:hover {
+  transform: translateY(-4px);
+  border-color: #6c5ce7;
+  box-shadow: var(--shadow-glow);
+}
+.explore-post-card .post-thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: var(--bg-secondary);
+}
+.explore-post-card .post-thumb-video {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  background: var(--bg-secondary);
+}
+.explore-post-card .post-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  color: #fff;
+}
+.explore-post-card .post-overlay .post-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.explore-post-card .post-overlay .post-user img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+.explore-post-card .post-overlay .post-user .name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.explore-post-card .post-overlay .post-stats-mini {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.explore-post-card .post-overlay .post-stats-mini i {
+  margin-left: 4px;
+}
+
+/* ============================================
+   چت - بزرگ و حرفه‌ای
+   ============================================ */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: calc(100vh - 200px);
+}
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-3d);
+}
+.chat-item:hover {
+  border-color: #6c5ce7;
+  background: var(--bg-card-hover);
+  transform: translateX(-4px);
+}
+.chat-item img {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  background-image: var(--gradient-main);
+  padding: 2px;
+}
+.chat-item .info {
+  flex: 1;
+  min-width: 0;
+}
+.chat-item .info strong {
+  font-size: 15px;
+  display: block;
+}
+.chat-item .info p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-item .unread {
+  background: var(--gradient-main);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  min-width: 24px;
+  text-align: center;
+}
+
+/* ============================================
+   فرم ثبت‌نام
+   ============================================ */
+.register-modal .modal-content {
+  max-width: 440px;
+  padding: 32px;
+}
+.register-modal .avatar-upload {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 16px;
+}
+.register-modal .avatar-upload img {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  background-image: var(--gradient-main);
+  padding: 3px;
+}
+.register-modal .avatar-upload label {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 34px;
+  height: 34px;
+  background: var(--gradient-main);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid var(--bg-primary);
+  transition: var(--transition);
+}
+.register-modal .avatar-upload label:hover {
+  transform: scale(1.1);
+}
+.register-modal .avatar-upload input {
+  display: none;
+}
+.register-modal .form-input {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: 14px 18px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  outline: none;
+  transition: var(--transition);
+  font-family: inherit;
+}
+.register-modal .form-input:focus {
+  border-color: #6c5ce7;
+  box-shadow: 0 0 30px rgba(108, 92, 231, 0.1);
+}
+
+/* ============================================
+   پنل مدیریت
+   ============================================ */
+.admin-panel {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-3d);
+}
+.admin-panel h3 {
+  font-size: 20px;
+  margin-bottom: 16px;
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.admin-grid .btn {
+  width: 100%;
+  justify-content: center;
+  min-height: 52px;
+  font-size: 14px;
+}
+
+/* ============================================
+   نوتیفیکیشن
+   ============================================ */
+.notification {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  padding: 14px 28px;
+  border-radius: var(--radius-full);
+  z-index: 999;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--shadow-3d);
+  max-width: 90%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: notificationSlide 0.5s ease;
+  backdrop-filter: blur(10px);
+}
+@keyframes notificationSlide {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -30px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ============================================
+   ریسپانسیو
+   ============================================ */
+@media (max-width: 600px) {
+  .main-header { padding: 8px 12px; }
+  .profile-btn img { width: 36px; height: 36px; }
+  .profile-btn span { max-width: 50px; font-size: 13px; }
+  .user-score { font-size: 12px; padding: 4px 12px; }
+  .search-box { padding: 6px 14px; }
+  .search-box input { font-size: 13px; }
+  
+  .btn { padding: 12px 20px; font-size: 14px; min-height: 48px; }
+  .btn i { font-size: 16px; }
+  
+  .page-title { font-size: 20px; }
+  .composer { padding: 14px; }
+  .composer textarea { font-size: 14px; min-height: 60px; }
+  
+  .post-card { padding: 14px; }
+  .post-card .content { font-size: 14px; }
+  .post-stats button { padding: 8px 16px; font-size: 12px; min-height: 40px; }
+  .post-stats button i { font-size: 15px; }
+  
+  .explore-post-card .post-overlay .post-user .name { font-size: 12px; }
+  .explore-post-card .post-overlay .post-stats-mini { font-size: 11px; }
+  
+  .chat-item { padding: 10px 14px; }
+  .chat-item img { width: 40px; height: 40px; }
+  
+  .nav-btn { min-height: 50px; }
+  .nav-btn i { font-size: 20px; }
+  .nav-btn span { font-size: 9px; }
+  
+  .admin-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 400px) {
+  .btn { padding: 10px 16px; font-size: 12px; min-height: 40px; }
+  .btn i { font-size: 14px; }
+  .post-stats button { padding: 6px 12px; font-size: 11px; min-height: 34px; }
+  .post-stats button i { font-size: 13px; }
+  .nav-btn { min-height: 44px; }
+  .nav-btn i { font-size: 18px; }
+  .admin-grid { grid-template-columns: 1fr; }
+}
+</style>
 </head>
 <body>
 
-    <!-- ===== هدر ===== -->
-    <header class="main-header">
-        <button id="profileBtn" class="profile-btn">
-            <div class="avatar">
-                <img src="" alt="پروفایل" id="avatarImg">
-            </div>
-            <div class="info">
-                <span class="name" id="userName">کاربر</span>
-                <span class="status">آنلاین</span>
-            </div>
-        </button>
-
-        <div class="header-center">
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="جستجو در کانال‌ها و محتواها...">
-            </div>
-        </div>
-
-        <div class="header-right">
-            <span class="user-score">
-                <i class="fas fa-trophy"></i>
-                <span id="userScore">۰</span>
-            </span>
-            <button class="admin-btn" id="adminBtn" onclick="toggleAdminPanel()">
-                <i class="fas fa-crown"></i>
-            </button>
-        </div>
-    </header>
-
-    <!-- ===== ناوبری پایین ===== -->
-    <nav class="main-nav">
-        <button class="nav-btn" data-page="channel">
-            <i class="fas fa-bullhorn"></i>
-            <span>کانال</span>
-        </button>
-        <button class="nav-btn" data-page="assistant">
-            <i class="fas fa-robot"></i>
-            <span>دستیار</span>
-        </button>
-        <button class="nav-btn" data-page="chat">
-            <i class="fas fa-envelope"></i>
-            <span>چت</span>
-            <span class="badge" id="chatBadge">0</span>
-        </button>
-        <button class="nav-btn active" data-page="explore">
-            <i class="fas fa-compass"></i>
-            <span>اکسپلور</span>
-        </button>
-    </nav>
-
-    <!-- ===== دکمه آپلود شناور ===== -->
-    <button class="floating-upload" onclick="openUpload()">
-        <i class="fas fa-plus"></i>
-        آپلود
+<!-- ============================================
+   مودال ثبت‌نام
+   ============================================ -->
+<div id="registerModal" class="modal register-modal" style="display:none;">
+  <div class="modal-content">
+    <h2 style="font-size:24px;text-align:center;margin-bottom:8px;">👋 به یارِ من خوش اومدی</h2>
+    <p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:16px;">
+      پلتفرم هوشمند اجتماعی نسل جدید
+    </p>
+    <div class="avatar-upload">
+      <img id="regAvatarPreview" src="https://api.dicebear.com/7.x/thumbs/svg?seed=guest">
+      <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
+    </div>
+    <input type="email" id="regEmailInput" class="form-input" placeholder="ایمیل خود را وارد کنید" dir="ltr">
+    <input type="password" id="regPasswordInput" class="form-input" placeholder="رمز عبور (حداقل ۶ کاراکتر)" dir="ltr">
+    <input type="text" id="regNameInput" class="form-input" placeholder="نام نمایشی شما">
+    <button class="btn btn-primary" style="width:100%;padding:16px;font-size:18px;" onclick="registerUser()">
+      <i class="fas fa-rocket"></i> عضویت در یارِ من
     </button>
+    <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:12px;">
+      با عضویت، قوانین و حریم خصوصی را می‌پذیرید
+    </p>
+  </div>
+</div>
 
-    <!-- ===== دکمه اسکرول ===== -->
-    <button class="scroll-top" id="scrollTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">
-        <i class="fas fa-chevron-up"></i>
+<!-- ============================================
+   مودال پست کامل (اکسپلور)
+   ============================================ -->
+<div id="postModal" class="post-modal-overlay">
+  <div class="post-modal-content" style="position:relative;">
+    <button class="post-modal-close" onclick="closePostModal()">✕</button>
+    <div id="postModalBody"></div>
+  </div>
+</div>
+
+<!-- ============================================
+   هدر
+   ============================================ -->
+<header class="main-header">
+  <button id="profileBtn" class="profile-btn">
+    <img src="" alt="پروفایل" id="avatarImg">
+    <span id="userName">کاربر</span>
+  </button>
+  <div class="header-center">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input type="text" id="searchInput" placeholder="جستجوی کاربر یا کانال...">
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="user-score" id="userScore">🏆 ۰</span>
+    <button class="admin-btn" id="adminBtn" onclick="toggleAdminPanel()">
+      <i class="fas fa-crown"></i>
     </button>
+  </div>
+</header>
 
-    <!-- ===== محتوای اصلی ===== -->
-    <main id="mainContent">
+<!-- ============================================
+   ناوبری پایین
+   ============================================ -->
+<nav class="main-nav">
+  <button class="nav-btn active" data-page="channel">
+    <i class="fas fa-bullhorn"></i>
+    <span>کانال</span>
+  </button>
+  <button class="nav-btn" data-page="assistant">
+    <i class="fas fa-robot"></i>
+    <span>دستیار</span>
+  </button>
+  <button class="nav-btn" data-page="chat">
+    <i class="fas fa-envelope"></i>
+    <span>چت</span>
+    <span class="badge" id="chatBadge" style="display:none;">0</span>
+  </button>
+  <button class="nav-btn" data-page="explore">
+    <i class="fas fa-compass"></i>
+    <span>اکسپلور</span>
+  </button>
+</nav>
 
-        <!-- صفحه کانال -->
-        <section id="channelPage" class="page">
-            <div class="page-header">
-                <h1>📢 کانال من</h1>
-                <span class="subtitle" id="followersCount">۰ فالوور</span>
-            </div>
+<!-- ============================================
+   محتوای اصلی
+   ============================================ -->
+<main id="mainContent">
 
-            <div class="composer">
-                <textarea id="postContent" placeholder="چه خبر؟ یه پست جدید بنویس..." rows="2"></textarea>
-                <div class="composer-actions">
-                    <div class="media-buttons">
-                        <label>
-                            <i class="fas fa-image"></i> عکس
-                            <input type="file" id="postImageInput" accept="image/*">
-                        </label>
-                        <label>
-                            <i class="fas fa-video"></i> ویدیو
-                            <input type="file" id="postVideoInput" accept="video/*">
-                        </label>
-                    </div>
-                    <button class="btn btn-primary" id="publishPostBtn" onclick="createPost()">
-                        <i class="fas fa-paper-plane"></i> انتشار
-                    </button>
-                </div>
-                <div id="mediaPreview" class="media-preview" style="display:none;">
-                    <button class="remove-media" onclick="removeMedia()">✕</button>
-                    <div id="mediaPreviewContent"></div>
-                </div>
-            </div>
-
-            <div id="channelPosts" class="posts-container"></div>
-        </section>
-
-        <!-- صفحه دستیار -->
-        <section id="assistantPage" class="page">
-            <div class="page-header">
-                <h1>🤖 دستیار من</h1>
-                <span class="subtitle">هوش مصنوعی</span>
-            </div>
-            <div id="assistantContent">
-                <div class="assistant-stats">
-                    <div class="stat-chip"><b id="statPosts">۰</b><span>پست</span></div>
-                    <div class="stat-chip"><b id="statTrainings">۰</b><span>آموزش</span></div>
-                    <div class="stat-chip"><b id="statFollowers">۰</b><span>فالوور</span></div>
-                    <div class="stat-chip"><b id="statEngagement">۰٪</b><span>تعامل</span></div>
-                </div>
-
-                <div class="training-section">
-                    <h3>💬 امتحان کن</h3>
-                    <div class="mini-chat" id="assistantPreviewChat" style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
-                    <div style="display:flex;gap:10px;">
-                        <input type="text" id="assistantPreviewInput" placeholder="یه چیزی بپرس..." style="flex:1;background:var(--bg-soft);border:2px solid transparent;border-radius:var(--radius-full);padding:10px 18px;color:var(--text-primary);font-size:13px;outline:none;transition:var(--transition-smooth);">
-                        <button onclick="testAssistant()" class="btn btn-primary" style="padding:10px 24px;min-height:44px;">پرسیدن</button>
-                    </div>
-                </div>
-
-                <div class="training-section">
-                    <h3>📝 سوال و جواب</h3>
-                    <div class="train-form">
-                        <input type="text" id="questionInput" placeholder="سوال...">
-                        <input type="text" id="answerInput" placeholder="جواب...">
-                        <button onclick="trainAssistant()" class="btn btn-primary">یاد بده!</button>
-                    </div>
-                    <div id="qaList" class="qa-list"></div>
-                </div>
-
-                <div class="training-section">
-                    <h3>🔑 کلمات کلیدی</h3>
-                    <div class="train-form">
-                        <input type="text" id="keywordInput" placeholder="کلمه کلیدی...">
-                        <input type="text" id="keywordResponseInput" placeholder="پاسخ...">
-                        <button onclick="trainKeyword()" class="btn btn-primary">ثبت کن</button>
-                    </div>
-                    <div id="keywordList" class="keyword-list"></div>
-                </div>
-            </div>
-        </section>
-
-        <!-- صفحه چت -->
-        <section id="chatPage" class="page">
-            <div class="page-header">
-                <h1>💬 چت خصوصی</h1>
-                <span class="subtitle">پیام‌ها</span>
-            </div>
-            <div class="chat-container">
-                <div class="chat-list" id="chatList"></div>
-                <div class="chat-window" id="chatWindow">
-                    <div class="chat-window-head">
-                        <div class="avatar">
-                            <img id="chatWithAvatar" src="">
-                        </div>
-                        <strong id="chatWithName"></strong>
-                        <button class="close-btn" onclick="closeChatWindow()">✕</button>
-                    </div>
-                    <div class="chat-messages" id="chatMessages"></div>
-                    <div class="chat-input">
-                        <input type="text" id="messageInput" placeholder="پیام...">
-                        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- صفحه اکسپلور -->
-        <section id="explorePage" class="page active">
-            <div class="page-header">
-                <h1>🔍 اکسپلور</h1>
-                <span class="subtitle">پست‌های داغ</span>
-            </div>
-            <div id="exploreContent" class="explore-grid"></div>
-        </section>
-
-        <!-- صفحه پروفایل -->
-        <section id="profilePage" class="page">
-            <button onclick="backFromProfile()" class="btn btn-ghost" style="margin-bottom:12px;padding:6px 16px;">← بازگشت</button>
-            <div class="profile-header">
-                <div class="avatar">
-                    <img id="viewAvatar" src="">
-                </div>
-                <h2 id="viewName"></h2>
-                <p class="bio" id="viewBio"></p>
-                <div class="profile-stats">
-                    <div><b id="viewFollowers">۰</b><span>فالوور</span></div>
-                    <div><b id="viewPosts">۰</b><span>پست</span></div>
-                    <div><b id="viewScore">۰</b><span>امتیاز</span></div>
-                </div>
-                <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
-                    <button class="btn btn-primary" id="viewFollowBtn" onclick="toggleFollowView()">فالو</button>
-                    <button class="btn btn-secondary" onclick="openChatFromProfile()">پیام</button>
-                </div>
-            </div>
-            <div id="viewPostsContainer" class="posts-container"></div>
-        </section>
-
-        <!-- صفحه مدیریت -->
-        <section id="adminPage" class="page">
-            <div class="page-header">
-                <h1>👑 مدیریت</h1>
-                <span class="subtitle">پنل ادمین</span>
-            </div>
-            <div class="admin-panel">
-                <div class="admin-tabs">
-                    <button class="admin-tab active" data-tab="stats" onclick="switchAdminTab('stats')">📊 آمار</button>
-                    <button class="admin-tab" data-tab="broadcast" onclick="switchAdminTab('broadcast')">📢 ارسال همگانی</button>
-                    <button class="admin-tab" data-tab="users" onclick="switchAdminTab('users')">👥 کاربران</button>
-                    <button class="admin-tab" data-tab="posts" onclick="switchAdminTab('posts')">📝 پست‌ها</button>
-                </div>
-                <div class="admin-content">
-                    <div id="adminStats" class="admin-tab-content active"></div>
-                    <div id="adminBroadcast" class="admin-tab-content">
-                        <div style="display:flex;flex-direction:column;gap:10px;">
-                            <input type="text" id="broadcastTitle" placeholder="عنوان اعلان..." style="background:var(--bg-soft);border:2px solid transparent;border-radius:var(--radius-sm);color:var(--text-primary);padding:12px 16px;font-size:13px;outline:none;font-family:inherit;transition:var(--transition-smooth);">
-                            <textarea id="broadcastMessage" placeholder="متن پیام..." rows="3" style="background:var(--bg-soft);border:2px solid transparent;border-radius:var(--radius-sm);color:var(--text-primary);padding:12px 16px;font-size:13px;outline:none;font-family:inherit;transition:var(--transition-smooth);"></textarea>
-                            <button onclick="sendBroadcast()" class="btn btn-primary">ارسال به همه</button>
-                        </div>
-                    </div>
-                    <div id="adminUsers" class="admin-tab-content"></div>
-                    <div id="adminPosts" class="admin-tab-content"></div>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <!-- ===== مودال پست ===== -->
-    <div class="post-modal" id="postModal">
-        <div class="post-modal-content">
-            <div class="post-modal-header">
-                <div class="avatar">
-                    <img id="modalAvatar" src="" onclick="openProfileFromModal()">
-                </div>
-                <span class="name" id="modalName" onclick="openProfileFromModal()"></span>
-                <span class="time" id="modalTime"></span>
-                <button class="close-btn" onclick="closePostModal()">✕</button>
-            </div>
-            <div class="post-modal-media" id="modalMedia"></div>
-            <div class="post-modal-body">
-                <div class="content" id="modalContent"></div>
-                <div class="post-modal-actions">
-                    <button class="btn-action" id="modalLikeBtn" onclick="modalToggleLike()">
-                        <i class="far fa-heart"></i>
-                    </button>
-                    <button class="btn-action" onclick="modalFocusComment()">
-                        <i class="far fa-comment"></i>
-                    </button>
-                    <button class="btn-action" onclick="modalShare()">
-                        <i class="fas fa-share"></i>
-                    </button>
-                    <span style="flex:1;"></span>
-                    <span style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:4px;">
-                        <i class="far fa-eye"></i> <span id="modalViews">۰</span>
-                    </span>
-                </div>
-                <div class="post-modal-comments" id="modalComments"></div>
-                <div class="post-modal-input">
-                    <input type="text" id="modalCommentInput" placeholder="کامنت بنویس...">
-                    <button onclick="modalSubmitComment()"><i class="fas fa-paper-plane"></i></button>
-                </div>
-            </div>
-        </div>
+  <!-- صفحه کانال -->
+  <section id="channelPage" class="page active">
+    <div class="channel-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h2 style="font-size:20px;display:flex;align-items:center;gap:8px;">
+        📢 کانال من
+        <span id="boostBadge" class="boost-badge" style="font-size:11px;padding:4px 16px;border-radius:999px;background:var(--bg-secondary);color:var(--text-secondary);border:2px solid var(--border-color);">عادی</span>
+      </h2>
+      <span class="followers-count" style="font-size:14px;color:var(--text-secondary);background:var(--bg-secondary);padding:4px 16px;border-radius:999px;border:2px solid var(--border-color);">۰ فالوور</span>
     </div>
 
-    <!-- ===== مودال ثبت‌نام ===== -->
-    <div id="registerModalContainer"></div>
+    <div class="composer">
+      <textarea id="postContent" placeholder="چه خبر؟ یه پست جدید بنویس..." rows="3"></textarea>
+      <div class="composer-actions">
+        <div class="media-buttons">
+          <label><i class="fas fa-image"></i> عکس <input type="file" id="postImageInput" accept="image/*"></label>
+          <label><i class="fas fa-video"></i> ویدیو <input type="file" id="postVideoInput" accept="video/*"></label>
+        </div>
+        <button class="btn btn-primary" id="publishPostBtn" onclick="createPost()">
+          <i class="fas fa-paper-plane"></i> انتشار
+        </button>
+      </div>
+      <div id="mediaPreview" class="media-preview" style="display:none;">
+        <button class="remove-media" onclick="removeMedia()">✕</button>
+        <div id="mediaPreviewContent"></div>
+      </div>
+    </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="script.js"></script>
+    <div id="channelPosts" class="posts-container"></div>
+  </section>
+
+  <!-- صفحه دستیار -->
+  <section id="assistantPage" class="page">
+    <h2 class="page-title"><i class="fas fa-robot"></i> دستیار من</h2>
+    <div class="assistant-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-bottom:16px;">
+      <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:14px;text-align:center;">
+        <b id="statPosts" style="font-size:22px;display:block;">۰</b>
+        <span style="font-size:12px;color:var(--text-muted);">پست</span>
+      </div>
+      <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:14px;text-align:center;">
+        <b id="statTrainings" style="font-size:22px;display:block;">۰</b>
+        <span style="font-size:12px;color:var(--text-muted);">آموزش</span>
+      </div>
+      <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:14px;text-align:center;">
+        <b id="statFollowers" style="font-size:22px;display:block;">۰</b>
+        <span style="font-size:12px;color:var(--text-muted);">فالوور</span>
+      </div>
+      <div class="stat-chip" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:14px;text-align:center;">
+        <b id="statEngagement" style="font-size:22px;display:block;">۰٪</b>
+        <span style="font-size:12px;color:var(--text-muted);">تعامل</span>
+      </div>
+    </div>
+
+    <div class="assistant-chat-preview" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;">
+      <h3 style="font-size:14px;margin-bottom:10px;">💬 امتحان کن</h3>
+      <div class="mini-chat" id="assistantPreviewChat" style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+      <div class="mini-chat-input" style="display:flex;gap:10px;">
+        <input type="text" id="assistantPreviewInput" placeholder="یه چیزی بپرس..." style="flex:1;background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-full);padding:12px 18px;color:var(--text-primary);outline:none;font-size:14px;">
+        <button class="btn btn-secondary" onclick="testAssistant()" style="min-height:48px;padding:10px 20px;">پرسیدن</button>
+      </div>
+    </div>
+
+    <div class="training-section" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;">
+      <h3 style="font-size:15px;margin-bottom:12px;">📝 سوال و جواب</h3>
+      <div class="train-form" style="display:flex;flex-direction:column;gap:10px;">
+        <input type="text" id="questionInput" placeholder="سوال..." style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        <input type="text" id="answerInput" placeholder="جواب..." style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        <button class="btn btn-primary" onclick="trainAssistant()">یاد بده!</button>
+      </div>
+      <div id="qaList" class="qa-list" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="training-section" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:18px;margin-bottom:12px;">
+      <h3 style="font-size:15px;margin-bottom:12px;">🔑 کلمات کلیدی</h3>
+      <div class="train-form" style="display:flex;flex-direction:column;gap:10px;">
+        <input type="text" id="keywordInput" placeholder="کلمه کلیدی..." style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        <input type="text" id="keywordResponseInput" placeholder="پاسخ..." style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        <button class="btn btn-primary" onclick="trainKeyword()">ثبت کن</button>
+      </div>
+      <div id="keywordList" class="keyword-list" style="margin-top:10px;display:flex;flex-direction:column;gap:4px;max-height:150px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="auto-post-section" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:18px;">
+      <h3 style="font-size:15px;margin-bottom:12px;">📅 زمان‌بندی پست‌ها</h3>
+      <button class="btn btn-secondary" onclick="toggleAutoPost()">مدیریت زمان‌بندی</button>
+      <div id="autoPostPanel" style="display:none;flex-direction:column;gap:10px;margin-top:12px;">
+        <input type="number" id="postCount" placeholder="تعداد پست‌ها..." min="1" max="30" style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        <textarea id="postDescriptions" placeholder="توضیحات هر پست (یک در هر خط)..." rows="3" style="background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;font-family:inherit;"></textarea>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="time" id="postTime" value="09:00" style="flex:1;min-width:80px;background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+          <input type="number" id="postInterval" placeholder="فاصله (روز)" min="1" value="1" style="flex:1;min-width:80px;background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;color:var(--text-primary);outline:none;font-size:14px;">
+        </div>
+        <button class="btn btn-primary" onclick="schedulePosts()">زمان‌بندی کن</button>
+      </div>
+      <div id="scheduledPostsList" style="margin-top:10px;"></div>
+    </div>
+  </section>
+
+  <!-- صفحه چت -->
+  <section id="chatPage" class="page">
+    <h2 class="page-title"><i class="fas fa-envelope"></i> چت خصوصی</h2>
+    <div class="chat-container">
+      <div class="chat-list" id="chatList"></div>
+      <div class="chat-window" id="chatWindow" style="display:none;flex-direction:column;background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);overflow:hidden;height:100%;">
+        <div class="chat-window-head" style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:2px solid var(--border-color);flex-shrink:0;">
+          <img id="chatWithAvatar" src="" style="width:40px;height:40px;border-radius:50%;border:2px solid #6c5ce7;">
+          <strong id="chatWithName" style="font-size:16px;"></strong>
+          <button class="btn btn-glass" onclick="closeChatWindow()" style="margin-inline-start:auto;min-height:36px;min-width:36px;padding:4px 12px;font-size:16px;">✕</button>
+        </div>
+        <div class="chat-messages" id="chatMessages" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:6px;background:var(--bg-secondary);"></div>
+        <div class="chat-input" style="display:flex;gap:10px;padding:12px 16px;border-top:2px solid var(--border-color);flex-shrink:0;background:var(--bg-card);">
+          <input type="text" id="messageInput" placeholder="پیام..." style="flex:1;background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-full);padding:12px 18px;color:var(--text-primary);outline:none;font-size:14px;">
+          <button onclick="sendMessage()" style="width:48px;height:48px;border-radius:50%;background:var(--gradient-main);color:#fff;border:none;font-size:18px;transition:var(--transition);cursor:pointer;"> <i class="fas fa-paper-plane"></i> </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- صفحه اکسپلور -->
+  <section id="explorePage" class="page">
+    <h2 class="page-title"><i class="fas fa-compass"></i> اکتشاف</h2>
+    <div id="exploreContent" class="explore-grid"></div>
+  </section>
+
+  <!-- صفحه پروفایل عمومی -->
+  <section id="profilePage" class="page">
+    <button class="btn btn-glass" onclick="backFromProfile()" style="margin-bottom:12px;">← بازگشت</button>
+    <div class="profile-header" style="text-align:center;margin-bottom:16px;">
+      <img id="viewAvatar" src="" style="width:88px;height:88px;border-radius:50%;border:3px solid transparent;background-image:var(--gradient-main);padding:3px;">
+      <h2 id="viewName" style="font-size:22px;margin-top:10px;"></h2>
+      <p class="bio" id="viewBio" style="color:var(--text-secondary);font-size:14px;"></p>
+      <div class="profile-stats" style="display:flex;justify-content:center;gap:24px;margin:12px 0;">
+        <div style="text-align:center;"><b id="viewFollowers" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-muted);display:block;">فالوور</span></div>
+        <div style="text-align:center;"><b id="viewPosts" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-muted);display:block;">پست</span></div>
+        <div style="text-align:center;"><b id="viewScore" style="font-size:18px;">۰</b><span style="font-size:12px;color:var(--text-muted);display:block;">امتیاز</span></div>
+      </div>
+      <div class="profile-actions" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="viewFollowBtn" onclick="toggleFollowView()">فالو</button>
+        <button class="btn btn-secondary" onclick="openChatFromProfile()">پیام</button>
+      </div>
+    </div>
+    <div class="assistant-chat-preview" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;">
+      <h3 style="font-size:14px;margin-bottom:10px;">🤖 از دستیار این کاربر بپرس</h3>
+      <div class="mini-chat" id="viewAssistantChat" style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>
+      <div class="mini-chat-input" style="display:flex;gap:10px;">
+        <input type="text" id="viewAssistantInput" placeholder="سوالت رو بپرس..." style="flex:1;background:var(--bg-secondary);border:2px solid var(--border-color);border-radius:var(--radius-full);padding:12px 18px;color:var(--text-primary);outline:none;font-size:14px;">
+        <button class="btn btn-secondary" onclick="askOtherAssistant()" style="min-height:48px;padding:10px 20px;">پرسیدن</button>
+      </div>
+    </div>
+    <div id="viewPostsContainer" class="posts-container"></div>
+  </section>
+
+  <!-- صفحه مدیریت -->
+  <section id="adminPage" class="page">
+    <div class="admin-panel">
+      <h3>👑 پنل مدیریت</h3>
+      <div class="admin-grid">
+        <button class="btn btn-primary" onclick="sendBroadcast()"><i class="fas fa-bullhorn"></i> ارسال همگانی</button>
+        <button class="btn btn-secondary" onclick="loadAdminData('stats')"><i class="fas fa-chart-bar"></i> آمار کاربران</button>
+        <button class="btn btn-danger" onclick="adminAction('user','','ban')"><i class="fas fa-ban"></i> مسدود کردن</button>
+        <button class="btn btn-success" onclick="adminAction('user','','unban')"><i class="fas fa-check-circle"></i> لغو مسدودیت</button>
+        <button class="btn btn-danger" onclick="adminAction('post','','delete')"><i class="fas fa-trash"></i> حذف پست</button>
+        <button class="btn btn-gold" onclick="adminAction('user','','warn')"><i class="fas fa-exclamation-triangle"></i> اخطار</button>
+        <button class="btn btn-secondary" onclick="loadAdminData('stats')"><i class="fas fa-sliders-h"></i> کنترل سیستم</button>
+        <button class="btn btn-gold" onclick="adminAction('user','','addscore')"><i class="fas fa-star"></i> افزودن امتیاز</button>
+      </div>
+      <div id="adminStatsContent" style="margin-top:16px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius-md);border:2px solid var(--border-color);min-height:60px;"></div>
+    </div>
+    <div id="adminUsersList" style="background:var(--bg-card);border:2px solid var(--border-color);border-radius:var(--radius-lg);padding:16px;max-height:300px;overflow-y:auto;"></div>
+  </section>
+
+</main>
+
+<!-- ============================================
+   اسکریپت‌ها
+   ============================================ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
