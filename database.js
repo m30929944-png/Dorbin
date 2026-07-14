@@ -181,7 +181,8 @@ class DatabaseManager {
     // اجرای کوئری با مسیریابی شارد + کش
     // ============================================
     async query(key, text, params = []) {
-        const cmd = text.trim().slice(0, 6).toUpperCase();
+        const cleanText = String(text || "").trim();
+        const cmd = cleanText.split(/\s+/)[0];
         const messagesRoute = this._routeMessagesQuery(text, params);
 
         // مسیریابی ویژه جدول messages (زوج کاربر یا پخش بین همه‌ی شاردها)
