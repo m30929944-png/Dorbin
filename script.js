@@ -18,6 +18,27 @@ let pendingMedia = null;
 let pendingMediaType = null;
 let scheduledMediaFiles = [];
 let isAdmin = false;
+
+// ============================================
+// تم روشن/تیره
+// ============================================
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+    try { localStorage.setItem('yareman_theme', theme); } catch (e) {}
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    applyTheme(current === 'light' ? 'dark' : 'light');
+}
+
+(function initTheme() {
+    let saved = 'dark';
+    try { saved = localStorage.getItem('yareman_theme') || 'dark'; } catch (e) {}
+    applyTheme(saved);
+})();
 let adminPanelOpen = false;
 let chatListCache = [];
 let messagesCache = {};
@@ -1023,7 +1044,7 @@ async function openChat(userId, name, avatar) {
     currentChatUser = { id: userId, name, avatar };
     document.getElementById('chatWithName').textContent = name || 'کاربر';
     document.getElementById('chatWithAvatar').src = avatar || defaultAvatar(name);
-    document.getElementById('chatWindow').classList.add('open');
+    document.getElementById('chatThreadOverlay').classList.add('open');
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
 
     // علامت‌گذاری پیام‌ها به عنوان خوانده شده
@@ -1062,8 +1083,15 @@ function renderMessages(messages) {
 }
 
 function closeChatWindow() {
-    document.getElementById('chatWindow').classList.remove('open');
+    document.getElementById('chatThreadOverlay').classList.remove('open');
     currentChatUser = null;
+}
+
+function chatThreadOpenProfile() {
+    if (!currentChatUser) return;
+    const userId = currentChatUser.id;
+    closeChatWindow();
+    openProfile(userId);
 }
 
 async function sendMessage() {
