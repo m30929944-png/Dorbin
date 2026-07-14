@@ -1,131 +1,82 @@
 // ============================================
-// database.js - مدیریت دیتابیس پیشرفته با کش و رمزنگاری
+// database.js - مدیریت دیتابیس با شاردینگ، کش هوشمند و رمزنگاری
+// ============================================
+//
+// معماری شاردینگ:
+//   - دیتابیس به N فایل SQLite مستقل (شارد) تقسیم می‌شه (پیش‌فرض ۴، با متغیر محیطی DB_SHARD_COUNT قابل تغییره).
+//   - هر شارد کل اسکیمای جداول رو داره (نه تقسیم جدول‌ها، بلکه تقسیم ردیف‌ها بین فایل‌ها).
+//   - هر ردیف بر اساس "صاحبِ" اون ردیف مسیریابی می‌شه: کاربر با هش(id) روی یه شارد ثابت قرار می‌گیره
+//     و پست‌ها/کانال/کامنت‌ها/لایک‌های همون کاربر هم روی همون شارد ذخیره می‌شن (چون db.query با کلید userId صدا زده میشه).
+//   - برای موجودیت‌هایی که بعداً با شناسه‌ی خودشون (نه شناسه‌ی صاحبشون) جستجو می‌شن (مثلاً پست با postId)
+//     یه "دایرکتوری" کوچیک (entity_id -> shard_index) نگه می‌داریم که موقع INSERT خودکار پر می‌شه.
+//   - برای رابطه‌هایی که ذاتاً بین دو کاربر مختلفن (پیام‌های چت) از هش زوجی (هش مشترک دو کاربر) استفاده می‌شه
+//     تا کل مکالمه‌ی بین دو نفر همیشه روی یه شارد بمونه.
+//   - فالو/آنفالو چون بین دو کاربر مختلفه و هم از سمت فالوور و هم از سمت فالووینگ خونده می‌شه،
+//     با "نوشتن دوگانه" (dual-write) روی شارد هر دو کاربر ذخیره می‌شه.
+//
+// نکته مهم برای توسعه‌دهنده: سه نقطه در server.js مستقیماً db.getDb() رو بدون کلید صدا می‌زنن
+// (فالو/آنفالو، لایک پست، ارسال همگانی ادمین). این‌ها فعلاً روی شارد ۰ اجرا می‌شن (fallback امن، کرش نمی‌کنن)
+// ولی برای مقیاس واقعی باید به متدهای جدید db.followUser/db.unfollowUser/db.toggleLike سوییچ کنن
+// و broadcast باید روی db.getAllShards() لوپ بزنه. جزئیات پایین فایل.
 // ============================================
 const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 
+const SHARD_COUNT = Math.max(1, parseInt(process.env.DB_SHARD_COUNT || '4', 10));
+const DIRECTORY_SHARD = 0; // شاردی که جدول دایرکتوری روش نگه داشته می‌شه
+
 class DatabaseManager {
     constructor() {
-        // ============================================
-        // تنظیمات کش حافظه
-        // ============================================
-        this.cache = new Map();
-        this.cacheTTL = 60000; // 60 ثانیه
-        this.maxCacheSize = 1000; // حداکثر تعداد آیتم‌های کش
-        
-        // ============================================
-        // مسیر دیتابیس
-        // ============================================
-        this.dbPath = path.join(__dirname, 'data.sqlite');
-        
-        // ============================================
-        // اتصال به دیتابیس با تنظیمات بهینه
-        // ============================================
-        this.db = new Database(this.dbPath);
-        this.db.pragma('journal_mode = WAL');
-        this.db.pragma('foreign_keys = ON');
-        this.db.pragma('cache_size = 10000');
-        this.db.pragma('synchronous = NORMAL');
-        this.db.pragma('temp_store = MEMORY');
-        this.db.pragma('mmap_size = 268435456'); // 256MB برای بهبود عملکرد
-        
-        // ============================================
-        // رمزنگاری با کلید ثابت (ذخیره در فایل)
-        // ============================================
-        this.encryptionKey = this.getOrCreateEncryptionKey();
-        this.encryptionIV = this.getOrCreateEncryptionIV();
-        
-        // ============================================
-        // ایجاد جداول
-        // ============================================
+        this.shardCount = SHARD_COUNT;
+        this.shardsDir = path.join(__dirname, 'shards');
+        if (!fs.existsSync(this.shardsDir)) fs.mkdirSync(this.shardsDir, { recursive: true });
+
+        // ==========================================
+        // کش حافظه با سقف اندازه (LRU تقریبی) و ابطال آگاه از جدول
+        // ==========================================
+        this.cache = new Map(); // cacheKey -> { data, timestamp, tables: [] }
+        this.cacheTTL = 60000; // ۶۰ ثانیه
+        this.cacheMaxEntries = 3000;
+
+        // دایرکتوری entity_id -> shard_index (در حافظه، پشتیبان‌گیری‌شده روی shard 0)
+        this.directory = new Map();
+
+        // کلید رمزنگاری - هر بار اجرای encrypt() یک IV تصادفی جدید تولید می‌کنه (رفع باگ استفاده مجدد از IV)
+        this.encryptionKey = crypto.randomBytes(32);
+
+        // ==========================================
+        // اتصال به همه شاردها
+        // ==========================================
+        this.shards = [];
+        for (let i = 0; i < this.shardCount; i++) {
+            const dbPath = path.join(this.shardsDir, `shard_${i}.sqlite`);
+            const conn = new Database(dbPath);
+            conn.pragma('journal_mode = WAL');
+            conn.pragma('foreign_keys = ON');
+            conn.pragma('cache_size = 10000');
+            conn.pragma('synchronous = NORMAL');
+            conn.pragma('temp_store = MEMORY');
+            this.shards.push(conn);
+        }
+
+        this._warnedNoKey = false;
         this.initTables();
-        
-        // ============================================
-        // پاکسازی خودکار کش هر ۵ دقیقه
-        // ============================================
-        setInterval(() => this.cleanupCache(), 300000);
+        this._loadDirectoryFromDisk();
     }
 
     // ============================================
-    // مدیریت کلید رمزنگاری (ذخیره در فایل)
-    // ============================================
-    getOrCreateEncryptionKey() {
-        const keyPath = path.join(__dirname, '.encryption_key');
-        try {
-            if (fs.existsSync(keyPath)) {
-                const keyHex = fs.readFileSync(keyPath, 'utf8').trim();
-                if (keyHex.length === 64) { // 32 bytes = 64 hex characters
-                    return Buffer.from(keyHex, 'hex');
-                }
-                // اگر کلید نامعتبر بود، دوباره تولید کن
-                console.warn('⚠️ Invalid encryption key found, regenerating...');
-                return this.createAndSaveKey(keyPath);
-            } else {
-                return this.createAndSaveKey(keyPath);
-            }
-        } catch (error) {
-            console.error('Error loading encryption key:', error);
-            // Fallback: استفاده از کلید موقت
-            return crypto.randomBytes(32);
-        }
-    }
-
-    createAndSaveKey(keyPath) {
-        const key = crypto.randomBytes(32);
-        try {
-            fs.writeFileSync(keyPath, key.toString('hex'), 'utf8');
-            fs.chmodSync(keyPath, 0o600);
-            console.log('✅ New encryption key created');
-        } catch (error) {
-            console.error('Error saving encryption key:', error);
-        }
-        return key;
-    }
-
-    getOrCreateEncryptionIV() {
-        const ivPath = path.join(__dirname, '.encryption_iv');
-        try {
-            if (fs.existsSync(ivPath)) {
-                const ivHex = fs.readFileSync(ivPath, 'utf8').trim();
-                if (ivHex.length === 32) { // 16 bytes = 32 hex characters
-                    return Buffer.from(ivHex, 'hex');
-                }
-                console.warn('⚠️ Invalid encryption IV found, regenerating...');
-                return this.createAndSaveIV(ivPath);
-            } else {
-                return this.createAndSaveIV(ivPath);
-            }
-        } catch (error) {
-            console.error('Error loading encryption IV:', error);
-            return crypto.randomBytes(16);
-        }
-    }
-
-    createAndSaveIV(ivPath) {
-        const iv = crypto.randomBytes(16);
-        try {
-            fs.writeFileSync(ivPath, iv.toString('hex'), 'utf8');
-            fs.chmodSync(ivPath, 0o600);
-            console.log('✅ New encryption IV created');
-        } catch (error) {
-            console.error('Error saving encryption IV:', error);
-        }
-        return iv;
-    }
-
-    // ============================================
-    // رمزنگاری و رمزگشایی با مدیریت خطا
+    // رمزنگاری و رمزگشایی (AES-256-GCM با IV تصادفی به‌ازای هر پیام)
     // ============================================
     encrypt(text) {
-        if (!text || typeof text !== 'string') return text;
         try {
-            const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, this.encryptionIV);
+            const iv = crypto.randomBytes(16);
+            const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
             let encrypted = cipher.update(text, 'utf8', 'hex');
             encrypted += cipher.final('hex');
             const authTag = cipher.getAuthTag().toString('hex');
-            return `${encrypted}:${authTag}`;
+            return `${iv.toString('hex')}:${encrypted}:${authTag}`;
         } catch (error) {
             console.error('Encryption error:', error);
             return text;
@@ -133,15 +84,11 @@ class DatabaseManager {
     }
 
     decrypt(encryptedText) {
-        if (!encryptedText || typeof encryptedText !== 'string') return encryptedText;
         try {
             const parts = encryptedText.split(':');
-            if (parts.length !== 2) return encryptedText;
-            
-            const [encrypted, authTag] = parts;
-            if (!authTag || !encrypted) return encryptedText;
-            
-            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, this.encryptionIV);
+            if (parts.length !== 3) return encryptedText; // متن قدیمی/رمزنگاری‌نشده
+            const [ivHex, encrypted, authTag] = parts;
+            const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, Buffer.from(ivHex, 'hex'));
             decipher.setAuthTag(Buffer.from(authTag, 'hex'));
             let decrypted = decipher.update(encrypted, 'hex', 'utf8');
             decrypted += decipher.final('utf8');
@@ -153,704 +100,584 @@ class DatabaseManager {
     }
 
     // ============================================
-    // تشخیص نوع کوئری با دقت بالا
+    // شاردینگ - هش سازگار (consistent hashing ساده با mod)
     // ============================================
-    getQueryType(sql) {
-        if (!sql || typeof sql !== 'string') return '';
-        
-        // حذف کامنت‌ها و فضای خالی
-        let clean = sql.replace(/\/\*.*?\*\//g, ''); // حذف کامنت‌های /* */
-        clean = clean.replace(/--.*$/gm, ''); // حذف کامنت‌های --
-        clean = clean.trim();
-        
-        // پیدا کردن اولین کلمه
-        const match = clean.match(/^\s*(\w+)/i);
-        return match ? match[1].toUpperCase() : '';
+    hashKey(key) {
+        const hash = crypto.createHash('md5').update(String(key)).digest();
+        return hash.readUInt32BE(0) % this.shardCount;
+    }
+
+    // زوج دو کاربر رو مستقل از ترتیب (from/to) به یه شارد ثابت می‌فرسته
+    // تا کل مکالمه‌ی بین این دو نفر همیشه روی یه فایل بمونه
+    pairShardIndex(userA, userB) {
+        const pairKey = [String(userA), String(userB)].sort().join('::');
+        return this.hashKey(pairKey);
+    }
+
+    // شناسه‌ی یک موجودیت (مثل postId) رو به شاردی که واقعاً توش ساخته شده resolve می‌کنه.
+    // اگه در دایرکتوری ثبت نشده باشه (یعنی خودش یه شناسه‌ی سطح‌بالا مثل userId هست) از هش مستقیم استفاده می‌کنه.
+    resolveShardIndex(key) {
+        if (key === null || key === undefined) return null;
+        const hit = this.directory.get(String(key));
+        if (hit !== undefined) return hit;
+        return this.hashKey(key);
+    }
+
+    registerDirectory(entityId, shardIndex) {
+        if (entityId === undefined || entityId === null) return;
+        const id = String(entityId);
+        if (this.directory.get(id) === shardIndex) return;
+        this.directory.set(id, shardIndex);
+        try {
+            this.shards[DIRECTORY_SHARD].prepare(`
+                INSERT INTO _shard_directory (entity_id, shard_index, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(entity_id) DO UPDATE SET shard_index = excluded.shard_index, updated_at = CURRENT_TIMESTAMP
+            `).run(id, shardIndex);
+        } catch (e) {
+            console.error('Directory persist error:', e.message);
+        }
+    }
+
+    _loadDirectoryFromDisk() {
+        try {
+            const rows = this.shards[DIRECTORY_SHARD].prepare(`SELECT entity_id, shard_index FROM _shard_directory`).all();
+            for (const r of rows) this.directory.set(r.entity_id, r.shard_index);
+            console.log(`✅ Directory loaded: ${rows.length} entity mappings`);
+        } catch (e) {
+            console.error('Directory load error:', e.message);
+        }
+    }
+
+    // اگه INSERT روی ستون اول id باشه (الگوی رایج این پروژه: INSERT INTO table (id, ...))
+    // اون id رو خودکار در دایرکتوری به شارد فعلی وصل می‌کنه تا کوئری‌های بعدی با همون id درست مسیریابی بشن.
+    _maybeRegisterFromInsert(sql, params, shardIndex) {
+        const m = sql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)/i);
+        if (!m) return;
+        const cols = m[2].split(',').map(c => c.trim());
+        if (cols[0] === 'id' && params && params[0] !== undefined) {
+            this.registerDirectory(params[0], shardIndex);
+        }
+    }
+
+    getAllShards() {
+        return this.shards;
+    }
+
+    // دسترسی مستقیم به یک اتصال شارد برای تراکنش‌های دستی (like قدیمی server.js از این استفاده می‌کنه)
+    getDb(key) {
+        if (key === undefined) {
+            if (!this._warnedNoKey) {
+                console.warn('⚠️  db.getDb() بدون کلید صدا زده شد - شارد ۰ استفاده می‌شه. برای مقیاس واقعی از db.getDb(key) یا متدهای اختصاصی (followUser/toggleLike) استفاده کن.');
+                this._warnedNoKey = true;
+            }
+            return this.shards[0];
+        }
+        const idx = this.resolveShardIndex(key);
+        return this.shards[idx === null ? 0 : idx];
     }
 
     // ============================================
-    // اجرای کوئری با کش پیشرفته
+    // اجرای کوئری با مسیریابی شارد + کش
     // ============================================
-    async query(text, params = []) {
-        if (!text || typeof text !== 'string') {
-            throw new Error('Invalid SQL query');
+    async query(key, text, params = []) {
+        const cmd = text.trim().slice(0, 6).toUpperCase();
+        const messagesRoute = this._routeMessagesQuery(text, params);
+
+        // مسیریابی ویژه جدول messages (زوج کاربر یا پخش بین همه‌ی شاردها)
+        if (messagesRoute) {
+            if (messagesRoute.mode === 'single') {
+                return this._runOnShard(messagesRoute.shard, text, params, cmd, `msg:${messagesRoute.shard}`);
+            }
+            return this._runScatterGather(text, params, cmd);
         }
-        
-        // اطمینان از آرایه بودن params
-        if (!Array.isArray(params)) {
-            params = [params];
+
+        if (key === null) {
+            return this._runScatterGather(text, params, cmd);
         }
-        
-        const cacheKey = `${text}_${JSON.stringify(params)}`;
-        const queryType = this.getQueryType(text);
-        
-        // بررسی کش برای SELECT
-        if (queryType === 'SELECT') {
+
+        const shardIndex = this.resolveShardIndex(key);
+        return this._runOnShard(shardIndex, text, params, cmd, `s:${shardIndex}`);
+    }
+
+    _routeMessagesQuery(sql, params) {
+        if (!/\bmessages\b/i.test(sql)) return null;
+
+        // INSERT INTO messages (id, from_user, to_user, message, ...)
+        if (/INSERT\s+INTO\s+messages/i.test(sql)) {
+            // ترتیب پارامترها در این پروژه همیشه [id, from, to, message] هست
+            const from = params[1], to = params[2];
+            if (from !== undefined && to !== undefined) {
+                return { mode: 'single', shard: this.pairShardIndex(from, to) };
+            }
+            return null;
+        }
+
+        // تاریخچه‌ی بین دو کاربر مشخص: (from_user=$1 AND to_user=$2) OR (from_user=$2 AND to_user=$1)
+        if (/from_user\s*=\s*\$1[\s\S]*to_user\s*=\s*\$2[\s\S]*from_user\s*=\s*\$2/i.test(sql)) {
+            const a = params[0], b = params[1];
+            if (a !== undefined && b !== undefined) {
+                return { mode: 'single', shard: this.pairShardIndex(a, b) };
+            }
+        }
+
+        // لیست مکالمات یک کاربر (from_user=$1 OR to_user=$1) - چون مکالمات مختلف رو شاردهای مختلف پخشن، باید همه رو گشت
+        if (/from_user\s*=\s*\$1\s*OR\s*to_user\s*=\s*\$1/i.test(sql) || /WHERE\s+from_user\s*=\s*\$1\s+OR\s+to_user\s*=\s*\$1/i.test(sql)) {
+            return { mode: 'scatter' };
+        }
+        // UPDATE messages SET is_read ... WHERE from_user=$1 AND to_user=$2 (خوانده‌شدن) - زوج مشخص
+        if (/UPDATE\s+messages/i.test(sql) && params.length >= 2) {
+            return { mode: 'single', shard: this.pairShardIndex(params[0], params[1]) };
+        }
+        // هر حالت دیگه‌ای که مطمئن نیستیم (مثلاً COUNT کلی) رو پخش می‌کنیم تا داده گم نشه
+        return { mode: 'scatter' };
+    }
+
+    _runOnShard(shardIndex, text, params, cmd, cacheTag) {
+        const cacheKey = `${cacheTag}_${text}_${JSON.stringify(params)}`;
+
+        if (cmd === 'SELECT') {
             const cached = this.cache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
-                cached.hits = (cached.hits || 0) + 1;
                 return cached.data;
             }
         }
 
-        // تبدیل $1, $2 به ? (با پشتیبانی از هر دو فرمت)
-        let sql = text;
-        // پشتیبانی از $1, $2, ...
-        sql = sql.replace(/\$(\d+)/g, (match, num) => {
-            const index = parseInt(num) - 1;
-            return index < params.length ? '?' : match;
-        });
-        
-        // پشتیبانی از ? (مستقیم)
-        // اگر تعداد ? با params همخوانی نداشت، خطا نده
-        
+        const sql = text.replace(/\$(\d+)/g, '?');
+        const conn = this.shards[shardIndex];
+
         try {
-            const stmt = this.db.prepare(sql);
+            const stmt = conn.prepare(sql);
             let result;
-            
-            if (queryType === 'SELECT') {
-                result = stmt.all(...params);
-                // ذخیره در کش با مدیریت حجم
-                if (this.cache.size >= this.maxCacheSize) {
-                    // حذف قدیمی‌ترین آیتم‌ها
-                    const entries = Array.from(this.cache.entries());
-                    entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
-                    const toDelete = Math.floor(this.maxCacheSize * 0.2);
-                    for (let i = 0; i < toDelete && i < entries.length; i++) {
-                        this.cache.delete(entries[i][0]);
-                    }
-                }
-                
-                this.cache.set(cacheKey, { 
-                    data: result, 
-                    timestamp: Date.now(),
-                    hits: 0
-                });
+
+            if (cmd === 'SELECT') {
+                result = { rows: stmt.all(...params) };
+                this._cacheSet(cacheKey, result, this._tablesInSql(text));
             } else {
                 const info = stmt.run(...params);
-                result = {
-                    changes: info.changes,
-                    lastInsertRowid: info.lastInsertRowid
-                };
-                // پاک کردن کش برای تغییرات
-                this.invalidateCache();
+                result = { rows: [], rowCount: info.changes, lastID: info.lastInsertRowid };
+                if (cmd === 'INSERT') this._maybeRegisterFromInsert(text, params, shardIndex);
+                this._invalidateByTables(this._tablesInSql(text));
             }
             return result;
         } catch (error) {
-            console.error('❌ Database error:', error.message);
-            console.error('📝 SQL:', sql);
-            console.error('📦 Params:', params);
+            console.error('Database error:', error.message, '\nSQL:', sql, '\nShard:', shardIndex);
             throw error;
         }
     }
 
-    // ============================================
-    // پاکسازی کش با مدیریت حافظه
-    // ============================================
+    // پخش کوئری بین همه‌ی شاردها و ادغام نتایج (برای کلید null یا وقتی صاحب مشخصی نداریم)
+    _runScatterGather(text, params, cmd) {
+        const cacheKey = `scatter_${text}_${JSON.stringify(params)}`;
+        if (cmd === 'SELECT') {
+            const cached = this.cache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp) < this.cacheTTL) {
+                return cached.data;
+            }
+        }
+
+        const sql = text.replace(/\$(\d+)/g, '?');
+        let combinedRows = [];
+        let combinedChanges = 0;
+
+        for (const conn of this.shards) {
+            try {
+                const stmt = conn.prepare(sql);
+                if (cmd === 'SELECT') {
+                    combinedRows = combinedRows.concat(stmt.all(...params));
+                } else {
+                    const info = stmt.run(...params);
+                    combinedChanges += info.changes;
+                }
+            } catch (error) {
+                console.error('Database scatter error:', error.message, '\nSQL:', sql);
+                throw error;
+            }
+        }
+
+        if (cmd !== 'SELECT') {
+            this._invalidateByTables(this._tablesInSql(text));
+            return { rows: [], rowCount: combinedChanges };
+        }
+
+        const merged = this._mergeRows(text, combinedRows);
+        const result = { rows: merged };
+        this._cacheSet(cacheKey, result, this._tablesInSql(text));
+        return result;
+    }
+
+    // ادغام هوشمند نتایج چند شارد: جمع COUNT(*)، یا اعمال دوباره‌ی ORDER BY/LIMIT روی نتایج ترکیب‌شده
+    _mergeRows(sql, rows) {
+        const countMatch = sql.match(/^\s*SELECT\s+COUNT\(\*\)\s+as\s+(\w+)\s+FROM/i);
+        if (countMatch && rows.length) {
+            const alias = countMatch[1];
+            const total = rows.reduce((sum, r) => sum + (r[alias] || 0), 0);
+            return [{ [alias]: total }];
+        }
+
+        const orderMatch = sql.match(/ORDER BY\s+([\s\S]+?)(?:\s+LIMIT\s+(\d+))?\s*$/i);
+        if (!orderMatch) return rows;
+
+        const orderClause = orderMatch[1];
+        const limit = orderMatch[2] ? parseInt(orderMatch[2], 10) : null;
+
+        const sortKeys = orderClause.split(',').map(part => {
+            const [, col, dir] = part.trim().match(/([\w.]+)\s*(ASC|DESC)?/i) || [];
+            const cleanCol = col ? col.split('.').pop() : null;
+            return { col: cleanCol, desc: (dir || '').toUpperCase() === 'DESC' };
+        }).filter(k => k.col);
+
+        if (sortKeys.length) {
+            rows.sort((a, b) => {
+                for (const { col, desc } of sortKeys) {
+                    const av = a[col], bv = b[col];
+                    if (av === bv) continue;
+                    const cmp = av > bv ? 1 : -1;
+                    return desc ? -cmp : cmp;
+                }
+                return 0;
+            });
+        }
+
+        return limit !== null ? rows.slice(0, limit) : rows;
+    }
+
+    _tablesInSql(sql) {
+        const tables = new Set();
+        const patterns = [/FROM\s+(\w+)/gi, /JOIN\s+(\w+)/gi, /INTO\s+(\w+)/gi, /UPDATE\s+(\w+)/gi];
+        for (const re of patterns) {
+            let m;
+            while ((m = re.exec(sql)) !== null) tables.add(m[1].toLowerCase());
+        }
+        return [...tables];
+    }
+
+    _cacheSet(key, data, tables) {
+        this.cache.set(key, { data, timestamp: Date.now(), tables });
+        if (this.cache.size > this.cacheMaxEntries) {
+            const oldestKey = this.cache.keys().next().value;
+            this.cache.delete(oldestKey);
+        }
+    }
+
+    // به‌جای پاک کردن کل کش در هر نوشتن، فقط رکوردهایی که به جدول(های) تغییریافته وابسته‌ن پاک می‌شن
+    _invalidateByTables(tables) {
+        if (!tables.length) return;
+        for (const [key, entry] of this.cache) {
+            if (entry.tables && entry.tables.some(t => tables.includes(t))) {
+                this.cache.delete(key);
+            }
+        }
+    }
+
     invalidateCache() {
         this.cache.clear();
-        console.log('🗑️ Cache invalidated');
     }
-
-    cleanupCache() {
-        const now = Date.now();
-        let deleted = 0;
-        for (const [key, value] of this.cache.entries()) {
-            if ((now - value.timestamp) > this.cacheTTL) {
-                this.cache.delete(key);
-                deleted++;
-            }
-        }
-        if (deleted > 0) {
-            console.log(`🧹 Cache cleaned: ${deleted} entries removed (${this.cache.size} remaining)`);
-        }
+    clearCache() {
+        this.cache.clear();
     }
 
     // ============================================
-    // ایجاد جداول با مدیریت خطا
+    // متدهای اختصاصی و شارد-ایمن برای رابطه‌های چندکاربره
+    // (این‌ها جایگزین امنِ تراکنش‌های دستی db.getDb() در server.js هستن)
+    // ============================================
+
+    // فالو کردن با نوشتن دوگانه: هم روی شارد فالوور، هم روی شارد فالووینگ
+    // تا هم «کیا رو فالو کردم» و هم «کیا فالوم کردن» بدون جست‌وجوی بین‌شاردی جواب داده بشه
+    followUser(followerId, followingId) {
+        if (followerId === followingId) return { success: false, error: 'نمی‌توانید خودتان را فالو کنید' };
+
+        const shardsInvolved = new Set([this.hashKey(followerId), this.hashKey(followingId)]);
+        let alreadyFollowing = false;
+
+        for (const idx of shardsInvolved) {
+            const conn = this.shards[idx];
+            const existing = conn.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?`).get(followerId, followingId);
+            if (existing) alreadyFollowing = true;
+        }
+        if (alreadyFollowing) return { success: true, alreadyFollowing: true };
+
+        for (const idx of shardsInvolved) {
+            const conn = this.shards[idx];
+            conn.prepare(`INSERT OR IGNORE INTO follows (follower_id, following_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`)
+                .run(followerId, followingId);
+        }
+        // followers_count روی شارد صاحب کانال (followingId) نگه داشته می‌شه
+        const targetShard = this.shards[this.hashKey(followingId)];
+        targetShard.prepare(`UPDATE channels SET followers_count = followers_count + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`)
+            .run(followingId);
+
+        this._invalidateByTables(['follows', 'channels']);
+        return { success: true };
+    }
+
+    unfollowUser(followerId, followingId) {
+        const shardsInvolved = new Set([this.hashKey(followerId), this.hashKey(followingId)]);
+        let removed = false;
+        for (const idx of shardsInvolved) {
+            const conn = this.shards[idx];
+            const info = conn.prepare(`DELETE FROM follows WHERE follower_id = ? AND following_id = ?`).run(followerId, followingId);
+            if (info.changes > 0) removed = true;
+        }
+        if (removed) {
+            const targetShard = this.shards[this.hashKey(followingId)];
+            targetShard.prepare(`UPDATE channels SET followers_count = MAX(followers_count - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`)
+                .run(followingId);
+        }
+        this._invalidateByTables(['follows', 'channels']);
+        return { success: true };
+    }
+
+    // لایک/آنلایک یک پست - شارد از روی دایرکتوری postId پیدا می‌شه (همون شاردی که پست موقع ساخت روش ثبت شد)
+    toggleLike(postId, userId) {
+        const shardIndex = this.resolveShardIndex(postId);
+        const conn = this.shards[shardIndex];
+        let liked, likes;
+
+        const run = conn.transaction(() => {
+            const existing = conn.prepare(`SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?`).get(postId, userId);
+            if (existing) {
+                conn.prepare(`DELETE FROM post_likes WHERE post_id = ? AND user_id = ?`).run(postId, userId);
+                conn.prepare(`UPDATE posts SET likes = MAX(likes - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
+                liked = false;
+            } else {
+                conn.prepare(`INSERT INTO post_likes (post_id, user_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run(postId, userId);
+                conn.prepare(`UPDATE posts SET likes = likes + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
+                liked = true;
+            }
+            const p = conn.prepare(`SELECT likes FROM posts WHERE id = ?`).get(postId);
+            likes = p?.likes || 0;
+        });
+
+        run();
+        this._invalidateByTables(['posts', 'post_likes']);
+        return { success: true, liked, likes };
+    }
+
+    // ============================================
+    // ایجاد جداول (روی همه‌ی شاردها)
     // ============================================
     async initTables() {
+        const schema = `
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                avatar TEXT,
+                bio TEXT,
+                score INTEGER DEFAULT 0,
+                role TEXT DEFAULT 'user',
+                is_verified INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS channels (
+                id TEXT PRIMARY KEY,
+                user_id TEXT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                description TEXT,
+                posts_count INTEGER DEFAULT 0,
+                followers_count INTEGER DEFAULT 0,
+                boost_level TEXT DEFAULT 'normal',
+                activity_score INTEGER DEFAULT 0,
+                last_boost_calc TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS posts (
+                id TEXT PRIMARY KEY,
+                channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                media_url TEXT,
+                media_type TEXT CHECK (media_type IN ('image', 'video', 'audio', 'none')),
+                views INTEGER DEFAULT 0,
+                likes INTEGER DEFAULT 0,
+                comments INTEGER DEFAULT 0,
+                scheduled_time TEXT,
+                is_published INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                published_at TEXT,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS assistant_training (
+                id TEXT PRIMARY KEY,
+                user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                type TEXT CHECK (type IN ('qa', 'keyword')),
+                question TEXT,
+                answer TEXT,
+                keyword TEXT,
+                response TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- توجه: follower_id/following_id و from_user/to_user عمداً بدون REFERENCES هستن،
+            -- چون ممکنه صاحب هر طرف روی شارد دیگه‌ای باشه و SQLite نمی‌تونه FK بین فایل‌ها رو چک کنه.
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                from_user TEXT NOT NULL,
+                to_user TEXT NOT NULL,
+                message TEXT NOT NULL,
+                is_read INTEGER DEFAULT 0,
+                encrypted INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS follows (
+                follower_id TEXT NOT NULL,
+                following_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (follower_id, following_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS post_likes (
+                post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (post_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS post_comments (
+                id TEXT PRIMARY KEY,
+                post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS system_notifications (
+                id TEXT PRIMARY KEY,
+                user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                type TEXT DEFAULT 'general',
+                is_read INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS reports (
+                id TEXT PRIMARY KEY,
+                reporter_id TEXT NOT NULL,
+                target_id TEXT,
+                target_type TEXT CHECK (target_type IN ('user', 'post', 'comment')),
+                reason TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_posts_channel ON posts(channel_id);
+            CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(is_published, scheduled_time);
+            CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user);
+            CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(to_user, is_read);
+            CREATE INDEX IF NOT EXISTS idx_assistant_user ON assistant_training(user_id);
+            CREATE INDEX IF NOT EXISTS idx_comments_post ON post_comments(post_id);
+            CREATE INDEX IF NOT EXISTS idx_comments_created ON post_comments(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id);
+            CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user ON system_notifications(user_id, is_read);
+            CREATE INDEX IF NOT EXISTS idx_notifications_created ON system_notifications(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
+            CREATE INDEX IF NOT EXISTS idx_users_score ON users(score DESC);
+            CREATE INDEX IF NOT EXISTS idx_channels_score ON channels(activity_score DESC);
+        `;
+
         try {
-            // ==========================================
-            // ایجاد جداول اصلی
-            // ==========================================
-            this.db.exec(`
-                -- ==========================================
-                -- جدول کاربران
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    avatar TEXT,
-                    bio TEXT,
-                    score INTEGER DEFAULT 0,
-                    role TEXT DEFAULT 'user',
-                    is_verified INTEGER DEFAULT 0,
-                    last_active TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
+            for (let i = 0; i < this.shards.length; i++) {
+                const conn = this.shards[i];
+                conn.exec(schema);
 
-                -- ==========================================
-                -- جدول کانال‌ها
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS channels (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    posts_count INTEGER DEFAULT 0,
-                    followers_count INTEGER DEFAULT 0,
-                    boost_level TEXT DEFAULT 'normal',
-                    activity_score INTEGER DEFAULT 0,
-                    last_boost_calc TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
+                if (i === DIRECTORY_SHARD) {
+                    conn.exec(`
+                        CREATE TABLE IF NOT EXISTS _shard_directory (
+                            entity_id TEXT PRIMARY KEY,
+                            shard_index INTEGER NOT NULL,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                        );
+                    `);
+                }
 
-                -- ==========================================
-                -- جدول پست‌ها با پشتیبانی از ویدیو
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS posts (
-                    id TEXT PRIMARY KEY,
-                    channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
-                    content TEXT NOT NULL,
-                    media_url TEXT,
-                    media_type TEXT CHECK (media_type IN ('image', 'video', 'audio', 'none')),
-                    views INTEGER DEFAULT 0,
-                    likes INTEGER DEFAULT 0,
-                    comments INTEGER DEFAULT 0,
-                    scheduled_time TEXT,
-                    is_published INTEGER DEFAULT 0,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    published_at TEXT,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
+                // کاربر ادمین باید روی شارد مشخصی باشه که همیشه یکسان resolve بشه: hash('admin_milad')
+                if (this.hashKey('admin_milad') === i) {
+                    const adminCheck = conn.prepare(`SELECT id FROM users WHERE id = ?`).get('admin_milad');
+                    if (!adminCheck) {
+                        conn.exec(`
+                            INSERT INTO users (id, name, avatar, role, is_verified, score, created_at) 
+                            VALUES ('admin_milad', 'مدیر سیستم', '/admin-avatar.png', 'admin', 1, 999999, CURRENT_TIMESTAMP);
+                            
+                            INSERT INTO channels (id, user_id, name, boost_level, created_at) 
+                            VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', CURRENT_TIMESTAMP);
+                        `);
+                        console.log(`✅ Admin user created on shard ${i}`);
+                    }
+                }
 
-                -- ==========================================
-                -- جدول آموزش دستیار
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS assistant_training (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    type TEXT CHECK (type IN ('qa', 'keyword')),
-                    question TEXT,
-                    answer TEXT,
-                    keyword TEXT,
-                    response TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول پیام‌های رمزنگاری شده
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS messages (
-                    id TEXT PRIMARY KEY,
-                    from_user TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    to_user TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    message TEXT NOT NULL,
-                    is_read INTEGER DEFAULT 0,
-                    encrypted INTEGER DEFAULT 0,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول فالو
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS follows (
-                    follower_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    following_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (follower_id, following_id)
-                );
-
-                -- ==========================================
-                -- جدول لایک‌ها
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS post_likes (
-                    post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (post_id, user_id)
-                );
-
-                -- ==========================================
-                -- جدول کامنت‌ها
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS post_comments (
-                    id TEXT PRIMARY KEY,
-                    post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    text TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول اعلان‌های سیستمی
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS system_notifications (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    title TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    type TEXT DEFAULT 'general',
-                    is_read INTEGER DEFAULT 0,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول گزارش‌ها
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS reports (
-                    id TEXT PRIMARY KEY,
-                    reporter_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    target_id TEXT,
-                    target_type TEXT CHECK (target_type IN ('user', 'post', 'comment')),
-                    reason TEXT NOT NULL,
-                    status TEXT DEFAULT 'pending',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    resolved_at TEXT
-                );
-
-                -- ==========================================
-                -- جدول سشن‌ها (برای مدیریت توکن‌ها)
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    token TEXT UNIQUE NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- جدول تنظیمات سیستمی
-                -- ==========================================
-                CREATE TABLE IF NOT EXISTS system_settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                );
-
-                -- ==========================================
-                -- ایندکس‌ها برای بهبود سرعت
-                -- ==========================================
-                CREATE INDEX IF NOT EXISTS idx_posts_channel ON posts(channel_id);
-                CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(is_published, scheduled_time);
-                CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_messages_users ON messages(from_user, to_user);
-                CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(to_user, is_read);
-                CREATE INDEX IF NOT EXISTS idx_assistant_user ON assistant_training(user_id);
-                CREATE INDEX IF NOT EXISTS idx_comments_post ON post_comments(post_id);
-                CREATE INDEX IF NOT EXISTS idx_comments_created ON post_comments(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id);
-                CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
-                CREATE INDEX IF NOT EXISTS idx_notifications_user ON system_notifications(user_id, is_read);
-                CREATE INDEX IF NOT EXISTS idx_notifications_created ON system_notifications(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
-                CREATE INDEX IF NOT EXISTS idx_users_score ON users(score DESC);
-                CREATE INDEX IF NOT EXISTS idx_channels_score ON channels(activity_score DESC);
-                CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-                CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-                CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
-            `);
-            
-            console.log('✅ All tables created/verified');
-
-            // ==========================================
-            // ایجاد کاربر ادمین
-            // ==========================================
-            const adminCheck = this.db.prepare(`SELECT id FROM users WHERE id = ?`).get('admin_milad');
-            
-            if (!adminCheck) {
-                this.db.exec(`
-                    INSERT INTO users (id, name, avatar, role, is_verified, score, last_active, created_at) 
-                    VALUES ('admin_milad', 'مدیر سیستم', '/admin-avatar.png', 'admin', 1, 999999, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-                    
-                    INSERT INTO channels (id, user_id, name, boost_level, created_at) 
-                    VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', CURRENT_TIMESTAMP);
-                `);
-                console.log('✅ Admin user created');
+                // ستون‌های جدیدی که ممکنه روی دیتابیس‌های قدیمی‌تر نبوده باشن
+                try { conn.exec(`ALTER TABLE messages ADD COLUMN encrypted INTEGER DEFAULT 0`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE users ADD COLUMN bio TEXT`); } catch (e) {}
             }
 
-            // ==========================================
-            // به‌روزرسانی ساختار دیتابیس (Migration)
-            // ==========================================
-            await this.runMigrations();
-
+            console.log(`✅ ${this.shardCount} shard(s) ready, tables created/verified`);
         } catch (error) {
-            console.error('❌ Error creating tables:', error);
+            console.error('Error creating tables:', error);
             throw error;
         }
     }
 
     // ============================================
-    // سیستم Migration خودکار
+    // متدهای کمکی
     // ============================================
-    async runMigrations() {
-        const migrations = [
-            {
-                version: 1,
-                up: () => {
-                    try {
-                        this.db.exec(`ALTER TABLE messages ADD COLUMN encrypted INTEGER DEFAULT 0`);
-                        console.log('✅ Migration v1: Added encrypted column to messages');
-                    } catch (e) {
-                        // ستون قبلاً وجود دارد
-                    }
-                }
-            },
-            {
-                version: 2,
-                up: () => {
-                    try {
-                        this.db.exec(`ALTER TABLE users ADD COLUMN bio TEXT`);
-                        console.log('✅ Migration v2: Added bio column to users');
-                    } catch (e) {
-                        // ستون قبلاً وجود دارد
-                    }
-                }
-            },
-            {
-                version: 3,
-                up: () => {
-                    try {
-                        this.db.exec(`ALTER TABLE users ADD COLUMN last_active TEXT`);
-                        console.log('✅ Migration v3: Added last_active column to users');
-                    } catch (e) {
-                        // ستون قبلاً وجود دارد
-                    }
-                }
-            },
-            {
-                version: 4,
-                up: () => {
-                    try {
-                        this.db.exec(`
-                            CREATE TABLE IF NOT EXISTS sessions (
-                                id TEXT PRIMARY KEY,
-                                user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                                token TEXT UNIQUE NOT NULL,
-                                expires_at TEXT NOT NULL,
-                                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                            )
-                        `);
-                        console.log('✅ Migration v4: Created sessions table');
-                    } catch (e) {
-                        // جدول قبلاً وجود دارد
-                    }
-                }
-            },
-            {
-                version: 5,
-                up: () => {
-                    try {
-                        this.db.exec(`
-                            CREATE TABLE IF NOT EXISTS system_settings (
-                                key TEXT PRIMARY KEY,
-                                value TEXT NOT NULL,
-                                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                            )
-                        `);
-                        console.log('✅ Migration v5: Created system_settings table');
-                    } catch (e) {
-                        // جدول قبلاً وجود دارد
-                    }
-                }
-            }
-        ];
+    transaction(key, fn) {
+        const conn = this.getDb(key);
+        return conn.transaction(fn);
+    }
 
-        // ایجاد جدول migrations اگر وجود ندارد
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // اجرای migration‌های جدید
-        for (const migration of migrations) {
-            const applied = this.db.prepare(
-                `SELECT version FROM migrations WHERE version = ?`
-            ).get(migration.version);
-
-            if (!applied) {
-                try {
-                    migration.up();
-                    this.db.prepare(
-                        `INSERT INTO migrations (version) VALUES (?)`
-                    ).run(migration.version);
-                    console.log(`✅ Migration v${migration.version} applied successfully`);
-                } catch (error) {
-                    console.error(`❌ Migration v${migration.version} failed:`, error);
-                }
+    backup() {
+        const paths = [];
+        for (let i = 0; i < this.shards.length; i++) {
+            try {
+                const backupPath = path.join(this.shardsDir, `backup_shard${i}_${Date.now()}.sqlite`);
+                const backup = new Database(backupPath);
+                this.shards[i].backup(backup);
+                backup.close();
+                paths.push(backupPath);
+            } catch (error) {
+                console.error(`Backup error (shard ${i}):`, error);
             }
         }
+        return paths;
     }
 
-    // ============================================
-    // متدهای کمکی با مدیریت بهتر
-    // ============================================
-    getDb() {
-        return this.db;
+    vacuum() {
+        for (const conn of this.shards) conn.exec('VACUUM');
     }
 
-    clearCache() {
-        this.cache.clear();
-        console.log('🗑️ Cache cleared');
-    }
-
-    getCacheStats() {
-        return {
-            size: this.cache.size,
-            maxSize: this.maxCacheSize,
-            ttl: this.cacheTTL,
-            entries: Array.from(this.cache.entries()).map(([key, value]) => ({
-                key: key.substring(0, 50) + '...',
-                hits: value.hits || 0,
-                age: Math.round((Date.now() - value.timestamp) / 1000) + 's'
-            }))
-        };
+    getStats() {
+        const stats = { shardCount: this.shardCount, perShard: [] };
+        for (let i = 0; i < this.shards.length; i++) {
+            const conn = this.shards[i];
+            const shardStats = {};
+            try {
+                const tables = conn.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_shard%'`).all();
+                for (const table of tables) {
+                    const count = conn.prepare(`SELECT COUNT(*) as count FROM ${table.name}`).get();
+                    shardStats[table.name] = count.count;
+                }
+            } catch (error) {
+                console.error(`Stats error (shard ${i}):`, error);
+            }
+            stats.perShard.push(shardStats);
+        }
+        return stats;
     }
 
     close() {
-        this.db.close();
-        console.log('🔒 Database connection closed');
-    }
-
-    // ============================================
-    // Transaction با مدیریت خطا
-    // ============================================
-    transaction(fn) {
-        return this.db.transaction((...args) => {
-            try {
-                const result = fn(...args);
-                this.invalidateCache();
-                return result;
-            } catch (error) {
-                console.error('❌ Transaction error:', error);
-                throw error;
-            }
-        });
-    }
-
-    // ============================================
-    // پشتیبان‌گیری خودکار
-    // ============================================
-    backup() {
-        try {
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            
-            // اطمینان از وجود دایرکتوری backup
-            const backupDir = path.join(__dirname, 'backups');
-            if (!fs.existsSync(backupDir)) {
-                fs.mkdirSync(backupDir, { recursive: true });
-            }
-            
-            const backupPath = path.join(backupDir, `backup_${timestamp}.sqlite`);
-            const backup = new Database(backupPath);
-            this.db.backup(backup);
-            backup.close();
-            
-            // فشرده‌سازی backup (اختیاری)
-            console.log(`✅ Backup created: ${backupPath}`);
-            
-            // حذف بکاپ‌های قدیمی (فقط ۱۰ تا آخرین بکاپ نگه دار)
-            this.cleanupOldBackups(backupDir, 10);
-            
-            return backupPath;
-        } catch (error) {
-            console.error('❌ Backup error:', error);
-            return null;
-        }
-    }
-
-    cleanupOldBackups(backupDir, keepCount) {
-        try {
-            const files = fs.readdirSync(backupDir)
-                .filter(f => f.startsWith('backup_') && f.endsWith('.sqlite'))
-                .map(f => ({
-                    name: f,
-                    path: path.join(backupDir, f),
-                    mtime: fs.statSync(path.join(backupDir, f)).mtime
-                }))
-                .sort((a, b) => b.mtime - a.mtime);
-            
-            if (files.length > keepCount) {
-                const toDelete = files.slice(keepCount);
-                for (const file of toDelete) {
-                    fs.unlinkSync(file.path);
-                    console.log(`🗑️ Old backup deleted: ${file.name}`);
-                }
-            }
-        } catch (error) {
-            console.error('Error cleaning old backups:', error);
-        }
-    }
-
-    // ============================================
-    // متدهای پاکسازی
-    // ============================================
-    vacuum() {
-        try {
-            this.db.exec('VACUUM');
-            console.log('✅ Database vacuum completed');
-        } catch (error) {
-            console.error('❌ Vacuum error:', error);
-        }
-    }
-
-    // ============================================
-    // متدهای آماری پیشرفته
-    // ============================================
-    getStats() {
-        const stats = {
-            tables: {},
-            totalRows: 0,
-            cache: this.getCacheStats(),
-            database: {
-                path: this.dbPath,
-                size: fs.existsSync(this.dbPath) ? fs.statSync(this.dbPath).size : 0
-            }
-        };
-        
-        try {
-            const tables = this.db.prepare(`
-                SELECT name FROM sqlite_master WHERE type='table' ORDER BY name
-            `).all();
-            
-            for (const table of tables) {
-                const count = this.db.prepare(`SELECT COUNT(*) as count FROM ${table.name}`).get();
-                stats.tables[table.name] = count.count;
-                stats.totalRows += count.count;
-            }
-            
-            // اطلاعات بیشتر در مورد دیتابیس
-            const pageCount = this.db.prepare('PRAGMA page_count').get();
-            const pageSize = this.db.prepare('PRAGMA page_size').get();
-            stats.database.pages = pageCount.page_count;
-            stats.database.pageSize = pageSize.page_size;
-            stats.database.sizeMB = (stats.database.size / (1024 * 1024)).toFixed(2);
-            
-        } catch (error) {
-            console.error('Stats error:', error);
-        }
-        
-        return stats;
-    }
-
-    // ============================================
-    // متدهای کاربردی برای کوئری‌های رایج
-    // ============================================
-    
-    // پیدا کردن کاربر
-    findUser(id) {
-        return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    }
-
-    // پیدا کردن کاربر با ایمیل یا نام کاربری
-    findUserByEmail(email) {
-        return this.db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    }
-
-    // ایجاد کاربر جدید
-    createUser(userData) {
-        const stmt = this.db.prepare(`
-            INSERT INTO users (id, name, email, password_hash, avatar, bio, role)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `);
-        return stmt.run(userData.id, userData.name, userData.email, userData.password_hash, 
-                        userData.avatar, userData.bio, userData.role || 'user');
-    }
-
-    // به‌روزرسانی کاربر
-    updateUser(id, data) {
-        const fields = [];
-        const values = [];
-        
-        for (const [key, value] of Object.entries(data)) {
-            if (value !== undefined) {
-                fields.push(`${key} = ?`);
-                values.push(value);
-            }
-        }
-        
-        if (fields.length === 0) return null;
-        
-        values.push(id);
-        const sql = `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-        const stmt = this.db.prepare(sql);
-        return stmt.run(...values);
-    }
-
-    // حذف کاربر
-    deleteUser(id) {
-        const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
-        return stmt.run(id);
-    }
-
-    // پیدا کردن پست‌های یک کانال
-    getChannelPosts(channelId, limit = 20, offset = 0) {
-        const stmt = this.db.prepare(`
-            SELECT * FROM posts 
-            WHERE channel_id = ? AND is_published = 1 
-            ORDER BY created_at DESC 
-            LIMIT ? OFFSET ?
-        `);
-        return stmt.all(channelId, limit, offset);
-    }
-
-    // پیدا کردن پیام‌های بین دو کاربر
-    getMessages(user1, user2, limit = 50, offset = 0) {
-        const stmt = this.db.prepare(`
-            SELECT * FROM messages 
-            WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?)
-            ORDER BY created_at DESC 
-            LIMIT ? OFFSET ?
-        `);
-        return stmt.all(user1, user2, user2, user1, limit, offset);
-    }
-
-    // علامت‌گذاری پیام به عنوان خوانده شده
-    markMessageRead(messageId) {
-        const stmt = this.db.prepare('UPDATE messages SET is_read = 1 WHERE id = ?');
-        return stmt.run(messageId);
-    }
-
-    // آمار فعالیت کاربر
-    getUserActivity(userId) {
-        const stats = {
-            posts: 0,
-            comments: 0,
-            likes: 0,
-            followers: 0,
-            following: 0
-        };
-        
-        stats.posts = this.db.prepare(
-            'SELECT COUNT(*) as count FROM posts WHERE channel_id IN (SELECT id FROM channels WHERE user_id = ?)'
-        ).get(userId).count;
-        
-        stats.comments = this.db.prepare(
-            'SELECT COUNT(*) as count FROM post_comments WHERE user_id = ?'
-        ).get(userId).count;
-        
-        stats.likes = this.db.prepare(
-            'SELECT COUNT(*) as count FROM post_likes WHERE user_id = ?'
-        ).get(userId).count;
-        
-        stats.followers = this.db.prepare(
-            'SELECT COUNT(*) as count FROM follows WHERE following_id = ?'
-        ).get(userId).count;
-        
-        stats.following = this.db.prepare(
-            'SELECT COUNT(*) as count FROM follows WHERE follower_id = ?'
-        ).get(userId).count;
-        
-        return stats;
+        for (const conn of this.shards) conn.close();
     }
 }
 
