@@ -82,6 +82,10 @@ class IntelligentAssistant {
     // زمان‌بندی پست‌ها
     // ============================================
     async schedulePosts(postsData) {
+        if (!Array.isArray(postsData) || postsData.length === 0) {
+            throw new Error('لیست پست‌ها نامعتبر است');
+        }
+
         const channel = await this.db.query(this.userId, `
             SELECT id FROM channels WHERE user_id = $1
         `, [this.userId]);
@@ -94,6 +98,7 @@ class IntelligentAssistant {
         const scheduled = [];
 
         for (const post of postsData) {
+            if (!post || !post.content || !post.content.trim()) continue;
             const id = crypto.randomUUID();
             const mediaType = post.mediaUrl ? 
                 (post.mediaUrl.match(/\.(mp4|webm|ogg|mov|avi)$/i) ? 'video' : 
@@ -116,15 +121,22 @@ class IntelligentAssistant {
     // ============================================
     // تنظیم زمان‌بندی ارسال خودکار
     // ============================================
+    // نکته مهم: این فقط یه "مسیر سریع" برای پست‌های نزدیک (کمتر از ۲۴ ساعت) هست.
+    // تایمر جاوااسکریپت (setTimeout) با ری‌استارت سرور/worker از بین می‌ره، و برای تاخیرهای
+    // طولانی (بیشتر از ~۲۴.۸ روز) به‌خاطر سرریز عدد صحیح ۳۲بیتی فوراً اجرا می‌شه (باگ شناخته‌شده‌ی Node).
+    // ناشرِ واقعی و قابل‌اعتماد، polling دوره‌ای توی server.js هست (publishDueScheduledPosts)
+    // که مستقل از این تایمرها، هر پست عقب‌افتاده‌ای رو دیر یا زود منتشر می‌کنه.
     setupScheduler(channelId, posts) {
+        const MAX_SAFE_DELAY = 24 * 60 * 60 * 1000; // ۲۴ ساعت
         for (const post of posts) {
             const scheduleTime = new Date(post.scheduledTime).getTime();
-            const now = Date.now();
-            
-            if (scheduleTime > now) {
-                const delay = scheduleTime - now;
-                const jobId = setTimeout(async () => {
-                    await this.publishSinglePost(post.id);
+            const delay = scheduleTime - Date.now();
+
+            if (delay > 0 && delay <= MAX_SAFE_DELAY) {
+                const jobId = setTimeout(() => {
+                    this.publishSinglePost(post.id).catch(err =>
+                        console.error('خطا در انتشار پست زمان‌بندی‌شده (مسیر سریع):', err.message)
+                    );
                 }, delay);
                 this.scheduleJobs.set(post.id, jobId);
             }
@@ -136,10 +148,16 @@ class IntelligentAssistant {
     // ============================================
     async publishSinglePost(postId) {
         try {
-            await this.db.query(this.userId, `
+            const claim = await this.db.query(this.userId, `
                 UPDATE posts SET is_published = 1, published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $1
+                WHERE id = $1 AND is_published = 0
             `, [postId]);
+
+            // اگه ردیفی عوض نشد یعنی یه مسیر دیگه (poller یا worker دیگه) قبلاً منتشرش کرده - کار تکراری نکن
+            if (!claim.rowCount) {
+                this.scheduleJobs.delete(postId);
+                return;
+            }
 
             const post = await this.db.query(this.userId, `
                 SELECT channel_id FROM posts WHERE id = $1
@@ -200,13 +218,18 @@ class IntelligentAssistant {
             share: 8
         };
         const points = scoreMap[type] || 0;
-        
-        await this.db.query(this.userId, `
-            UPDATE users SET score = score + $1, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = $2
-        `, [points, this.userId]);
-        
-        return points;
+
+        try {
+            await this.db.query(this.userId, `
+                UPDATE users SET score = score + $1, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = $2
+            `, [points, this.userId]);
+            return points;
+        } catch (error) {
+            // این آپدیت جانبیه (امتیاز)؛ نباید کل درخواستِ اصلی (مثلاً ثبت پست) رو با شکست مواجه کنه
+            console.error('updateUserActivity error:', error.message);
+            return 0;
+        }
     }
 
     // ============================================
@@ -268,30 +291,36 @@ class IntelligentAssistant {
     // الگوریتم دیده‌شدن
     // ============================================
     async boostVisibility() {
-        const stats = await this.getStats();
-        const activityScore = 
-            (stats.totalPosts * 2) + 
-            (stats.totalLikes * 0.5) + 
-            (stats.totalComments * 1) + 
-            (stats.totalTrainings * 3) +
-            (stats.totalViews * 0.1);
+        try {
+            const stats = await this.getStats();
+            const activityScore = 
+                (stats.totalPosts * 2) + 
+                (stats.totalLikes * 0.5) + 
+                (stats.totalComments * 1) + 
+                (stats.totalTrainings * 3) +
+                (stats.totalViews * 0.1);
 
-        let boostLevel = 'normal';
-        if (activityScore > 100) boostLevel = 'high';
-        if (activityScore > 300) boostLevel = 'viral';
-        if (activityScore > 800) boostLevel = 'superstar';
-        if (activityScore > 2000) boostLevel = 'legend';
+            let boostLevel = 'normal';
+            if (activityScore > 100) boostLevel = 'high';
+            if (activityScore > 300) boostLevel = 'viral';
+            if (activityScore > 800) boostLevel = 'superstar';
+            if (activityScore > 2000) boostLevel = 'legend';
 
-        await this.db.query(this.userId, `
-            UPDATE channels 
-            SET boost_level = $1, 
-                activity_score = $2,
-                last_boost_calc = CURRENT_TIMESTAMP,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = $3
-        `, [boostLevel, Math.round(activityScore), this.userId]);
+            await this.db.query(this.userId, `
+                UPDATE channels 
+                SET boost_level = $1, 
+                    activity_score = $2,
+                    last_boost_calc = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $3
+            `, [boostLevel, Math.round(activityScore), this.userId]);
 
-        return { boostLevel, activityScore: Math.round(activityScore) };
+            return { boostLevel, activityScore: Math.round(activityScore) };
+        } catch (error) {
+            // این هم یه محاسبه‌ی جانبیه؛ خطای موقت توش نباید عملیات اصلی رو خراب کنه
+            console.error('boostVisibility error:', error.message);
+            return { boostLevel: 'normal', activityScore: 0 };
+        }
     }
 
     // ============================================

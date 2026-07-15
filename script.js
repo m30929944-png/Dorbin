@@ -14,8 +14,9 @@ let currentUser = null;
 let currentChatUser = null;
 let viewingProfileId = null;
 let viewingProfileFollowing = false;
-let pendingMedia = null;
+let pendingMediaUrl = null;
 let pendingMediaType = null;
+let mediaUploadXhr = null;
 let scheduledMediaFiles = [];
 let isAdmin = false;
 
@@ -210,7 +211,9 @@ function afterLogin() {
     });
     
     socket.on('message_sent', (data) => {
-        // پیام ارسال شد
+        if (!data.success) {
+            showNotification('❌ ' + (data.error || 'پیام ارسال نشد'));
+        }
     });
 }
 
@@ -301,27 +304,80 @@ document.getElementById('postVideoInput').addEventListener('change', function(e)
 
 function handleMediaFile(file, type) {
     if (!file) return;
-    readFileAsBase64(file, (b64) => {
-        pendingMedia = b64;
-        pendingMediaType = type;
-        showMediaPreview(b64, type);
-    });
+    const maxMb = type === 'video' ? 300 : 20;
+    if (file.size > maxMb * 1024 * 1024) {
+        showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`);
+        return;
+    }
+    uploadMediaFile(file, type);
 }
 
-function showMediaPreview(b64, type) {
+// آپلود واقعی و استریم‌شده به سرور (به‌جای Base64 توی JSON) - با نوار پیشرفت، بدون هنگ کردن مرورگر
+function uploadMediaFile(file, type) {
+    const container = document.getElementById('mediaPreview');
+    const content = document.getElementById('mediaPreviewContent');
+    if (!container || !content) return;
+
+    container.style.display = 'block';
+    pendingMediaUrl = null;
+    pendingMediaType = null;
+    content.innerHTML = `
+        <div class="media-upload-progress">
+            <i class="fas fa-spinner fa-spin"></i>
+            <div class="progress-bar-track"><div class="progress-bar-fill" id="mediaProgressFill" style="width:0%"></div></div>
+            <span id="mediaProgressText">در حال آپلود... ۰٪</span>
+        </div>`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    mediaUploadXhr = xhr;
+    xhr.open('POST', '/api/upload');
+    xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 100);
+        const fill = document.getElementById('mediaProgressFill');
+        const text = document.getElementById('mediaProgressText');
+        if (fill) fill.style.width = pct + '%';
+        if (text) text.textContent = `در حال آپلود... ${pct}٪`;
+    };
+    xhr.onload = () => {
+        mediaUploadXhr = null;
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
+            pendingMediaUrl = data.url;
+            pendingMediaType = data.mediaType;
+            showMediaPreview(data.url, data.mediaType);
+        } else {
+            showNotification('❌ ' + (data?.error || 'آپلود ناموفق بود'));
+            removeMedia();
+        }
+    };
+    xhr.onerror = () => {
+        mediaUploadXhr = null;
+        showNotification('❌ خطا در ارتباط با سرور هنگام آپلود');
+        removeMedia();
+    };
+    xhr.send(formData);
+}
+
+function showMediaPreview(url, type) {
     const container = document.getElementById('mediaPreview');
     const content = document.getElementById('mediaPreviewContent');
     if (!container || !content) return;
     container.style.display = 'block';
     if (type === 'video') {
-        content.innerHTML = `<video src="${b64}" controls></video>`;
+        content.innerHTML = `<video src="${url}" controls></video>`;
     } else {
-        content.innerHTML = `<img src="${b64}">`;
+        content.innerHTML = `<img src="${url}">`;
     }
 }
 
 function removeMedia() {
-    pendingMedia = null;
+    if (mediaUploadXhr) { mediaUploadXhr.abort(); mediaUploadXhr = null; }
+    pendingMediaUrl = null;
     pendingMediaType = null;
     const container = document.getElementById('mediaPreview');
     const content = document.getElementById('mediaPreviewContent');
@@ -334,6 +390,7 @@ function removeMedia() {
 async function createPost() {
     const content = document.getElementById('postContent').value.trim();
     if (!content) { showNotification('یه متنی برای پست بنویس!'); return; }
+    if (mediaUploadXhr) { showNotification('⏳ صبر کن آپلود مدیا تموم بشه'); return; }
 
     try {
         const res = await fetch('/api/post/create', {
@@ -341,7 +398,7 @@ async function createPost() {
             body: JSON.stringify({
                 userId: currentUser.id,
                 content,
-                mediaUrl: pendingMedia,
+                mediaUrl: pendingMediaUrl,
                 mediaType: pendingMediaType || 'none'
             })
         });
@@ -360,23 +417,55 @@ async function createPost() {
 
 async function loadChannelPosts() {
     try {
-        const res = await fetch(`/api/channel/${currentUser.id}`);
+        const res = await fetch(`/api/channel/${currentUser.id}/posts`);
         const posts = await res.json();
         const container = document.getElementById('channelPosts');
         if (!container) return;
-        
-        container.innerHTML = posts.length ? 
-            posts.map(p => renderPostCard(p, currentUser)).join('') :
-            `<div class="empty-state">
+
+        if (!posts.length) {
+            container.innerHTML = `<div class="empty-state">
                 <i class="fas fa-pen-fancy"></i>
                 هنوز پستی منتشر نکردی.<br>
                 اولین پستت رو بنویس! ✍️
             </div>`;
+        } else {
+            let html = '';
+            let ads = [];
+            try {
+                const adsRes = await fetch('/api/ads/active');
+                ads = await adsRes.json();
+            } catch (e) {}
+
+            posts.forEach((p, i) => {
+                html += renderPostCard(p, currentUser);
+                // هر ۴ پست یه تبلیغ (در صورت وجود تبلیغ فعال) تزریق می‌شه
+                if (ads.length && (i + 1) % 4 === 0) {
+                    const ad = ads[Math.floor(i / 4) % ads.length];
+                    html += renderAdCard(ad);
+                }
+            });
+            container.innerHTML = html;
+        }
 
         const ures = await fetch(`/api/user/${currentUser.id}`);
         const u = await ures.json();
         document.getElementById('followersCount').textContent = `${formatNumber(u.followers || 0)} فالوور`;
     } catch (e) { console.error(e); }
+}
+
+function renderAdCard(ad) {
+    return `
+    <div class="post-card ad-card" data-ad-id="${ad.id}">
+        <div class="post-head">
+            <span class="name">🎯 ${escapeHtml(ad.title)}</span>
+            <span class="time ad-badge">تبلیغ</span>
+        </div>
+        <p class="content">${escapeHtml(ad.content || '')}</p>
+        ${ad.media_url ? `<div class="media-wrapper">${ad.media_type === 'video' ?
+            `<video src="${ad.media_url}" controls preload="metadata"></video>` :
+            `<img src="${ad.media_url}" loading="lazy">`}</div>` : ''}
+        ${ad.link_url ? `<a href="${ad.link_url}" target="_blank" rel="noopener" class="btn-primary ad-link-btn">مشاهده</a>` : ''}
+    </div>`;
 }
 
 function renderPostCard(post, author) {
@@ -391,10 +480,16 @@ function renderPostCard(post, author) {
     
     return `
     <div class="post-card" data-post-id="${post.id}">
-        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
-            <img src="${avatar}" loading="lazy">
-            <span class="name">${escapeHtml(name)}</span>
+        <div class="post-head">
+            <img src="${avatar}" loading="lazy" onclick="openProfile('${post.user_id || currentUser.id}')">
+            <span class="name" onclick="openProfile('${post.user_id || currentUser.id}')">${escapeHtml(name)}</span>
             <span class="time">${timeAgo(post.created_at)}</span>
+            <div class="post-menu">
+                <button class="post-menu-btn" onclick="togglePostMenu('${post.id}')"><i class="fas fa-ellipsis-h"></i></button>
+                <div class="post-menu-dropdown" id="postMenu-${post.id}">
+                    <button onclick="openReportModal('post', '${post.id}')"><i class="fas fa-flag"></i> گزارش پست</button>
+                </div>
+            </div>
         </div>
         <p class="content">${escapeHtml(post.content)}</p>
         ${mediaHtml}
@@ -412,6 +507,18 @@ function renderPostCard(post, author) {
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
 }
+
+function togglePostMenu(postId) {
+    const dropdown = document.getElementById(`postMenu-${postId}`);
+    const wasOpen = dropdown?.classList.contains('open');
+    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (dropdown && !wasOpen) dropdown.classList.add('open');
+}
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.post-menu')) {
+        document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    }
+});
 
 async function toggleLike(postId, btn) {
     try {
@@ -593,20 +700,38 @@ async function testAssistant() {
 // زمان‌بندی پست‌ها
 // ============================================
 document.getElementById('scheduleImages').addEventListener('change', function(e) {
-    for (const file of e.target.files) {
-        readFileAsBase64(file, (b64) => {
-            scheduledMediaFiles.push({ data: b64, type: 'image' });
-        });
-    }
+    for (const file of e.target.files) uploadScheduledMedia(file, 'image');
 });
 
 document.getElementById('scheduleVideos').addEventListener('change', function(e) {
-    for (const file of e.target.files) {
-        readFileAsBase64(file, (b64) => {
-            scheduledMediaFiles.push({ data: b64, type: 'video' });
-        });
-    }
+    for (const file of e.target.files) uploadScheduledMedia(file, 'video');
 });
+
+async function uploadScheduledMedia(file, type) {
+    const maxMb = type === 'video' ? 300 : 20;
+    if (file.size > maxMb * 1024 * 1024) {
+        showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`);
+        return;
+    }
+    const idx = scheduledMediaFiles.length;
+    scheduledMediaFiles.push({ data: null, type, uploading: true });
+    showNotification(`⏳ در حال آپلود ${type === 'video' ? 'ویدیو' : 'عکس'} ${idx + 1}...`);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            scheduledMediaFiles[idx] = { data: data.url, type: data.mediaType, uploading: false };
+        } else {
+            scheduledMediaFiles[idx] = null;
+            showNotification('❌ خطا در آپلود: ' + data.error);
+        }
+    } catch (e) {
+        scheduledMediaFiles[idx] = null;
+        showNotification('❌ خطا در ارتباط با سرور هنگام آپلود');
+    }
+}
 
 async function schedulePosts() {
     const count = parseInt(document.getElementById('postCount').value);
@@ -616,6 +741,7 @@ async function schedulePosts() {
 
     if (!count || count < 1) { showNotification('تعداد پست‌ها رو مشخص کن!'); return; }
     if (descriptions.length < count) { showNotification(`حداقل ${count} توضیح وارد کن.`); return; }
+    if (scheduledMediaFiles.some(m => m && m.uploading)) { showNotification('⏳ صبر کن آپلود مدیاها تموم بشه'); return; }
 
     const posts = [];
     const baseDate = new Date();
@@ -1047,6 +1173,12 @@ async function openChat(userId, name, avatar) {
     document.getElementById('chatThreadOverlay').classList.add('open');
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
 
+    try {
+        const blockRes = await fetch(`/api/user/${currentUser.id}/is-blocked/${userId}`);
+        const blockData = await blockRes.json();
+        updateChatBlockBtn(!!blockData.blocked);
+    } catch (e) { updateChatBlockBtn(false); }
+
     // علامت‌گذاری پیام‌ها به عنوان خوانده شده
     try {
         await fetch('/api/chat/read', {
@@ -1137,10 +1269,6 @@ socket.on('new_message', (data) => {
         showNotification(`📩 پیام جدید از ${data.from}`);
         loadChatList();
     }
-});
-
-socket.on('message_sent', (data) => {
-    // پیام ارسال شد
 });
 
 // ============================================
@@ -1244,6 +1372,9 @@ async function loadAdminData(type) {
                         <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
                         <div class="stat-chip"><b>${formatNumber(stats.messages)}</b><span>پیام‌ها</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.follows)}</b><span>فالوها</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.comments)}</b><span>کامنت‌ها</span></div>
+                        <div class="stat-chip"><b>${formatNumber(stats.pendingReports)}</b><span>گزارش در انتظار</span></div>
                     </div>
                 `;
             }
@@ -1254,13 +1385,20 @@ async function loadAdminData(type) {
             if (container) {
                 container.innerHTML = users.map(u => `
                     <div class="admin-user-item">
-                        <span class="name">${escapeHtml(u.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${u.role || 'user'}</span>
+                        <span class="name">${escapeHtml(u.name)}${u.is_verified ? ' ✔️' : ''}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${u.role === 'banned' ? '⛔ مسدود' : (u.restricted ? '🔒 محدود' : (u.role || 'user'))}</span>
                         <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
                         <div class="actions">
                             ${u.role !== 'admin' ? `
-                                <button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>
-                                <button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>
+                                ${u.is_verified
+                                    ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unverify')">✗ حذف تیک</button>`
+                                    : `<button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓ تیک آبی</button>`}
+                                ${u.restricted
+                                    ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unrestrict')">🔓 رفع محدودیت</button>`
+                                    : `<button class="btn-secondary" onclick="adminAction('user','${u.id}','restrict')">🔒 محدود کردن</button>`}
+                                ${u.role === 'banned'
+                                    ? `<button class="btn-success" onclick="adminAction('user','${u.id}','unban')">✅ رفع مسدودی</button>`
+                                    : `<button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔ مسدود کردن</button>`}
                             ` : ''}
                         </div>
                     </div>
@@ -1273,7 +1411,7 @@ async function loadAdminData(type) {
             if (container) {
                 container.innerHTML = posts.map(p => `
                     <div class="admin-post-item">
-                        <span>${escapeHtml(p.content?.substring(0, 40) || '')}...</span>
+                        <span>${escapeHtml((p.content || '').substring(0, 40))}...</span>
                         <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
                         <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
                         <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
@@ -1293,6 +1431,40 @@ async function loadAdminData(type) {
                         <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
                     </div>
                 `).join('');
+            }
+        } else if (type === 'reports') {
+            const res = await fetch('/api/admin/reports?status=pending', { headers: { 'userId': 'admin_milad' } });
+            const reports = await res.json();
+            const container = document.getElementById('adminReportsList');
+            if (container) {
+                const labels = { user: '👤 کاربر', post: '📝 پست', comment: '💬 کامنت' };
+                container.innerHTML = reports.length ? reports.map(r => `
+                    <div class="admin-post-item">
+                        <span>${labels[r.target_type] || r.target_type} — ${escapeHtml(r.reason)}</span>
+                        <span style="font-size:10px;color:var(--text-3);">شناسه هدف: ${escapeHtml(r.target_id || '')}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(r.created_at)}</span>
+                        <div class="actions">
+                            <button class="btn-success" onclick="resolveReport('${r.id}')">✅ بررسی شد</button>
+                            <button class="btn-secondary" onclick="dismissReport('${r.id}')">رد کردن</button>
+                        </div>
+                    </div>
+                `).join('') : `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
+            }
+        } else if (type === 'ads') {
+            const res = await fetch('/api/admin/ads', { headers: { 'userId': 'admin_milad' } });
+            const ads = await res.json();
+            const container = document.getElementById('adminAdsList');
+            if (container) {
+                container.innerHTML = ads.map(a => `
+                    <div class="admin-post-item">
+                        <span>${escapeHtml(a.title)}</span>
+                        <span style="font-size:10px;color:var(--text-3);">${a.is_active ? '🟢 فعال' : '⚪ غیرفعال'} — ${formatNumber(a.views || 0)} بازدید</span>
+                        <div class="actions">
+                            <button class="btn-secondary" onclick="toggleAd('${a.id}', ${a.is_active ? 0 : 1})">${a.is_active ? 'غیرفعال کردن' : 'فعال کردن'}</button>
+                            <button class="btn-danger" onclick="deleteAd('${a.id}')">🗑️</button>
+                        </div>
+                    </div>
+                `).join('') || `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">هنوز تبلیغی ساخته نشده</p>`;
             }
         }
     } catch (e) { console.error(e); }
@@ -1318,6 +1490,80 @@ async function adminAction(type, id, action) {
     } catch (e) { showNotification('خطا: ' + e.message); }
 }
 
+async function resolveReport(reportId) {
+    try {
+        const res = await fetch('/api/admin/report/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            body: JSON.stringify({ reportId })
+        });
+        const data = await res.json();
+        if (data.success) { showNotification('✅ گزارش بررسی شد'); loadAdminData('reports'); }
+    } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
+async function dismissReport(reportId) {
+    try {
+        const res = await fetch('/api/admin/report/dismiss', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            body: JSON.stringify({ reportId })
+        });
+        const data = await res.json();
+        if (data.success) { showNotification('گزارش رد شد'); loadAdminData('reports'); }
+    } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
+async function createAd() {
+    const title = document.getElementById('adTitle').value.trim();
+    const content = document.getElementById('adContent').value.trim();
+    const linkUrl = document.getElementById('adLink').value.trim();
+    if (!title) { showNotification('عنوان تبلیغ رو بنویس!'); return; }
+
+    try {
+        const res = await fetch('/api/admin/ads/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            body: JSON.stringify({ title, content, linkUrl })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showNotification('✅ تبلیغ ساخته شد');
+            document.getElementById('adTitle').value = '';
+            document.getElementById('adContent').value = '';
+            document.getElementById('adLink').value = '';
+            loadAdminData('ads');
+        } else {
+            showNotification('خطا: ' + data.error);
+        }
+    } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
+async function toggleAd(adId, active) {
+    try {
+        const res = await fetch('/api/admin/ads/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            body: JSON.stringify({ adId, active })
+        });
+        const data = await res.json();
+        if (data.success) loadAdminData('ads');
+    } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
+async function deleteAd(adId) {
+    if (!confirm('این تبلیغ حذف بشه؟')) return;
+    try {
+        const res = await fetch('/api/admin/ads/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            body: JSON.stringify({ adId })
+        });
+        const data = await res.json();
+        if (data.success) loadAdminData('ads');
+    } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
 async function sendBroadcast() {
     const title = document.getElementById('broadcastTitle').value.trim();
     const message = document.getElementById('broadcastMessage').value.trim();
@@ -1336,6 +1582,97 @@ async function sendBroadcast() {
             document.getElementById('broadcastMessage').value = '';
         }
     } catch (e) { showNotification('خطا: ' + e.message); }
+}
+
+// ============================================
+// گزارش (پست/کاربر/کامنت) - مودال مشترک
+// ============================================
+function openReportModal(targetType, targetId) {
+    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.getElementById('reportModal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'reportModal';
+    modal.style.zIndex = '400';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:340px;">
+            <h2>🚩 گزارش</h2>
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">دلیل گزارشت رو بنویس</p>
+            <textarea id="reportReasonInput" class="name-input" style="min-height:80px;resize:vertical;width:100%;" placeholder="مثلاً: محتوای نامناسب، اسپم، آزار..." maxlength="500"></textarea>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('reportModal').remove()">انصراف</button>
+                <button class="btn-danger" style="flex:1;" onclick="submitReport('${targetType}','${targetId}')">ارسال گزارش</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+}
+
+async function submitReport(targetType, targetId) {
+    const reason = document.getElementById('reportReasonInput')?.value.trim();
+    if (!reason) { showNotification('دلیل گزارش رو بنویس'); return; }
+    try {
+        const res = await fetch('/api/report', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reporterId: currentUser.id, targetId, targetType, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showNotification('✅ گزارش شما ثبت شد، ممنون از همکاریت');
+            document.getElementById('reportModal')?.remove();
+        } else {
+            showNotification('خطا: ' + data.error);
+        }
+    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+}
+
+function pfOpenReport() {
+    if (!pfCurrentPostId) return;
+    openReportModal('post', pfCurrentPostId);
+}
+
+// ============================================
+// منوی سه‌نقطه‌ی چت - گزارش و مسدود کردن کاربر
+// ============================================
+function toggleChatMenu() {
+    const dropdown = document.getElementById('chatThreadMenu');
+    const wasOpen = dropdown?.classList.contains('open');
+    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (dropdown && !wasOpen) dropdown.classList.add('open');
+}
+
+function reportChatUser() {
+    if (!currentChatUser) return;
+    document.getElementById('chatThreadMenu')?.classList.remove('open');
+    openReportModal('user', currentChatUser.id);
+}
+
+function updateChatBlockBtn(blocked) {
+    const btn = document.getElementById('chatBlockBtn');
+    if (!btn) return;
+    btn.innerHTML = blocked ? '<i class="fas fa-unlock"></i> رفع مسدودیت' : '<i class="fas fa-ban"></i> مسدود کردن';
+    btn.dataset.blocked = blocked ? '1' : '0';
+}
+
+async function toggleBlockChatUser() {
+    if (!currentChatUser) return;
+    document.getElementById('chatThreadMenu')?.classList.remove('open');
+    const btn = document.getElementById('chatBlockBtn');
+    const isBlocked = btn?.dataset.blocked === '1';
+
+    if (!isBlocked && !confirm(`${currentChatUser.name} مسدود بشه؟ دیگه نمی‌تونید برای هم پیام بفرستید.`)) return;
+
+    try {
+        const res = await fetch(isBlocked ? '/api/user/unblock' : '/api/user/block', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ blockerId: currentUser.id, blockedId: currentChatUser.id })
+        });
+        const data = await res.json();
+        if (data.success) {
+            updateChatBlockBtn(!isBlocked);
+            showNotification(isBlocked ? '🔓 رفع مسدودیت شد' : '🚫 کاربر مسدود شد');
+        }
+    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
 }
 
 // ============================================
