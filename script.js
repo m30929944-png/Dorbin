@@ -1,8 +1,12 @@
+// ============================================
+// script.js - نسخه نهایی حرفه‌ای و بدون باگ
+// ============================================
 const socket = io({
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: 20,
-    reconnectionDelay: 1000
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
 });
 
 let currentUser = null;
@@ -68,6 +72,8 @@ function timeAgo(dateStr) {
 }
 
 function showNotification(text, type = 'info') {
+    const old = document.querySelector('.notification');
+    if (old) old.remove();
     const n = document.createElement('div');
     n.className = 'notification';
     n.innerHTML = text;
@@ -83,6 +89,11 @@ function formatNumber(num) {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
     return num || 0;
+}
+
+function closeModal() {
+    const m = document.querySelector('.modal');
+    if (m) m.remove();
 }
 
 // ============================================
@@ -114,7 +125,7 @@ function showRegisterModal() {
     modal.innerHTML = `
         <div class="modal-content">
             <h2>👋 خوش اومدی!</h2>
-            <p style="color:var(--text-2);font-size:12px;margin-bottom:10px;">ثبت‌نام در یارِ من</p>
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">ثبت‌نام در یارِ من</p>
             <div class="avatar-upload">
                 <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
@@ -122,10 +133,10 @@ function showRegisterModal() {
             <input type="text" id="regNameInput" class="name-input" placeholder="نام کاربری" maxlength="30">
             <input type="text" id="regEmailInput" class="name-input" placeholder="ایمیل (اختیاری)">
             <input type="password" id="regPasswordInput" class="name-input" placeholder="رمز عبور (حداقل ۶ کاراکتر)">
-            <button class="btn-primary" style="width:100%;padding:10px;font-size:13px;" onclick="registerUser()">
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ثبت‌نام
             </button>
-            <p style="font-size:9px;color:var(--text-3);margin-top:6px;">با ثبت‌نام، قوانین را می‌پذیرید</p>
+            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">با ثبت‌نام، قوانین را می‌پذیرید</p>
         </div>`;
     document.body.appendChild(modal);
 
@@ -178,6 +189,21 @@ function afterLogin() {
     socket.on('broadcast', (data) => {
         showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
     });
+
+    socket.on('message_sent', (data) => {
+        if (!data.success) {
+            showNotification('❌ ' + (data.error || 'پیام ارسال نشد'));
+        }
+    });
+
+    socket.on('new_message', (data) => {
+        if (currentChatUser && data.from === currentChatUser.id) {
+            displayMessage(data.message, 'received');
+        } else {
+            showNotification(`📩 پیام جدید از ${data.from}`);
+            loadChatList();
+        }
+    });
 }
 
 function setupNav() {
@@ -204,7 +230,59 @@ async function loadPageData(page) {
 }
 
 // ============================================
-// استوری
+// پروفایل کاربر
+// ============================================
+document.getElementById('profileBtn').addEventListener('click', showProfileModal);
+
+async function showProfileModal() {
+    try {
+        const res = await fetch(`/api/user/${currentUser.id}`);
+        currentUser = { ...currentUser, ...(await res.json()) };
+    } catch (e) {}
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="avatar-upload">
+                <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
+                <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
+            </div>
+            <h3 style="font-size:18px;">${escapeHtml(currentUser.name)}</h3>
+            ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
+            <div class="profile-stats">
+                <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
+                <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
+            </div>
+            <div class="profile-actions">
+                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
+                    <i class="fas fa-robot"></i> مدیریت دستیار
+                </button>
+                <button class="btn-ghost" onclick="closeModal()">بستن</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+
+    document.getElementById('myAvatarInput').addEventListener('change', function(e) {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const b64 = e.target.result;
+            document.getElementById('myAvatarPreview').src = b64;
+            document.getElementById('avatarImg').src = b64;
+            currentUser.avatar = b64;
+            await fetch('/api/user/avatar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: currentUser.id, avatar: b64 })
+            });
+            showNotification('✅ عکس پروفایل به‌روز شد');
+        };
+        reader.readAsDataURL(e.target.files[0]);
+    });
+}
+
+// ============================================
+// استوری‌ها
 // ============================================
 async function loadStories() {
     try {
@@ -230,7 +308,7 @@ function renderStories() {
         html += `
             <div class="story-ring" onclick="viewStory('${s.id}')">
                 <div class="ring"><img src="${s.user_avatar || defaultAvatar(s.user_name)}"></div>
-                <span>${escapeHtml(s.user_name || '')}</span>
+                <span>${escapeHtml(s.user_name || '').substring(0, 8)}</span>
             </div>`;
     });
     row.innerHTML = html;
@@ -443,7 +521,7 @@ function renderPostCard(post, author) {
                 <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
             </button>
             <button disabled><i class="far fa-eye"></i> ${formatNumber(post.views || 0)}</button>
-            <button onclick="showPaymentInfo()" style="font-size:10px;color:var(--text-3);"><i class="fas fa-arrow-up"></i></button>
+            <button onclick="showPaymentInfo()" style="font-size:11px;color:var(--text-3);"><i class="fas fa-arrow-up"></i></button>
         </div>
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
@@ -596,7 +674,7 @@ function renderExploreItems() {
     const container = document.getElementById('exploreContent');
     if (!container) return;
     if (!exploreItems.length) {
-        container.innerHTML = `<div class="empty-state"><i class="fas fa-compass"></i>هنوز پستی در اکسپلور وجود نداره.<br>اولین پست رو تو منتشر کن! 🚀</div>`;
+        container.innerHTML = `<div class="empty-state"><i class="fas fa-compass"></i>هنوز پستی در اکسپلور وجود نداره.</div>`;
         return;
     }
     explorePostIndex = {};
@@ -866,7 +944,7 @@ async function loadChatList() {
         const container = document.getElementById('chatList');
         if (!container) return;
         if (!chats.length) {
-            container.innerHTML = `<div class="empty-state"><i class="fas fa-comment-dots"></i>هنوز چتی نداری.<br>از اکسپلور یکی رو پیدا کن و پیام بده! 💬</div>`;
+            container.innerHTML = `<div class="empty-state"><i class="fas fa-comment-dots"></i>هنوز چتی نداری.</div>`;
             return;
         }
         container.innerHTML = chats.map(c => `
@@ -962,15 +1040,6 @@ function displayMessage(text, type) {
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
-
-socket.on('new_message', (data) => {
-    if (currentChatUser && data.from === currentChatUser.id) {
-        displayMessage(data.message, 'received');
-    } else {
-        showNotification(`📩 پیام جدید از ${data.from}`);
-        loadChatList();
-    }
-});
 
 // ============================================
 // جستجو
@@ -1252,7 +1321,7 @@ async function rejectPayment(paymentId) {
 }
 
 // ============================================
-// شروع
+// شروع برنامه
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
