@@ -1,4 +1,8 @@
 // ============================================
+// script.js - کلاینت کامل پلتفرم اجتماعی
+// ============================================
+
+// ============================================
 // اتصال WebSocket
 // ============================================
 const socket = io({
@@ -10,18 +14,23 @@ const socket = io({
     timeout: 15000
 });
 
+// ============================================
+// متغیرهای سراسری
+// ============================================
 let currentUser = null;
 let currentChatUser = null;
 let viewingProfileId = null;
 let viewingProfileFollowing = false;
 let pendingMediaUrl = null;
 let pendingMediaType = null;
-let mediaUploadXhr = null;
-let scheduledMediaFiles = [];
 let isAdmin = false;
+let exploreCursor = null;
+let exploreLoading = false;
+let exploreEnd = false;
+let chatFileUploading = false;
 
 // ============================================
-// تم روشن/تیره
+// تم
 // ============================================
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
@@ -40,22 +49,12 @@ function toggleTheme() {
     try { saved = localStorage.getItem('yareman_theme') || 'dark'; } catch (e) {}
     applyTheme(saved);
 })();
-let adminPanelOpen = false;
-let chatListCache = [];
-let messagesCache = {};
 
 // ============================================
 // توابع کمکی
 // ============================================
 function defaultAvatar(seed) {
     return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed || 'user')}`;
-}
-
-function readFileAsBase64(file, cb) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => cb(e.target.result);
-    reader.readAsDataURL(file);
 }
 
 function escapeHtml(str) {
@@ -72,42 +71,8 @@ function timeAgo(dateStr) {
     if (diff < 3600) return Math.floor(diff / 60) + ' دقیقه پیش';
     if (diff < 86400) return Math.floor(diff / 3600) + ' ساعت پیش';
     if (diff < 2592000) return Math.floor(diff / 86400) + ' روز پیش';
+    if (diff < 31536000) return Math.floor(diff / 2592000) + ' ماه پیش';
     return new Date(dateStr).toLocaleDateString('fa-IR');
-}
-
-function showNotification(text, type = 'info') {
-    const n = document.createElement('div');
-    n.className = 'notification';
-    n.innerHTML = text;
-    document.body.appendChild(n);
-    setTimeout(() => {
-        n.style.opacity = '0';
-        n.style.transform = 'translate(-50%, -20px)';
-        setTimeout(() => n.remove(), 300);
-    }, 3000);
-}
-
-function closeModal() {
-    const m = document.querySelector('.modal');
-    if (m) m.remove();
-}
-
-function appendMiniMsg(containerId, text, who) {
-    const c = document.getElementById(containerId);
-    if (!c) return;
-    const div = document.createElement('div');
-    div.className = 'mini-msg ' + who;
-    div.textContent = text;
-    c.appendChild(div);
-    c.scrollTop = c.scrollHeight;
-}
-
-function updateBoostBadge(level) {
-    const badge = document.getElementById('boostBadge');
-    if (!badge) return;
-    const labels = { normal: 'عادی', high: '🔥 داغ', viral: '🚀 وایرال', superstar: '⭐ ستاره' };
-    badge.textContent = labels[level] || 'عادی';
-    badge.className = 'boost-badge boost-' + level;
 }
 
 function formatNumber(num) {
@@ -116,14 +81,60 @@ function formatNumber(num) {
     return num;
 }
 
+function showToast(text, type = 'info') {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    toast.innerHTML = `${icons[type] || 'ℹ️'} ${text}`;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translate(-50%, -20px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+function closeModal() {
+    const m = document.querySelector('.modal');
+    if (m) m.remove();
+}
+
+function appendChatMessage(containerId, text, who, media) {
+    const c = document.getElementById(containerId);
+    if (!c) return;
+    const div = document.createElement('div');
+    div.className = 'message ' + who;
+    let content = escapeHtml(text);
+    if (media) {
+        if (media.type === 'image') {
+            content += `<div class="media-preview-msg"><img src="${media.url}" loading="lazy"></div>`;
+        } else if (media.type === 'video') {
+            content += `<div class="media-preview-msg"><video src="${media.url}" controls preload="metadata"></video></div>`;
+        } else if (media.type === 'document') {
+            content += `<div class="media-preview-msg"><a href="${media.url}" target="_blank" style="color:var(--primary);">📄 ${escapeHtml(media.name)}</a></div>`;
+        }
+    }
+    content += `<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
+    div.innerHTML = content;
+    c.appendChild(div);
+    c.scrollTop = c.scrollHeight;
+}
+
 // ============================================
 // ورود / ثبت‌نام
 // ============================================
 async function initApp() {
     const savedId = localStorage.getItem('yareman_user_id');
-    if (savedId) {
+    const savedToken = localStorage.getItem('yareman_token');
+    
+    if (savedId && savedToken) {
         try {
-            const res = await fetch(`/api/user/${savedId}`);
+            const res = await fetch(`/api/user/${savedId}`, {
+                headers: { 'Authorization': `Bearer ${savedToken}` }
+            });
             if (res.ok) {
                 currentUser = await res.json();
                 if (currentUser.id === 'admin_milad') {
@@ -145,74 +156,94 @@ function showRegisterModal() {
     modal.innerHTML = `
         <div class="modal-content">
             <h2>👋 خوش اومدی!</h2>
-            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">
+            <p style="color:var(--text-secondary);font-size:12px;margin-bottom:10px;">
                 یه اسم برای خودت انتخاب کن
             </p>
             <div class="avatar-upload">
                 <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
-            <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+            <input type="text" id="regNameInput" class="modal-input" placeholder="اسمت چیه؟" maxlength="30">
+            <input type="email" id="regEmailInput" class="modal-input" placeholder="ایمیل (اختیاری)">
+            <input type="password" id="regPasswordInput" class="modal-input" placeholder="رمز عبور (اختیاری)">
+            <button class="modal-btn modal-btn-primary" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ورود به یارِ من
             </button>
-            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
-                با ثبت‌نام، قوانین و حریم خصوصی را می‌پذیرید
+            <p style="font-size:9px;color:var(--text-muted);margin-top:6px;">
+                با ثبت‌نام، قوانین را می‌پذیرید
             </p>
         </div>`;
     document.body.appendChild(modal);
 
     document.getElementById('regAvatarInput').addEventListener('change', function(e) {
-        readFileAsBase64(e.target.files[0], (b64) => {
-            document.getElementById('regAvatarPreview').src = b64;
-        });
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.getElementById('regAvatarPreview').src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
     });
 }
 
 async function registerUser() {
     const name = document.getElementById('regNameInput').value.trim();
-    if (!name) { showNotification('اسمت رو بنویس!'); return; }
+    const email = document.getElementById('regEmailInput').value.trim();
+    const password = document.getElementById('regPasswordInput').value;
     const avatar = document.getElementById('regAvatarPreview').src;
+    
+    if (!name) { showToast('اسمت رو بنویس!'); return; }
 
     try {
         const res = await fetch('/api/user/register', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, avatar })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password, avatar })
         });
         const data = await res.json();
         if (data.success) {
             currentUser = data.user;
             localStorage.setItem('yareman_user_id', currentUser.id);
+            localStorage.setItem('yareman_token', data.token);
             document.getElementById('registerModal').remove();
             
             if (currentUser.id === 'admin_milad') {
                 isAdmin = true;
                 document.getElementById('adminBtn').classList.add('show');
             }
-            
             afterLogin();
-            showNotification('✨ خوش آمدی ' + currentUser.name);
+            showToast('✨ خوش آمدی ' + currentUser.name, 'success');
         } else {
-            showNotification('خطا: ' + data.error);
+            showToast('خطا: ' + data.error, 'error');
         }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+    } catch (e) {
+        showToast('خطا در ارتباط با سرور', 'error');
+    }
 }
 
 function afterLogin() {
     document.getElementById('userName').textContent = currentUser.name;
     document.getElementById('avatarImg').src = currentUser.avatar || defaultAvatar(currentUser.name);
+    document.getElementById('composerAvatar').src = currentUser.avatar || defaultAvatar(currentUser.name);
+    document.getElementById('composerName').textContent = currentUser.name;
     document.getElementById('userScore').textContent = `🏆 ${formatNumber(currentUser.score || 0)}`;
+    
     socket.emit('join', currentUser.id);
     setupNav();
     loadPageData('channel');
     
     socket.on('broadcast', (data) => {
-        showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
+        showToast(`📢 ${data.title || 'اعلان'}: ${data.message}`, 'info');
+    });
+    
+    socket.on('notification', (data) => {
+        showToast(`🔔 ${data.title}: ${data.message}`, 'info');
     });
     
     socket.on('message_sent', (data) => {
         if (!data.success) {
-            showNotification('❌ ' + (data.error || 'پیام ارسال نشد'));
+            showToast('❌ ' + (data.error || 'پیام ارسال نشد'), 'error');
         }
     });
 }
@@ -237,9 +268,9 @@ function setupNav() {
 async function loadPageData(page) {
     switch (page) {
         case 'channel': await loadChannelPosts(); break;
-        case 'assistant': await loadAssistantData(); break;
-        case 'chat': await loadChatList(); break;
         case 'explore': await loadExplore(); break;
+        case 'chat': await loadChatList(); break;
+        case 'assistant': await loadAssistantData(); break;
     }
 }
 
@@ -250,7 +281,10 @@ document.getElementById('profileBtn').addEventListener('click', showProfileModal
 
 async function showProfileModal() {
     try {
-        const res = await fetch(`/api/user/${currentUser.id}`);
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/user/${currentUser.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         currentUser = { ...currentUser, ...(await res.json()) };
     } catch (e) {}
 
@@ -262,32 +296,46 @@ async function showProfileModal() {
                 <img id="myAvatarPreview" src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
                 <label><i class="fas fa-camera"></i><input type="file" id="myAvatarInput" accept="image/*"></label>
             </div>
-            <h3 style="font-size:17px;">${escapeHtml(currentUser.name)}</h3>
-            ${currentUser.bio ? `<p style="color:var(--text-2);font-size:13px;">${escapeHtml(currentUser.bio)}</p>` : ''}
+            <h3 style="font-size:16px;">${escapeHtml(currentUser.name)}</h3>
+            ${currentUser.bio ? `<p style="color:var(--text-secondary);font-size:12px;">${escapeHtml(currentUser.bio)}</p>` : ''}
             <div class="profile-stats">
                 <div><b>${formatNumber(currentUser.followers || 0)}</b><span>فالوور</span></div>
                 <div><b>${formatNumber(currentUser.score || 0)}</b><span>امتیاز</span></div>
             </div>
             <div class="profile-actions">
-                <button class="btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
-                    <i class="fas fa-robot"></i> مدیریت دستیار
+                <button class="btn btn-secondary" onclick="document.querySelector('[data-page=assistant]').click(); closeModal();">
+                    <i class="fas fa-robot"></i> دستیار
                 </button>
-                <button class="btn-ghost" onclick="closeModal()">بستن</button>
+                <button class="btn btn-secondary" onclick="closeModal()">بستن</button>
             </div>
         </div>`;
     document.body.appendChild(modal);
 
     document.getElementById('myAvatarInput').addEventListener('change', function(e) {
-        readFileAsBase64(e.target.files[0], async (b64) => {
-            document.getElementById('myAvatarPreview').src = b64;
-            document.getElementById('avatarImg').src = b64;
-            currentUser.avatar = b64;
-            await fetch('/api/user/avatar', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: currentUser.id, avatar: b64 })
-            });
-            showNotification('✅ عکس پروفایل به‌روز شد');
-        });
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const b64 = ev.target.result;
+                document.getElementById('myAvatarPreview').src = b64;
+                document.getElementById('avatarImg').src = b64;
+                document.getElementById('composerAvatar').src = b64;
+                currentUser.avatar = b64;
+                try {
+                    const token = localStorage.getItem('yareman_token');
+                    await fetch('/api/user/avatar', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ userId: currentUser.id, avatar: b64 })
+                    });
+                    showToast('✅ عکس پروفایل به‌روز شد', 'success');
+                } catch (e) { showToast('خطا', 'error'); }
+            };
+            reader.readAsDataURL(file);
+        }
     });
 }
 
@@ -304,15 +352,14 @@ document.getElementById('postVideoInput').addEventListener('change', function(e)
 
 function handleMediaFile(file, type) {
     if (!file) return;
-    const maxMb = type === 'video' ? 300 : 20;
+    const maxMb = type === 'video' ? 500 : 50;
     if (file.size > maxMb * 1024 * 1024) {
-        showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`);
+        showToast(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`, 'error');
         return;
     }
     uploadMediaFile(file, type);
 }
 
-// آپلود واقعی و استریم‌شده به سرور (به‌جای Base64 توی JSON) - با نوار پیشرفت، بدون هنگ کردن مرورگر
 function uploadMediaFile(file, type) {
     const container = document.getElementById('mediaPreview');
     const content = document.getElementById('mediaPreviewContent');
@@ -322,7 +369,7 @@ function uploadMediaFile(file, type) {
     pendingMediaUrl = null;
     pendingMediaType = null;
     content.innerHTML = `
-        <div class="media-upload-progress">
+        <div class="upload-progress">
             <i class="fas fa-spinner fa-spin"></i>
             <div class="progress-bar-track"><div class="progress-bar-fill" id="mediaProgressFill" style="width:0%"></div></div>
             <span id="mediaProgressText">در حال آپلود... ۰٪</span>
@@ -330,10 +377,12 @@ function uploadMediaFile(file, type) {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('userId', currentUser.id);
 
     const xhr = new XMLHttpRequest();
-    mediaUploadXhr = xhr;
     xhr.open('POST', '/api/upload');
+    xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('yareman_token')}`);
+    
     xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
         const pct = Math.round((e.loaded / e.total) * 100);
@@ -342,25 +391,50 @@ function uploadMediaFile(file, type) {
         if (fill) fill.style.width = pct + '%';
         if (text) text.textContent = `در حال آپلود... ${pct}٪`;
     };
+    
     xhr.onload = () => {
-        mediaUploadXhr = null;
         let data = null;
         try { data = JSON.parse(xhr.responseText); } catch (e) {}
         if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
-            pendingMediaUrl = data.url;
-            pendingMediaType = data.mediaType;
-            showMediaPreview(data.url, data.mediaType);
+            // بررسی وضعیت پردازش
+            checkUploadStatus(data.jobId);
         } else {
-            showNotification('❌ ' + (data?.error || 'آپلود ناموفق بود'));
+            showToast('❌ ' + (data?.error || 'آپلود ناموفق بود'), 'error');
             removeMedia();
         }
     };
+    
     xhr.onerror = () => {
-        mediaUploadXhr = null;
-        showNotification('❌ خطا در ارتباط با سرور هنگام آپلود');
+        showToast('❌ خطا در ارتباط با سرور', 'error');
         removeMedia();
     };
     xhr.send(formData);
+}
+
+async function checkUploadStatus(jobId) {
+    try {
+        const res = await fetch(`/api/upload/status/${jobId}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('yareman_token')}` }
+        });
+        const data = await res.json();
+        
+        if (data.state === 'completed' && data.result) {
+            pendingMediaUrl = data.result.url;
+            pendingMediaType = data.result.mediaType || 
+                (data.result.format === 'mp4' ? 'video' : 'image');
+            showMediaPreview(data.result.url, pendingMediaType);
+            showToast('✅ فایل با موفقیت آپلود شد', 'success');
+        } else if (data.state === 'failed') {
+            showToast('❌ پردازش فایل ناموفق بود', 'error');
+            removeMedia();
+        } else {
+            // ادامه بررسی
+            setTimeout(() => checkUploadStatus(jobId), 2000);
+        }
+    } catch (e) {
+        showToast('❌ خطا در بررسی وضعیت', 'error');
+        removeMedia();
+    }
 }
 
 function showMediaPreview(url, type) {
@@ -369,14 +443,13 @@ function showMediaPreview(url, type) {
     if (!container || !content) return;
     container.style.display = 'block';
     if (type === 'video') {
-        content.innerHTML = `<video src="${url}" controls></video>`;
+        content.innerHTML = `<video src="${url}" controls preload="metadata"></video>`;
     } else {
-        content.innerHTML = `<img src="${url}">`;
+        content.innerHTML = `<img src="${url}" loading="lazy">`;
     }
 }
 
 function removeMedia() {
-    if (mediaUploadXhr) { mediaUploadXhr.abort(); mediaUploadXhr = null; }
     pendingMediaUrl = null;
     pendingMediaType = null;
     const container = document.getElementById('mediaPreview');
@@ -389,12 +462,20 @@ function removeMedia() {
 
 async function createPost() {
     const content = document.getElementById('postContent').value.trim();
-    if (!content) { showNotification('یه متنی برای پست بنویس!'); return; }
-    if (mediaUploadXhr) { showNotification('⏳ صبر کن آپلود مدیا تموم بشه'); return; }
+    if (!content) { showToast('یه متنی برای پست بنویس!', 'warning'); return; }
+    
+    const btn = document.getElementById('publishBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ارسال...';
 
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/post/create', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({
                 userId: currentUser.id,
                 content,
@@ -406,27 +487,35 @@ async function createPost() {
         if (data.success) {
             document.getElementById('postContent').value = '';
             removeMedia();
-            showNotification('✅ پست منتشر شد');
+            showToast('✅ پست منتشر شد', 'success');
             if (data.boost) updateBoostBadge(data.boost.boostLevel);
             await loadChannelPosts();
         } else {
-            showNotification('خطا: ' + data.error);
+            showToast('خطا: ' + data.error, 'error');
         }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+    } catch (e) {
+        showToast('خطا در ارتباط با سرور', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-paper-plane"></i> انتشار';
+    }
 }
 
 async function loadChannelPosts() {
     try {
-        const res = await fetch(`/api/channel/${currentUser.id}/posts`);
-        const posts = await res.json();
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/channel/${currentUser.id}/posts`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
         const container = document.getElementById('channelPosts');
         if (!container) return;
 
+        const posts = data.posts || data;
         if (!posts.length) {
             container.innerHTML = `<div class="empty-state">
                 <i class="fas fa-pen-fancy"></i>
-                هنوز پستی منتشر نکردی.<br>
-                اولین پستت رو بنویس! ✍️
+                هنوز پستی منتشر نکردی.<br>اولین پستت رو بنویس! ✍️
             </div>`;
         } else {
             let html = '';
@@ -435,61 +524,61 @@ async function loadChannelPosts() {
                 const adsRes = await fetch('/api/ads/active');
                 ads = await adsRes.json();
             } catch (e) {}
-
+            
             posts.forEach((p, i) => {
-                html += renderPostCard(p, currentUser);
-                // هر ۴ پست یه تبلیغ (در صورت وجود تبلیغ فعال) تزریق می‌شه
-                if (ads.length && (i + 1) % 4 === 0) {
-                    const ad = ads[Math.floor(i / 4) % ads.length];
+                html += renderPostCard(p);
+                if (ads.length && (i + 1) % 5 === 0) {
+                    const ad = ads[i % ads.length];
                     html += renderAdCard(ad);
                 }
             });
             container.innerHTML = html;
         }
 
-        const ures = await fetch(`/api/user/${currentUser.id}`);
+        const ures = await fetch(`/api/user/${currentUser.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const u = await ures.json();
         document.getElementById('followersCount').textContent = `${formatNumber(u.followers || 0)} فالوور`;
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 function renderAdCard(ad) {
     return `
-    <div class="post-card ad-card" data-ad-id="${ad.id}">
+    <div class="post-card ad-card" style="border-color:var(--pistachio);">
         <div class="post-head">
             <span class="name">🎯 ${escapeHtml(ad.title)}</span>
-            <span class="time ad-badge">تبلیغ</span>
+            <span class="time" style="background:var(--pistachio-dark);color:#fff;padding:0 8px;border-radius:var(--radius-full);font-size:9px;">تبلیغ</span>
         </div>
-        <p class="content">${escapeHtml(ad.content || '')}</p>
+        ${ad.content ? `<p class="content">${escapeHtml(ad.content)}</p>` : ''}
         ${ad.media_url ? `<div class="media-wrapper">${ad.media_type === 'video' ?
             `<video src="${ad.media_url}" controls preload="metadata"></video>` :
             `<img src="${ad.media_url}" loading="lazy">`}</div>` : ''}
-        ${ad.link_url ? `<a href="${ad.link_url}" target="_blank" rel="noopener" class="btn-primary ad-link-btn">مشاهده</a>` : ''}
+        ${ad.link_url ? `<a href="${ad.link_url}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:8px;background:var(--primary);color:#fff;border-radius:0 0 var(--radius) var(--radius);font-size:12px;font-weight:600;">مشاهده</a>` : ''}
     </div>`;
 }
 
-function renderPostCard(post, author) {
-    const name = author?.name || post.channel_name || 'کاربر';
-    const avatar = author?.avatar || defaultAvatar(name);
+function renderPostCard(post) {
+    const name = post.channel_name || 'کاربر';
+    const avatar = post.avatar || defaultAvatar(name);
     const mediaHtml = post.media_url ? `
         <div class="media-wrapper">
             ${post.media_type === 'video' ? 
-                `<video src="${post.media_url}" controls preload="metadata"></video>` : 
+                `<video src="${post.media_url}" controls preload="metadata" poster="${post.thumbnail_url || ''}"></video>` : 
                 `<img src="${post.media_url}" loading="lazy">`}
         </div>` : '';
     
     return `
     <div class="post-card" data-post-id="${post.id}">
-        <div class="post-head">
-            <img src="${avatar}" loading="lazy" onclick="openProfile('${post.user_id || currentUser.id}')">
-            <span class="name" onclick="openProfile('${post.user_id || currentUser.id}')">${escapeHtml(name)}</span>
+        <div class="post-head" onclick="openProfile('${post.user_id || currentUser.id}')">
+            <img src="${avatar}" loading="lazy">
+            <span class="name">${escapeHtml(name)}</span>
             <span class="time">${timeAgo(post.created_at)}</span>
-            <div class="post-menu">
-                <button class="post-menu-btn" onclick="togglePostMenu('${post.id}')"><i class="fas fa-ellipsis-h"></i></button>
-                <div class="post-menu-dropdown" id="postMenu-${post.id}">
-                    <button onclick="openReportModal('post', '${post.id}')"><i class="fas fa-flag"></i> گزارش پست</button>
-                </div>
-            </div>
+            <button class="post-menu-btn" onclick="event.stopPropagation();togglePostMenu('${post.id}')">
+                <i class="fas fa-ellipsis-vertical"></i>
+            </button>
         </div>
         <p class="content">${escapeHtml(post.content)}</p>
         ${mediaHtml}
@@ -500,9 +589,12 @@ function renderPostCard(post, author) {
             <button onclick="toggleComments('${post.id}', this)">
                 <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
             </button>
-            <button disabled>
-                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
+            <button onclick="sharePost('${post.id}')">
+                <i class="far fa-share-from-square"></i>
             </button>
+            <span style="margin-right:auto;font-size:10px;color:var(--text-muted);">
+                <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
+            </span>
         </div>
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
@@ -510,20 +602,48 @@ function renderPostCard(post, author) {
 
 function togglePostMenu(postId) {
     const dropdown = document.getElementById(`postMenu-${postId}`);
-    const wasOpen = dropdown?.classList.contains('open');
-    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (dropdown && !wasOpen) dropdown.classList.add('open');
+    if (dropdown) {
+        dropdown.classList.toggle('open');
+    } else {
+        // ایجاد منو
+        const btn = document.querySelector(`[data-post-id="${postId}"] .post-menu-btn`);
+        if (btn) {
+            const menu = document.createElement('div');
+            menu.className = 'post-menu-dropdown';
+            menu.id = `postMenu-${postId}`;
+            menu.style.cssText = `
+                position:absolute;top:100%;right:0;z-index:20;
+                background:var(--bg-card);border:1px solid var(--border-color);
+                border-radius:var(--radius-sm);box-shadow:var(--shadow);
+                min-width:120px;overflow:hidden;
+            `;
+            menu.innerHTML = `
+                <button onclick="openReportModal('post','${postId}')" style="width:100%;text-align:right;background:none;border:none;color:var(--danger);padding:8px 12px;font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+                    <i class="fas fa-flag"></i> گزارش
+                </button>
+            `;
+            btn.parentElement.style.position = 'relative';
+            btn.parentElement.appendChild(menu);
+            setTimeout(() => menu.classList.add('open'), 10);
+        }
+    }
 }
+
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('.post-menu')) {
+    if (!e.target.closest('.post-menu-btn') && !e.target.closest('.post-menu-dropdown')) {
         document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
     }
 });
 
 async function toggleLike(postId, btn) {
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch(`/api/post/${postId}/like`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ userId: currentUser.id })
         });
         const data = await res.json();
@@ -532,7 +652,9 @@ async function toggleLike(postId, btn) {
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
             btn.querySelector('.like-count').textContent = formatNumber(data.likes);
         }
-    } catch (e) { showNotification('خطا'); }
+    } catch (e) {
+        showToast('خطا', 'error');
+    }
 }
 
 async function toggleComments(postId, btn) {
@@ -542,9 +664,13 @@ async function toggleComments(postId, btn) {
     if (box.classList.contains('open') && !box.dataset.loaded) {
         box.dataset.loaded = '1';
         try {
-            const res = await fetch(`/api/post/${postId}/comments`);
+            const token = localStorage.getItem('yareman_token');
+            const res = await fetch(`/api/post/${postId}/comments`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const comments = await res.json();
-            box.innerHTML = (comments.map(c => `
+            const commentsData = comments.comments || comments;
+            box.innerHTML = (commentsData.map(c => `
                 <div class="comment-item">
                     <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
                     <div>
@@ -555,9 +681,9 @@ async function toggleComments(postId, btn) {
             `).join('') || '') + `
                 <div class="comment-form">
                     <input type="text" id="commentInput-${postId}" placeholder="کامنت بنویس...">
-                    <button class="btn-secondary" onclick="submitComment('${postId}')">ارسال</button>
+                    <button onclick="submitComment('${postId}')">ارسال</button>
                 </div>`;
-        } catch (e) { showNotification('خطا'); }
+        } catch (e) { showToast('خطا', 'error'); }
     }
 }
 
@@ -567,8 +693,13 @@ async function submitComment(postId) {
     const text = input.value.trim();
     if (!text) return;
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch(`/api/post/${postId}/comment`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ userId: currentUser.id, text })
         });
         const data = await res.json();
@@ -589,453 +720,266 @@ async function submitComment(postId) {
             const card = document.querySelector(`[data-post-id="${postId}"] .comment-count`);
             if (card) card.textContent = formatNumber(parseInt(card.textContent.replace(/,/g, '')) + 1);
         }
-    } catch (e) { showNotification('خطا'); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
-// ============================================
-// دستیار
-// ============================================
-async function loadAssistantData() {
+async function sharePost(postId) {
+    const shareUrl = `${location.origin}${location.pathname}?post=${postId}`;
     try {
-        const res = await fetch(`/api/assistant/${currentUser.id}`);
-        const data = await res.json();
-
-        document.getElementById('statPosts').textContent = formatNumber(data.stats?.totalPosts ?? 0);
-        document.getElementById('statTrainings').textContent = formatNumber(data.stats?.totalTrainings ?? 0);
-        document.getElementById('statFollowers').textContent = formatNumber(data.stats?.followers ?? 0);
-        document.getElementById('statEngagement').textContent = data.stats?.engagementRate ?? '0%';
-
-        document.getElementById('qaList').innerHTML = data.qa?.length ? data.qa.map(q => `
-            <div class="qa-item">
-                <span class="q">❓ ${escapeHtml(q.question)}</span>
-                <span class="a">💬 ${escapeHtml(q.answer)}</span>
-            </div>
-        `).join('') : '<p class="empty-state">هنوز آموزشی ثبت نشده.</p>';
-
-        document.getElementById('keywordList').innerHTML = data.keywords?.length ? data.keywords.map(k => `
-            <div class="keyword-item">
-                <span class="k">🔑 ${escapeHtml(k.keyword)}</span>
-                <span class="r">💬 ${escapeHtml(k.response)}</span>
-            </div>
-        `).join('') : '<p class="empty-state">هنوز کلمه کلیدی ثبت نشده.</p>';
-
-        if (data.posts?.length) {
-            document.getElementById('scheduledPostsList').innerHTML = data.posts.map(p => `
-                <div style="font-size:11px;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-                    <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
-                    <span style="font-size:10px;color:var(--text-3);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
-                </div>
-            `).join('');
-        }
-    } catch (e) { console.error(e); }
-}
-
-async function trainAssistant() {
-    const question = document.getElementById('questionInput').value.trim();
-    const answer = document.getElementById('answerInput').value.trim();
-    if (!question || !answer) { showNotification('سوال و جواب رو کامل کن!'); return; }
-
-    try {
-        const res = await fetch('/api/assistant/train', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, question, answer })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification('✅ دستیار یاد گرفت');
-            document.getElementById('questionInput').value = '';
-            document.getElementById('answerInput').value = '';
-            if (data.boost) updateBoostBadge(data.boost.boostLevel);
-            await loadAssistantData();
-        }
-    } catch (e) { showNotification('خطا'); }
-}
-
-async function trainKeyword() {
-    const keyword = document.getElementById('keywordInput').value.trim();
-    const response = document.getElementById('keywordResponseInput').value.trim();
-    if (!keyword || !response) { showNotification('کلمه کلیدی و پاسخ رو کامل کن!'); return; }
-
-    try {
-        const res = await fetch('/api/assistant/keyword', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, keyword, response })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification('✅ کلمه کلیدی ثبت شد');
-            document.getElementById('keywordInput').value = '';
-            document.getElementById('keywordResponseInput').value = '';
-            if (data.boost) updateBoostBadge(data.boost.boostLevel);
-            await loadAssistantData();
-        }
-    } catch (e) { showNotification('خطا'); }
-}
-
-function toggleAutoPost() {
-    const panel = document.getElementById('autoPostPanel');
-    if (panel) {
-        panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
-    }
-}
-
-async function testAssistant() {
-    const input = document.getElementById('assistantPreviewInput');
-    const msg = input.value.trim();
-    if (!msg) return;
-    appendMiniMsg('assistantPreviewChat', msg, 'me');
-    input.value = '';
-
-    try {
-        const res = await fetch(`/api/assistant/chat/${currentUser.id}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg })
-        });
-        const data = await res.json();
-        appendMiniMsg('assistantPreviewChat', data.reply || 'دستیار هنوز جوابی نداره 🤖', 'bot');
-    } catch (e) { showNotification('خطا'); }
-}
-
-// ============================================
-// زمان‌بندی پست‌ها
-// ============================================
-document.getElementById('scheduleImages').addEventListener('change', function(e) {
-    for (const file of e.target.files) uploadScheduledMedia(file, 'image');
-});
-
-document.getElementById('scheduleVideos').addEventListener('change', function(e) {
-    for (const file of e.target.files) uploadScheduledMedia(file, 'video');
-});
-
-async function uploadScheduledMedia(file, type) {
-    const maxMb = type === 'video' ? 300 : 20;
-    if (file.size > maxMb * 1024 * 1024) {
-        showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`);
-        return;
-    }
-    const idx = scheduledMediaFiles.length;
-    scheduledMediaFiles.push({ data: null, type, uploading: true });
-    showNotification(`⏳ در حال آپلود ${type === 'video' ? 'ویدیو' : 'عکس'} ${idx + 1}...`);
-    try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.success) {
-            scheduledMediaFiles[idx] = { data: data.url, type: data.mediaType, uploading: false };
+        if (navigator.share) {
+            await navigator.share({ title: 'یارِ من', text: 'یه پست جالب', url: shareUrl });
         } else {
-            scheduledMediaFiles[idx] = null;
-            showNotification('❌ خطا در آپلود: ' + data.error);
+            await navigator.clipboard.writeText(shareUrl);
+            showToast('🔗 لینک پست کپی شد', 'success');
         }
-    } catch (e) {
-        scheduledMediaFiles[idx] = null;
-        showNotification('❌ خطا در ارتباط با سرور هنگام آپلود');
-    }
+    } catch (e) {}
 }
 
-async function schedulePosts() {
-    const count = parseInt(document.getElementById('postCount').value);
-    const descriptions = document.getElementById('postDescriptions').value.split('\n').filter(s => s.trim());
-    const time = document.getElementById('postTime').value;
-    const interval = parseInt(document.getElementById('postInterval').value) || 1;
+// ============================================
+// اکسپلور با Infinite Scroll
+// ============================================
+async function loadExplore(reset = true) {
+    if (reset) {
+        exploreCursor = null;
+        exploreEnd = false;
+        document.getElementById('exploreContent').innerHTML = '';
+    }
+    if (exploreEnd || exploreLoading) return;
+    
+    exploreLoading = true;
+    document.getElementById('exploreLoading').style.display = 'block';
 
-    if (!count || count < 1) { showNotification('تعداد پست‌ها رو مشخص کن!'); return; }
-    if (descriptions.length < count) { showNotification(`حداقل ${count} توضیح وارد کن.`); return; }
-    if (scheduledMediaFiles.some(m => m && m.uploading)) { showNotification('⏳ صبر کن آپلود مدیاها تموم بشه'); return; }
-
-    const posts = [];
-    const baseDate = new Date();
-    const [hours, minutes] = time.split(':').map(Number);
-    baseDate.setHours(hours || 9, minutes || 0, 0, 0);
-
-    for (let i = 0; i < count; i++) {
-        const postDate = new Date(baseDate);
-        postDate.setDate(postDate.getDate() + (i * interval));
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const url = `/api/explore?limit=20${exploreCursor ? '&cursor=' + encodeURIComponent(exploreCursor) : ''}`;
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
         
-        const media = scheduledMediaFiles[i] || null;
-        posts.push({
-            content: descriptions[i] || `پست شماره ${i + 1}`,
-            scheduledTime: postDate.toISOString(),
-            mediaUrl: media ? media.data : null,
-            mediaType: media ? media.type : 'none'
-        });
-    }
-
-    try {
-        const res = await fetch('/api/assistant/schedule', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, posts })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification(`✅ ${count} پست زمان‌بندی شد`);
-            scheduledMediaFiles = [];
-            document.getElementById('scheduleImages').value = '';
-            document.getElementById('scheduleVideos').value = '';
-            await loadAssistantData();
-        } else {
-            showNotification('خطا: ' + data.error);
-        }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
-}
-
-// ============================================
-// اکسپلور - گرید سه‌تایی مثل اینستاگرام
-// ============================================
-let explorePostIndex = {}; // postId -> { post, user }
-let pfCurrentPostId = null;
-
-async function loadExplore() {
-    try {
-        const res = await fetch('/api/explore');
-        const items = await res.json();
         const container = document.getElementById('exploreContent');
-        if (!container) return;
-
+        const items = data.items || [];
+        
         if (!items.length) {
-            container.innerHTML = `<div class="empty-state">
-                <i class="fas fa-compass"></i>
-                هنوز پستی در اکسپلور وجود نداره.<br>
-                اولین پست رو تو منتشر کن! 🚀
-            </div>`;
+            if (reset) {
+                container.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">
+                    <i class="fas fa-compass"></i>
+                    هنوز پستی در اکسپلور وجود نداره.<br>اولین پست رو تو منتشر کن! 🚀
+                </div>`;
+            }
+            exploreEnd = true;
             return;
         }
 
-        explorePostIndex = {};
-        const tiles = [];
-
-        items.forEach(user => {
-            const posts = user.recent_posts || [];
-            if (!posts.length) return;
+        let html = '';
+        items.forEach(item => {
+            const posts = item.recent_posts || [];
             posts.forEach(p => {
-                explorePostIndex[p.id] = { post: p, user };
                 if (p.media_url) {
-                    tiles.push(`
-                        <div class="explore-tile" onclick="openPostFullscreen('${p.id}')">
+                    html += `
+                        <div class="explore-tile" onclick="openPostDetail('${p.id}')">
                             ${p.media_type === 'video' ?
                                 `<video src="${p.media_url}" muted preload="metadata"></video>
-                                 <i class="fas fa-play tile-video-badge"></i>` :
+                                 <i class="fas fa-play tile-badge"></i>` :
                                 `<img src="${p.media_url}" loading="lazy">`}
                             <div class="tile-overlay">
-                                <span><i class="fas fa-eye"></i>${formatNumber(p.views || 0)}</span>
                                 <span><i class="fas fa-heart"></i>${formatNumber(p.likes || 0)}</span>
+                                <span><i class="fas fa-comment"></i>${formatNumber(p.comments || 0)}</span>
                             </div>
                         </div>
-                    `);
+                    `;
                 } else {
-                    tiles.push(`
-                        <div class="explore-tile no-media" onclick="openPostFullscreen('${p.id}')">
-                            <p>${escapeHtml((p.content || '').substring(0, 140))}</p>
+                    html += `
+                        <div class="explore-tile no-media" onclick="openPostDetail('${p.id}')">
+                            <p>${escapeHtml((p.content || '').substring(0, 80))}</p>
                             <div class="tile-overlay">
-                                <span><i class="fas fa-eye"></i>${formatNumber(p.views || 0)}</span>
                                 <span><i class="fas fa-heart"></i>${formatNumber(p.likes || 0)}</span>
+                                <span><i class="fas fa-comment"></i>${formatNumber(p.comments || 0)}</span>
                             </div>
                         </div>
-                    `);
+                    `;
                 }
             });
         });
 
-        container.innerHTML = tiles.join('') || `<div class="empty-state">
-            <i class="fas fa-compass"></i>
-            هنوز پستی در اکسپلور وجود نداره.<br>
-            اولین پست رو تو منتشر کن! 🚀
-        </div>`;
-    } catch (e) { console.error(e); }
-}
+        if (reset) {
+            container.innerHTML = html;
+        } else {
+            container.insertAdjacentHTML('beforeend', html);
+        }
 
-// ============================================
-// نمایش تمام‌صفحه پست
-// ============================================
-function openPostFullscreen(postId) {
-    const entry = explorePostIndex[postId];
-    if (!entry) return;
-    const { post, user } = entry;
-    pfCurrentPostId = postId;
+        exploreCursor = data.nextCursor || null;
+        exploreEnd = !exploreCursor;
 
-    document.getElementById('pfAvatar').src = user.avatar || defaultAvatar(user.name);
-    document.getElementById('pfName').textContent = user.name;
-    document.getElementById('pfTime').textContent = timeAgo(post.created_at);
-    document.getElementById('pfCaption').textContent = post.content || '';
-
-    const mediaEl = document.getElementById('pfMedia');
-    mediaEl.innerHTML = post.media_url ? (
-        post.media_type === 'video' ?
-            `<video src="${post.media_url}" controls preload="metadata"></video>` :
-            `<img src="${post.media_url}">`
-    ) : '';
-
-    const likeBtn = document.getElementById('pfLikeBtn');
-    likeBtn.classList.remove('liked');
-    likeBtn.querySelector('i').className = 'far fa-heart';
-    document.getElementById('pfLikeCount').textContent = formatNumber(post.likes || 0);
-    document.getElementById('pfCommentCount').textContent = formatNumber(post.comments || 0);
-
-    const followBtn = document.getElementById('pfFollowBtn');
-    const isMe = user.user_id === currentUser.id;
-    followBtn.style.display = isMe ? 'none' : '';
-    followBtn.textContent = 'فالو';
-    followBtn.classList.remove('following');
-
-    const commentsBox = document.getElementById('pfCommentsBox');
-    commentsBox.innerHTML = '';
-    commentsBox.classList.remove('open');
-    delete commentsBox.dataset.loaded;
-
-    document.getElementById('postFullOverlay').classList.add('open');
-}
-
-function closePostFullscreen() {
-    document.getElementById('postFullOverlay').classList.remove('open');
-    document.getElementById('pfMedia').innerHTML = '';
-    pfCurrentPostId = null;
-}
-
-function pfOpenProfile() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
-    closePostFullscreen();
-    openProfile(entry.user.user_id);
-}
-
-async function pfQuickFollow() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
-    await quickFollow(entry.user.user_id, document.getElementById('pfFollowBtn'));
-}
-
-async function pfToggleLike() {
-    if (!pfCurrentPostId) return;
-    await toggleLike(pfCurrentPostId, document.getElementById('pfLikeBtn'));
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (entry) {
-        entry.post.likes = parseInt((document.getElementById('pfLikeCount').textContent || '0').replace(/,/g, '')) || entry.post.likes;
+    } catch (e) {
+        console.error(e);
+        showToast('خطا در بارگذاری اکسپلور', 'error');
+    } finally {
+        exploreLoading = false;
+        document.getElementById('exploreLoading').style.display = 'none';
     }
 }
 
-async function pfToggleComments() {
-    if (!pfCurrentPostId) return;
-    const box = document.getElementById('pfCommentsBox');
-    box.classList.toggle('open');
-    if (box.classList.contains('open') && !box.dataset.loaded) {
-        box.dataset.loaded = '1';
-        try {
-            const res = await fetch(`/api/post/${pfCurrentPostId}/comments`);
-            const comments = await res.json();
-            box.innerHTML = (comments.map(c => `
-                <div class="comment-item">
-                    <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
-                    <div>
-                        <b>${escapeHtml(c.name)}</b>
-                        <span class="comment-text">${escapeHtml(c.text)}</span>
-                    </div>
+// Infinite Scroll
+let scrollTimeout;
+window.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+        const explorePage = document.getElementById('explorePage');
+        if (!explorePage.classList.contains('active')) return;
+        
+        const scrollBottom = window.innerHeight + window.scrollY;
+        const docHeight = document.documentElement.scrollHeight;
+        if (scrollBottom >= docHeight - 200) {
+            loadExplore(false);
+        }
+    }, 200);
+});
+
+// ============================================
+// جزئیات پست (تمام‌صفحه)
+// ============================================
+let currentDetailPostId = null;
+let detailPostData = null;
+
+async function openPostDetail(postId) {
+    currentDetailPostId = postId;
+    
+    // پیدا کردن پست از داده‌های اکسپلور
+    const tiles = document.querySelectorAll('.explore-tile');
+    let found = false;
+    for (const tile of tiles) {
+        const onclick = tile.getAttribute('onclick');
+        if (onclick && onclick.includes(postId)) {
+            // استخراج داده از tile
+            break;
+        }
+    }
+
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/post/${postId}/detail`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        detailPostData = data;
+        showPostDetailModal(data);
+    } catch (e) {
+        showToast('خطا در بارگذاری پست', 'error');
+    }
+}
+
+function showPostDetailModal(post) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'postDetailModal';
+    modal.style.alignItems = 'flex-end';
+    modal.style.padding = '0';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:100%;border-radius:24px 24px 0 0;max-height:92vh;padding:0;overflow:hidden;">
+            <div style="padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border-color);position:sticky;top:0;background:var(--bg-card);z-index:2;">
+                <img src="${post.avatar || defaultAvatar(post.user_name)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--primary);cursor:pointer;" onclick="closeModal();openProfile('${post.user_id}')">
+                <div style="flex:1;cursor:pointer;" onclick="closeModal();openProfile('${post.user_id}')">
+                    <strong style="font-size:14px;">${escapeHtml(post.user_name)}</strong>
+                    <span style="font-size:10px;color:var(--text-muted);display:block;">${timeAgo(post.created_at)}</span>
                 </div>
-            `).join('') || '') + `
-                <div class="comment-form">
-                    <input type="text" id="pfCommentInput" placeholder="کامنت بنویس...">
-                    <button class="btn-plastic btn-plastic--pistachio" onclick="pfSubmitComment()">ارسال</button>
-                </div>`;
-        } catch (e) { showNotification('خطا'); }
-    }
+                <button class="header-btn" onclick="closeModal()"><i class="fas fa-times"></i></button>
+            </div>
+            ${post.media_url ? `<div style="background:#000;display:flex;align-items:center;justify-content:center;max-height:50vh;overflow:hidden;">
+                ${post.media_type === 'video' ? 
+                    `<video src="${post.media_url}" controls preload="metadata" style="width:100%;max-height:50vh;object-fit:contain;"></video>` : 
+                    `<img src="${post.media_url}" style="width:100%;max-height:50vh;object-fit:contain;">`}
+            </div>` : ''}
+            <div style="padding:12px 14px;">
+                <p style="font-size:13px;line-height:1.8;">${escapeHtml(post.content)}</p>
+                <div style="display:flex;gap:16px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-color);">
+                    <button onclick="toggleLike('${post.id}', this)" class="like-btn" style="background:none;border:none;color:var(--text-secondary);font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;font-family:inherit;">
+                        <i class="far fa-heart"></i> <span class="like-count">${formatNumber(post.likes || 0)}</span>
+                    </button>
+                    <button onclick="toggleCommentsDetail('${post.id}')" style="background:none;border:none;color:var(--text-secondary);font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;font-family:inherit;">
+                        <i class="far fa-comment"></i> <span>${formatNumber(post.comments || 0)}</span>
+                    </button>
+                    <button onclick="sharePost('${post.id}')" style="background:none;border:none;color:var(--text-secondary);font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;font-family:inherit;">
+                        <i class="far fa-share-from-square"></i>
+                    </button>
+                    <button onclick="openReportModal('post','${post.id}');closeModal();" style="background:none;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;margin-right:auto;font-family:inherit;">
+                        <i class="fas fa-flag"></i>
+                    </button>
+                </div>
+                <div id="detailComments" style="margin-top:10px;max-height:200px;overflow-y:auto;"></div>
+                <div class="comment-form" style="margin-top:8px;">
+                    <input type="text" id="detailCommentInput" placeholder="کامنت بنویس..." style="flex:1;background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-full);padding:6px 12px;color:var(--text-primary);font-size:12px;outline:none;font-family:inherit;">
+                    <button onclick="submitDetailComment('${post.id}')" style="padding:6px 14px;border-radius:var(--radius-full);border:none;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">ارسال</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
 }
 
-async function pfSubmitComment() {
-    const input = document.getElementById('pfCommentInput');
-    if (!input || !pfCurrentPostId) return;
+async function toggleCommentsDetail(postId) {
+    const container = document.getElementById('detailComments');
+    if (!container) return;
+    if (container.dataset.loaded) {
+        container.style.display = container.style.display === 'none' ? 'block' : 'none';
+        return;
+    }
+    container.dataset.loaded = '1';
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/post/${postId}/comments`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const comments = await res.json();
+        const commentsData = comments.comments || comments;
+        container.innerHTML = commentsData.map(c => `
+            <div class="comment-item">
+                <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
+                <div>
+                    <b>${escapeHtml(c.name)}</b>
+                    <span class="comment-text">${escapeHtml(c.text)}</span>
+                </div>
+            </div>
+        `).join('') || '<p style="color:var(--text-muted);font-size:11px;">هنوز کامنتی وجود ندارد</p>';
+        container.style.display = 'block';
+    } catch (e) { showToast('خطا', 'error'); }
+}
+
+async function submitDetailComment(postId) {
+    const input = document.getElementById('detailCommentInput');
+    if (!input) return;
     const text = input.value.trim();
     if (!text) return;
     try {
-        const res = await fetch(`/api/post/${pfCurrentPostId}/comment`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/post/${postId}/comment`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ userId: currentUser.id, text })
         });
         const data = await res.json();
         if (data.success) {
             input.value = '';
-            const box = document.getElementById('pfCommentsBox');
-            const form = box.querySelector('.comment-form');
-            const item = document.createElement('div');
-            item.className = 'comment-item';
-            item.innerHTML = `
-                <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
-                <div>
-                    <b>${escapeHtml(data.comment.name)}</b>
-                    <span class="comment-text">${escapeHtml(data.comment.text)}</span>
-                </div>`;
-            if (form) box.insertBefore(item, form); else box.appendChild(item);
-
-            const countEl = document.getElementById('pfCommentCount');
-            countEl.textContent = formatNumber((parseInt(countEl.textContent.replace(/,/g, '')) || 0) + 1);
-
-            const entry = explorePostIndex[pfCurrentPostId];
-            if (entry) entry.post.comments = (entry.post.comments || 0) + 1;
-        }
-    } catch (e) { showNotification('خطا در ارسال کامنت'); }
-}
-
-async function pfShare() {
-    await sharePost(pfCurrentPostId);
-}
-
-async function sharePost(postId) {
-    const entry = explorePostIndex[postId];
-    const shareUrl = `${location.origin}${location.pathname}?post=${postId}`;
-    const shareText = entry ? `${entry.user.name}: ${(entry.post.content || '').substring(0, 100)}` : 'یه پست جالب';
-    try {
-        if (navigator.share) {
-            await navigator.share({ title: 'یارِ من', text: shareText, url: shareUrl });
-        } else {
-            await navigator.clipboard.writeText(shareUrl);
-            showNotification('🔗 لینک پست کپی شد');
-        }
-    } catch (e) {
-        // کاربر اشتراک‌گذاری را لغو کرده - نیازی به پیام خطا نیست
-    }
-}
-
-function pfMessage() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
-    if (entry.user.user_id === currentUser.id) {
-        showNotification('این پست خودتونه 🙂');
-        return;
-    }
-    closePostFullscreen();
-    document.querySelector('[data-page="chat"]').click();
-    openChat(entry.user.user_id, entry.user.name, entry.user.avatar || defaultAvatar(entry.user.name));
-}
-
-async function quickFollow(userId, btn) {
-    if (userId === currentUser.id) {
-        showNotification('نمی‌توانید خودتان را فالو کنید');
-        return;
-    }
-    
-    const isFollowing = btn.classList.contains('following');
-    
-    try {
-        const endpoint = isFollowing ? '/api/unfollow' : '/api/follow';
-        const res = await fetch(endpoint, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ followerId: currentUser.id, followingId: userId })
-        });
-        const data = await res.json();
-        if (data.success) {
-            if (isFollowing) {
-                btn.textContent = 'فالو';
-                btn.classList.remove('following');
-                showNotification('❌ آنفالو شد');
-            } else {
-                btn.textContent = 'فالو شد ✓';
-                btn.classList.add('following');
-                showNotification('✅ فالو شد');
-            }
-            const countEl = document.getElementById('viewFollowers');
-            if (countEl) {
-                countEl.textContent = formatNumber(parseInt(countEl.textContent.replace(/,/g, '')) + (isFollowing ? -1 : 1));
+            const container = document.getElementById('detailComments');
+            if (container) {
+                const item = document.createElement('div');
+                item.className = 'comment-item';
+                item.innerHTML = `
+                    <img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy">
+                    <div>
+                        <b>${escapeHtml(data.comment.name)}</b>
+                        <span class="comment-text">${escapeHtml(data.comment.text)}</span>
+                    </div>
+                `;
+                container.insertBefore(item, container.firstChild);
+                container.style.display = 'block';
+                // به‌روزرسانی شمارنده
+                const countEl = document.querySelector('#postDetailModal .fa-comment + span');
+                if (countEl) countEl.textContent = formatNumber(parseInt(countEl.textContent.replace(/,/g, '')) + 1);
             }
         }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 // ============================================
@@ -1044,7 +988,10 @@ async function quickFollow(userId, btn) {
 async function openProfile(userId) {
     viewingProfileId = userId;
     try {
-        const res = await fetch(`/api/profile/${userId}?viewerId=${currentUser.id}`);
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/profile/${userId}?viewerId=${currentUser.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
 
         document.getElementById('viewAvatar').src = data.user.avatar || defaultAvatar(data.user.name);
@@ -1056,24 +1003,20 @@ async function openProfile(userId) {
 
         viewingProfileFollowing = data.isFollowing;
         const followBtn = document.getElementById('viewFollowBtn');
-        if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+        followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
 
         const container = document.getElementById('viewPostsContainer');
-        if (container) {
-            container.innerHTML = data.posts.length ?
-                data.posts.map(p => renderPostCard(p, data.user)).join('') :
-                `<div class="empty-state">
-                    <i class="fas fa-pen-fancy"></i>
-                    این کاربر هنوز پستی منتشر نکرده.
-                </div>`;
-        }
+        container.innerHTML = data.posts.length ?
+            data.posts.map(p => renderPostCard({ ...p, user_id: userId, avatar: data.user.avatar })).join('') :
+            `<div class="empty-state"><i class="fas fa-pen-fancy"></i>این کاربر هنوز پستی منتشر نکرده.</div>`;
 
         document.getElementById('viewAssistantChat').innerHTML = '';
 
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        const profilePage = document.getElementById('profilePage');
-        if (profilePage) profilePage.classList.add('active');
-    } catch (e) { showNotification('خطا در بارگذاری پروفایل'); }
+        document.getElementById('profilePage').classList.add('active');
+    } catch (e) {
+        showToast('خطا در بارگذاری پروفایل', 'error');
+    }
 }
 
 function backFromProfile() {
@@ -1084,42 +1027,62 @@ async function toggleFollowView() {
     if (!viewingProfileId) return;
     const endpoint = viewingProfileFollowing ? '/api/unfollow' : '/api/follow';
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch(endpoint, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ followerId: currentUser.id, followingId: viewingProfileId })
         });
         const data = await res.json();
         if (data.success) {
             viewingProfileFollowing = !viewingProfileFollowing;
             const followBtn = document.getElementById('viewFollowBtn');
-            if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+            followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
             const count = document.getElementById('viewFollowers');
-            if (count) count.textContent = formatNumber(parseInt(count.textContent.replace(/,/g, '')) + (viewingProfileFollowing ? 1 : -1));
-            showNotification(viewingProfileFollowing ? '✅ فالو شد' : '❌ آنفالو شد');
+            count.textContent = formatNumber(parseInt(count.textContent.replace(/,/g, '')) + (viewingProfileFollowing ? 1 : -1));
+            showToast(viewingProfileFollowing ? '✅ فالو شد' : '❌ آنفالو شد', 'success');
         }
-    } catch (e) { showNotification('خطا'); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function askOtherAssistant() {
     const input = document.getElementById('viewAssistantInput');
     const msg = input.value.trim();
     if (!msg || !viewingProfileId) return;
-    appendMiniMsg('viewAssistantChat', msg, 'me');
+    appendChatMessage('viewAssistantChat', msg, 'sent');
     input.value = '';
 
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch(`/api/assistant/chat/${viewingProfileId}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg })
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ message: msg, userId: currentUser.id })
         });
         const data = await res.json();
-        appendMiniMsg('viewAssistantChat', data.reply || 'دستیار هنوز جوابی نداره 🤖', 'bot');
-    } catch (e) { showNotification('خطا'); }
+        appendChatMessage('viewAssistantChat', data.reply || 'دستیار هنوز جوابی نداره 🤖', 'received');
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 function openChatFromProfile() {
     document.querySelector('[data-page="chat"]').click();
-    openChat(viewingProfileId, document.getElementById('viewName').textContent, document.getElementById('viewAvatar').src);
+    const name = document.getElementById('viewName').textContent;
+    const avatar = document.getElementById('viewAvatar').src;
+    openChat(viewingProfileId, name, avatar);
+}
+
+function openProfileFromChat() {
+    if (currentChatUser) {
+        const userId = currentChatUser.id;
+        closeChatWindow();
+        openProfile(userId);
+    }
 }
 
 // ============================================
@@ -1127,30 +1090,32 @@ function openChatFromProfile() {
 // ============================================
 async function loadChatList() {
     try {
-        const res = await fetch(`/api/chat/list/${currentUser.id}`);
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/chat/list/${currentUser.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const chats = await res.json();
-        chatListCache = chats;
         const container = document.getElementById('chatList');
         if (!container) return;
         
         if (!chats.length) {
             container.innerHTML = `<div class="empty-state">
-                <i class="fas fa-comment-dots"></i>
-                هنوز چتی نداری.<br>
-                از اکسپلور یکی رو پیدا کن و پیام بده! 💬
+                <i class="fas fa-message"></i>
+                هنوز چتی نداری.<br>از اکسپلور یکی رو پیدا کن و پیام بده! 💬
             </div>`;
             return;
         }
         
         container.innerHTML = chats.map(c => `
-            <div class="chat-item" onclick="openChat('${c.id}', '${escapeHtml(c.name)}', '${c.avatar || defaultAvatar(c.name)}')">
+            <button class="chat-item" onclick="openChat('${c.id}', '${escapeHtml(c.name)}', '${c.avatar || defaultAvatar(c.name)}')">
                 <img src="${c.avatar || defaultAvatar(c.name)}" loading="lazy">
                 <div class="info">
                     <strong>${escapeHtml(c.name)}</strong>
-                    <p>${escapeHtml(c.lastMessage || '')}</p>
+                    <p>${c.lastMediaType ? '📎 ' : ''}${escapeHtml(c.lastMessage || '')}</p>
+                    <span class="last-time">${timeAgo(c.lastTime)}</span>
                 </div>
                 ${c.unreadCount > 0 ? `<span class="unread">${c.unreadCount}</span>` : ''}
-            </div>
+            </button>
         `).join('');
         
         const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -1170,47 +1135,52 @@ async function openChat(userId, name, avatar) {
     currentChatUser = { id: userId, name, avatar };
     document.getElementById('chatWithName').textContent = name || 'کاربر';
     document.getElementById('chatWithAvatar').src = avatar || defaultAvatar(name);
-    document.getElementById('chatThreadOverlay').classList.add('open');
     document.getElementById('chatMessages').innerHTML = '<div class="loading"><i class="fas fa-spinner"></i> بارگذاری...</div>';
+    document.getElementById('chatThreadOverlay').classList.add('open');
 
+    // بررسی مسدودیت
     try {
-        const blockRes = await fetch(`/api/user/${currentUser.id}/is-blocked/${userId}`);
-        const blockData = await blockRes.json();
-        updateChatBlockBtn(!!blockData.blocked);
-    } catch (e) { updateChatBlockBtn(false); }
-
-    // علامت‌گذاری پیام‌ها به عنوان خوانده شده
-    try {
-        await fetch('/api/chat/read', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, fromUser: userId })
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/user/${currentUser.id}/is-blocked/${userId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
         });
-        await loadChatList();
+        const data = await res.json();
+        document.getElementById('chatStatus').textContent = data.blocked ? '⛔ مسدود شده' : 'آفلاین';
     } catch (e) {}
 
     try {
-        const cacheKey = `${currentUser.id}_${userId}`;
-        if (messagesCache[cacheKey]) {
-            renderMessages(messagesCache[cacheKey]);
-            return;
-        }
-        
-        const res = await fetch(`/api/chat/history/${currentUser.id}/${userId}`);
-        const messages = await res.json();
-        messagesCache[cacheKey] = messages;
-        renderMessages(messages);
-    } catch (e) { showNotification('خطا'); }
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/chat/history/${currentUser.id}/${userId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        const messages = data.messages || data;
+        renderChatMessages(messages);
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
-function renderMessages(messages) {
+function renderChatMessages(messages) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
-    container.innerHTML = messages.map(m => `
-        <div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">
-            ${escapeHtml(m.message)}
-            <span class="time">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
-        </div>
-    `).join('');
+    container.innerHTML = '';
+    messages.forEach(m => {
+        const isSent = m.from_user === currentUser.id;
+        const div = document.createElement('div');
+        div.className = `message ${isSent ? 'sent' : 'received'}`;
+        let content = escapeHtml(m.message || '');
+        if (m.media_url) {
+            if (m.media_type === 'image') {
+                content += `<div class="media-preview-msg"><img src="${m.media_url}" loading="lazy"></div>`;
+            } else if (m.media_type === 'video') {
+                content += `<div class="media-preview-msg"><video src="${m.media_url}" controls preload="metadata"></video></div>`;
+            } else if (m.media_type === 'document') {
+                content += `<div class="media-preview-msg"><a href="${m.media_url}" target="_blank" style="color:var(--primary);">📄 ${escapeHtml(m.file_name || 'فایل')}</a></div>`;
+            }
+        }
+        content += `<span class="time">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
+        div.innerHTML = content;
+        container.appendChild(div);
+    });
     container.scrollTop = container.scrollHeight;
 }
 
@@ -1219,69 +1189,330 @@ function closeChatWindow() {
     currentChatUser = null;
 }
 
-function chatThreadOpenProfile() {
-    if (!currentChatUser) return;
-    const userId = currentChatUser.id;
-    closeChatWindow();
-    openProfile(userId);
-}
-
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     const message = input.value.trim();
-    if (!message || !currentChatUser) return;
+    if (!message || !currentChatUser || chatFileUploading) return;
 
-    socket.emit('private_message', { 
-        from: currentUser.id, 
-        to: currentChatUser.id, 
-        message, 
-        timestamp: Date.now() 
-    });
-    
-    displayMessage(message, 'sent');
     input.value = '';
+    appendChatMessage('chatMessages', message, 'sent');
+
+    socket.emit('private_message', {
+        from: currentUser.id,
+        to: currentChatUser.id,
+        message,
+        timestamp: Date.now()
+    });
 }
 
-function displayMessage(text, type) {
-    const container = document.getElementById('chatMessages');
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = `message ${type}`;
-    div.innerHTML = `${escapeHtml(text)}<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-}
-
-socket.on('new_message', (data) => {
-    const cacheKey = `${currentUser.id}_${data.from}`;
-    if (messagesCache[cacheKey]) {
-        messagesCache[cacheKey].push({
-            from_user: data.from,
-            to_user: currentUser.id,
-            message: data.message,
-            created_at: new Date().toISOString()
-        });
-    }
+async function sendChatFile(input) {
+    const file = input.files[0];
+    if (!file || !currentChatUser) return;
+    if (chatFileUploading) return;
     
+    const maxMb = 100;
+    if (file.size > maxMb * 1024 * 1024) {
+        showToast(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`, 'error');
+        input.value = '';
+        return;
+    }
+
+    chatFileUploading = true;
+    showToast('⏳ در حال آپلود فایل...', 'info');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('userId', currentUser.id);
+
+    try {
+        const xhr = new XMLHttpRequest();
+        const uploadPromise = new Promise((resolve, reject) => {
+            xhr.open('POST', '/api/upload');
+            xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('yareman_token')}`);
+            xhr.onload = () => {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    if (data.success) {
+                        resolve(data.jobId);
+                    } else {
+                        reject(new Error(data.error || 'Upload failed'));
+                    }
+                } catch (e) {
+                    reject(e);
+                }
+            };
+            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.send(formData);
+        });
+
+        const jobId = await uploadPromise;
+        
+        // انتظار برای پردازش
+        let result = null;
+        let attempts = 0;
+        while (!result && attempts < 30) {
+            await new Promise(r => setTimeout(r, 2000));
+            const statusRes = await fetch(`/api/upload/status/${jobId}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('yareman_token')}` }
+            });
+            const statusData = await statusRes.json();
+            if (statusData.state === 'completed') {
+                result = statusData.result;
+                break;
+            } else if (statusData.state === 'failed') {
+                throw new Error('Processing failed');
+            }
+            attempts++;
+        }
+
+        if (!result) throw new Error('Timeout');
+
+        const mediaType = result.format === 'mp4' || result.format === 'video' ? 'video' : 
+                         result.format === 'image' || result.format === 'webp' ? 'image' : 'document';
+
+        // ارسال پیام با مدیا
+        const sendData = {
+            from: currentUser.id,
+            to: currentChatUser.id,
+            message: '',
+            mediaUrl: result.url,
+            mediaType: mediaType,
+            fileName: file.name,
+            fileSize: file.size,
+            timestamp: Date.now()
+        };
+
+        socket.emit('private_message', sendData);
+        appendChatMessage('chatMessages', '', 'sent', { 
+            url: result.url, 
+            type: mediaType, 
+            name: file.name 
+        });
+
+        showToast('✅ فایل ارسال شد', 'success');
+
+    } catch (e) {
+        showToast('❌ خطا در ارسال فایل: ' + e.message, 'error');
+    } finally {
+        chatFileUploading = false;
+        input.value = '';
+    }
+}
+
+function toggleChatMenu() {
+    // منوی چت
+    showToast('گزینه‌های چت در حال توسعه', 'info');
+}
+
+// Socket events for chat
+socket.on('new_message', (data) => {
     if (currentChatUser && data.from === currentChatUser.id) {
-        displayMessage(data.message, 'received');
+        appendChatMessage('chatMessages', data.message || '', 'received', 
+            data.mediaUrl ? { url: data.mediaUrl, type: data.mediaType, name: data.fileName } : null
+        );
+        // Mark as read
+        socket.emit('read_messages', { userId: currentUser.id, fromUser: data.from });
     } else {
-        showNotification(`📩 پیام جدید از ${data.from}`);
+        showToast(`📩 پیام جدید از ${data.from}`, 'info');
         loadChatList();
     }
 });
+
+socket.on('user_typing', (data) => {
+    if (currentChatUser && data.from === currentChatUser.id) {
+        document.getElementById('chatStatus').textContent = 'در حال تایپ...';
+        clearTimeout(window.typingTimeout);
+        window.typingTimeout = setTimeout(() => {
+            document.getElementById('chatStatus').textContent = 'آفلاین';
+        }, 3000);
+    }
+});
+
+// ============================================
+// دستیار
+// ============================================
+async function loadAssistantData() {
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/assistant/${currentUser.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+
+        document.getElementById('astPosts').textContent = formatNumber(data.stats?.totalPosts ?? 0);
+        document.getElementById('astTrain').textContent = formatNumber(data.stats?.totalTrainings ?? 0);
+        document.getElementById('astFollowers').textContent = formatNumber(data.stats?.followers ?? 0);
+        document.getElementById('astEngagement').textContent = data.stats?.engagementRate ?? '0%';
+
+        const qaList = document.getElementById('qaList');
+        qaList.innerHTML = data.qa?.length ? data.qa.map(q => `
+            <div style="padding:4px 0;border-bottom:1px solid var(--border-color);font-size:11px;">
+                <span style="color:var(--text-secondary);">❓ ${escapeHtml(q.question)}</span>
+                <span style="color:var(--text-primary);display:block;">💬 ${escapeHtml(q.answer)}</span>
+            </div>
+        `).join('') : '<p style="color:var(--text-muted);font-size:11px;padding:4px 0;">هنوز آموزشی ثبت نشده.</p>';
+
+        const keywordList = document.getElementById('keywordList');
+        keywordList.innerHTML = data.keywords?.length ? data.keywords.map(k => `
+            <div style="padding:4px 0;border-bottom:1px solid var(--border-color);font-size:11px;">
+                <span style="color:var(--text-secondary);">🔑 ${escapeHtml(k.keyword)}</span>
+                <span style="color:var(--text-primary);display:block;">💬 ${escapeHtml(k.response)}</span>
+            </div>
+        `).join('') : '<p style="color:var(--text-muted);font-size:11px;padding:4px 0;">هنوز کلمه کلیدی ثبت نشده.</p>';
+
+        const scheduledList = document.getElementById('scheduledPostsList');
+        if (data.posts?.length) {
+            scheduledList.innerHTML = data.posts.map(p => `
+                <div style="font-size:10px;color:var(--text-secondary);padding:4px 0;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+                    <span>📅 ${escapeHtml(p.content?.substring(0, 30) || '')}...</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${new Date(p.scheduled_time).toLocaleString('fa-IR')}</span>
+                </div>
+            `).join('');
+        } else {
+            scheduledList.innerHTML = '<p style="color:var(--text-muted);font-size:11px;padding:4px 0;">هیچ پست زمان‌بندی شده‌ای وجود ندارد.</p>';
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function trainAssistant() {
+    const question = document.getElementById('questionInput').value.trim();
+    const answer = document.getElementById('answerInput').value.trim();
+    if (!question || !answer) { showToast('سوال و جواب رو کامل کن!', 'warning'); return; }
+
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch('/api/assistant/train', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ userId: currentUser.id, question, answer })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('✅ دستیار یاد گرفت', 'success');
+            document.getElementById('questionInput').value = '';
+            document.getElementById('answerInput').value = '';
+            if (data.boost) updateBoostBadge(data.boost.boostLevel);
+            await loadAssistantData();
+        }
+    } catch (e) { showToast('خطا', 'error'); }
+}
+
+async function trainKeyword() {
+    const keyword = document.getElementById('keywordInput').value.trim();
+    const response = document.getElementById('keywordResponseInput').value.trim();
+    if (!keyword || !response) { showToast('کلمه کلیدی و پاسخ رو کامل کن!', 'warning'); return; }
+
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch('/api/assistant/keyword', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ userId: currentUser.id, keyword, response })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('✅ کلمه کلیدی ثبت شد', 'success');
+            document.getElementById('keywordInput').value = '';
+            document.getElementById('keywordResponseInput').value = '';
+            if (data.boost) updateBoostBadge(data.boost.boostLevel);
+            await loadAssistantData();
+        }
+    } catch (e) { showToast('خطا', 'error'); }
+}
+
+function toggleAutoPost() {
+    const panel = document.getElementById('autoPostPanel');
+    if (panel) {
+        panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+    }
+}
+
+async function askAssistant() {
+    const input = document.getElementById('assistantInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+    appendChatMessage('assistantChat', msg, 'sent');
+    input.value = '';
+
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/assistant/chat/${currentUser.id}`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ message: msg, userId: currentUser.id })
+        });
+        const data = await res.json();
+        appendChatMessage('assistantChat', data.reply || 'دستیار هنوز جوابی نداره 🤖', 'received');
+    } catch (e) { showToast('خطا', 'error'); }
+}
+
+async function schedulePosts() {
+    const count = parseInt(document.getElementById('postCount').value);
+    const descriptions = document.getElementById('postDescriptions').value.split('\n').filter(s => s.trim());
+    const time = document.getElementById('postTime').value;
+    const interval = parseInt(document.getElementById('postInterval').value) || 1;
+
+    if (!count || count < 1) { showToast('تعداد پست‌ها رو مشخص کن!', 'warning'); return; }
+    if (descriptions.length < count) { showToast(`حداقل ${count} توضیح وارد کن.`, 'warning'); return; }
+
+    const posts = [];
+    const baseDate = new Date();
+    const [hours, minutes] = time.split(':').map(Number);
+    baseDate.setHours(hours || 9, minutes || 0, 0, 0);
+
+    for (let i = 0; i < count; i++) {
+        const postDate = new Date(baseDate);
+        postDate.setDate(postDate.getDate() + (i * interval));
+        posts.push({
+            content: descriptions[i] || `پست شماره ${i + 1}`,
+            scheduledTime: postDate.toISOString()
+        });
+    }
+
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch('/api/assistant/schedule', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ userId: currentUser.id, posts })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(`✅ ${count} پست زمان‌بندی شد`, 'success');
+            await loadAssistantData();
+        } else {
+            showToast('خطا: ' + data.error, 'error');
+        }
+    } catch (e) { showToast('خطا', 'error'); }
+}
 
 // ============================================
 // جستجو
 // ============================================
 document.getElementById('searchInput').addEventListener('input', debounce(async function(e) {
     const q = e.target.value.trim();
+    const container = document.getElementById('searchResults');
     if (q.length < 2) {
-        document.getElementById('searchResults')?.remove();
+        if (container) container.remove();
         return;
     }
     try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const results = await res.json();
         showSearchResults(results);
     } catch (e) { console.error(e); }
@@ -1298,13 +1529,14 @@ function showSearchResults(results) {
             left: 0;
             right: 0;
             background: var(--bg-card);
-            border: 1px solid var(--border);
+            border: 1px solid var(--border-color);
             border-radius: var(--radius-sm);
             margin-top: 4px;
-            max-height: 300px;
+            max-height: 250px;
             overflow-y: auto;
             z-index: 50;
             display: none;
+            box-shadow: var(--shadow);
         `;
         document.querySelector('.search-box').appendChild(container);
     }
@@ -1316,13 +1548,14 @@ function showSearchResults(results) {
     
     container.style.display = 'block';
     container.innerHTML = results.map(r => `
-        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
+        <div style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-color);transition:var(--transition);"
              onclick="openProfile('${r.id}')" 
-             onmouseover="this.style.background='var(--bg-soft)'"
+             onmouseover="this.style.background='var(--bg-card-hover)'"
              onmouseout="this.style.background=''">
-            <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}"></i>
-            <span>${escapeHtml(r.name)}</span>
-            <span style="font-size:10px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
+            <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}" style="color:var(--text-muted);"></i>
+            <span style="font-size:12px;">${escapeHtml(r.name)}</span>
+            <span style="font-size:9px;color:var(--text-muted);margin-right:auto;">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
+            ${r.is_verified ? '<i class="fas fa-check-circle" style="color:var(--info);font-size:10px;"></i>' : ''}
         </div>
     `).join('');
 }
@@ -1333,18 +1566,63 @@ function debounce(fn, wait) {
 }
 
 // ============================================
-// پنل مدیریت
+// گزارش
 // ============================================
-function toggleAdminPanel() {
+function openReportModal(targetType, targetId) {
+    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.getElementById('reportModal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'reportModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:340px;">
+            <h2>🚩 گزارش</h2>
+            <p style="color:var(--text-secondary);font-size:12px;margin-bottom:10px;">دلیل گزارشت رو بنویس</p>
+            <textarea id="reportReasonInput" class="modal-input" style="min-height:60px;resize:vertical;text-align:right;" placeholder="مثلاً: محتوای نامناسب، اسپم، آزار..." maxlength="500"></textarea>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+                <button class="modal-btn" style="background:var(--bg-input);color:var(--text-primary);border:1px solid var(--border-color);flex:1;" onclick="document.getElementById('reportModal').remove()">انصراف</button>
+                <button class="modal-btn modal-btn-primary" style="flex:1;" onclick="submitReport('${targetType}','${targetId}')">ارسال</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+}
+
+async function submitReport(targetType, targetId) {
+    const reason = document.getElementById('reportReasonInput')?.value.trim();
+    if (!reason) { showToast('دلیل گزارش رو بنویس', 'warning'); return; }
+    try {
+        const token = localStorage.getItem('yareman_token');
+        const res = await fetch('/api/report', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ reporterId: currentUser.id, targetId, targetType, reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('✅ گزارش شما ثبت شد', 'success');
+            document.getElementById('reportModal')?.remove();
+        } else {
+            showToast('خطا: ' + data.error, 'error');
+        }
+    } catch (e) { showToast('خطا', 'error'); }
+}
+
+// ============================================
+// مدیریت
+// ============================================
+function toggleAdmin() {
     if (!isAdmin) return;
-    adminPanelOpen = !adminPanelOpen;
-    if (adminPanelOpen) {
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        const adminPage = document.getElementById('adminPage');
-        if (adminPage) adminPage.classList.add('active');
-        loadAdminData('stats');
-    } else {
+    const adminPage = document.getElementById('adminPage');
+    if (adminPage.classList.contains('active')) {
         document.querySelector('[data-page="channel"]').click();
+    } else {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        adminPage.classList.add('active');
+        loadAdminData('stats');
     }
 }
 
@@ -1361,121 +1639,106 @@ function switchAdminTab(tab) {
 
 async function loadAdminData(type) {
     try {
+        const token = localStorage.getItem('yareman_token');
+        const headers = { 
+            'Authorization': `Bearer ${token}`,
+            'userId': 'admin_milad'
+        };
+
         if (type === 'stats') {
-            const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/stats', { headers });
             const stats = await res.json();
             const container = document.getElementById('adminStatsContent');
-            if (container) {
-                container.innerHTML = `
-                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
-                        <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.messages)}</b><span>پیام‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.follows)}</b><span>فالوها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.comments)}</b><span>کامنت‌ها</span></div>
-                        <div class="stat-chip"><b>${formatNumber(stats.pendingReports)}</b><span>گزارش در انتظار</span></div>
-                    </div>
-                `;
-            }
+            container.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-item"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.messages)}</b><span>پیام‌ها</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.follows)}</b><span>فالوها</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.comments)}</b><span>کامنت‌ها</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.pendingReports)}</b><span>گزارش</span></div>
+                    <div class="stat-item"><b>${formatNumber(stats.todayPosts || 0)}</b><span>پست امروز</span></div>
+                </div>
+            `;
         } else if (type === 'users') {
-            const res = await fetch('/api/admin/users', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/users', { headers });
             const users = await res.json();
             const container = document.getElementById('adminUsersList');
-            if (container) {
-                container.innerHTML = users.map(u => `
-                    <div class="admin-user-item">
-                        <span class="name">${escapeHtml(u.name)}${u.is_verified ? ' ✔️' : ''}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${u.role === 'banned' ? '⛔ مسدود' : (u.restricted ? '🔒 محدود' : (u.role || 'user'))}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
-                        <div class="actions">
-                            ${u.role !== 'admin' ? `
-                                ${u.is_verified
-                                    ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unverify')">✗ حذف تیک</button>`
-                                    : `<button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓ تیک آبی</button>`}
-                                ${u.restricted
-                                    ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unrestrict')">🔓 رفع محدودیت</button>`
-                                    : `<button class="btn-secondary" onclick="adminAction('user','${u.id}','restrict')">🔒 محدود کردن</button>`}
-                                ${u.role === 'banned'
-                                    ? `<button class="btn-success" onclick="adminAction('user','${u.id}','unban')">✅ رفع مسدودی</button>`
-                                    : `<button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔ مسدود کردن</button>`}
-                            ` : ''}
-                        </div>
+            container.innerHTML = users.map(u => `
+                <div class="admin-item">
+                    <span>${escapeHtml(u.name)}${u.is_verified ? ' ✔️' : ''}</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${u.role === 'banned' ? '⛔ مسدود' : (u.restricted ? '🔒 محدود' : (u.role || 'user'))}</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${formatNumber(u.followers_count || 0)} فالوور</span>
+                    <div class="actions">
+                        ${u.role !== 'admin' ? `
+                            ${u.is_verified ? `<button class="btn-sm-secondary" onclick="adminAction('user','${u.id}','unverify')">✗ تیک</button>`
+                                : `<button class="btn-sm-success" onclick="adminAction('user','${u.id}','verify')">✓ تیک</button>`}
+                            ${u.restricted ? `<button class="btn-sm-secondary" onclick="adminAction('user','${u.id}','unrestrict')">🔓</button>`
+                                : `<button class="btn-sm-secondary" onclick="adminAction('user','${u.id}','restrict')">🔒</button>`}
+                            ${u.role === 'banned' ? `<button class="btn-sm-success" onclick="adminAction('user','${u.id}','unban')">✅</button>`
+                                : `<button class="btn-sm-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>`}
+                        ` : ''}
                     </div>
-                `).join('');
-            }
+                </div>
+            `).join('');
         } else if (type === 'posts') {
-            const res = await fetch('/api/admin/posts', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/posts', { headers });
             const posts = await res.json();
             const container = document.getElementById('adminPostsList');
-            if (container) {
-                container.innerHTML = posts.map(p => `
-                    <div class="admin-post-item">
-                        <span>${escapeHtml((p.content || '').substring(0, 40))}...</span>
-                        <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
-                        <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
-                    </div>
-                `).join('');
-            }
-        } else if (type === 'channels') {
-            const res = await fetch('/api/admin/channels', { headers: { 'userId': 'admin_milad' } });
-            const channels = await res.json();
-            const container = document.getElementById('adminChannelsList');
-            if (container) {
-                container.innerHTML = channels.map(c => `
-                    <div class="admin-user-item">
-                        <span>${escapeHtml(c.name)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
-                        <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.posts_count)} پست</span>
-                    </div>
-                `).join('');
-            }
+            container.innerHTML = posts.map(p => `
+                <div class="admin-item">
+                    <span>${escapeHtml((p.content || '').substring(0, 30))}...</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${escapeHtml(p.user_name)}</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${timeAgo(p.created_at)}</span>
+                    <button class="btn-sm-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
+                </div>
+            `).join('');
         } else if (type === 'reports') {
-            const res = await fetch('/api/admin/reports?status=pending', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/reports?status=pending', { headers });
             const reports = await res.json();
             const container = document.getElementById('adminReportsList');
-            if (container) {
-                const labels = { user: '👤 کاربر', post: '📝 پست', comment: '💬 کامنت' };
-                container.innerHTML = reports.length ? reports.map(r => `
-                    <div class="admin-post-item">
-                        <span>${labels[r.target_type] || r.target_type} — ${escapeHtml(r.reason)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">شناسه هدف: ${escapeHtml(r.target_id || '')}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${timeAgo(r.created_at)}</span>
-                        <div class="actions">
-                            <button class="btn-success" onclick="resolveReport('${r.id}')">✅ بررسی شد</button>
-                            <button class="btn-secondary" onclick="dismissReport('${r.id}')">رد کردن</button>
-                        </div>
+            const labels = { user: '👤 کاربر', post: '📝 پست', comment: '💬 کامنت' };
+            container.innerHTML = reports.length ? reports.map(r => `
+                <div class="admin-item">
+                    <span>${labels[r.target_type] || r.target_type}</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${escapeHtml(r.reason?.substring(0, 30) || '')}...</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${timeAgo(r.created_at)}</span>
+                    <div class="actions">
+                        <button class="btn-sm-success" onclick="resolveReport('${r.id}')">✅</button>
+                        <button class="btn-sm-secondary" onclick="dismissReport('${r.id}')">رد</button>
                     </div>
-                `).join('') : `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
-            }
+                </div>
+            `).join('') : `<p style="color:var(--text-muted);font-size:12px;text-align:center;padding:10px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
         } else if (type === 'ads') {
-            const res = await fetch('/api/admin/ads', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/ads', { headers });
             const ads = await res.json();
             const container = document.getElementById('adminAdsList');
-            if (container) {
-                container.innerHTML = ads.map(a => `
-                    <div class="admin-post-item">
-                        <span>${escapeHtml(a.title)}</span>
-                        <span style="font-size:10px;color:var(--text-3);">${a.is_active ? '🟢 فعال' : '⚪ غیرفعال'} — ${formatNumber(a.views || 0)} بازدید</span>
-                        <div class="actions">
-                            <button class="btn-secondary" onclick="toggleAd('${a.id}', ${a.is_active ? 0 : 1})">${a.is_active ? 'غیرفعال کردن' : 'فعال کردن'}</button>
-                            <button class="btn-danger" onclick="deleteAd('${a.id}')">🗑️</button>
-                        </div>
+            container.innerHTML = ads.map(a => `
+                <div class="admin-item">
+                    <span>${escapeHtml(a.title)}</span>
+                    <span style="font-size:9px;color:var(--text-muted);">${a.is_active ? '🟢 فعال' : '⚪ غیرفعال'}</span>
+                    <div class="actions">
+                        <button class="btn-sm-secondary" onclick="toggleAd('${a.id}', ${a.is_active ? 0 : 1})">${a.is_active ? 'غیرفعال' : 'فعال'}</button>
+                        <button class="btn-sm-danger" onclick="deleteAd('${a.id}')">🗑️</button>
                     </div>
-                `).join('') || `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">هنوز تبلیغی ساخته نشده</p>`;
-            }
+                </div>
+            `).join('') || `<p style="color:var(--text-muted);font-size:12px;text-align:center;padding:10px;">هنوز تبلیغی ساخته نشده</p>`;
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); showToast('خطا', 'error'); }
 }
 
 async function adminAction(type, id, action) {
     if (!confirm(`آیا از انجام این عملیات مطمئن هستید؟`)) return;
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch(`/api/admin/${type}/${action}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ 
                 userId: type === 'user' ? id : undefined,
                 postId: type === 'post' ? id : undefined
@@ -1483,196 +1746,152 @@ async function adminAction(type, id, action) {
         });
         const data = await res.json();
         if (data.success) {
-            showNotification('✅ عملیات با موفقیت انجام شد');
+            showToast('✅ عملیات موفق', 'success');
             const activeTab = document.querySelector('.admin-tab.active');
             if (activeTab) loadAdminData(activeTab.dataset.tab);
         }
-    } catch (e) { showNotification('خطا: ' + e.message); }
+    } catch (e) { showToast('خطا: ' + e.message, 'error'); }
 }
 
 async function resolveReport(reportId) {
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/report/resolve', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
-        if (data.success) { showNotification('✅ گزارش بررسی شد'); loadAdminData('reports'); }
-    } catch (e) { showNotification('خطا: ' + e.message); }
+        if (data.success) { showToast('✅ گزارش بررسی شد', 'success'); loadAdminData('reports'); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function dismissReport(reportId) {
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/report/dismiss', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
-        if (data.success) { showNotification('گزارش رد شد'); loadAdminData('reports'); }
-    } catch (e) { showNotification('خطا: ' + e.message); }
+        if (data.success) { showToast('گزارش رد شد', 'info'); loadAdminData('reports'); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function createAd() {
     const title = document.getElementById('adTitle').value.trim();
     const content = document.getElementById('adContent').value.trim();
     const linkUrl = document.getElementById('adLink').value.trim();
-    if (!title) { showNotification('عنوان تبلیغ رو بنویس!'); return; }
+    if (!title) { showToast('عنوان تبلیغ رو بنویس!', 'warning'); return; }
 
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/ads/create', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ title, content, linkUrl })
         });
         const data = await res.json();
         if (data.success) {
-            showNotification('✅ تبلیغ ساخته شد');
+            showToast('✅ تبلیغ ساخته شد', 'success');
             document.getElementById('adTitle').value = '';
             document.getElementById('adContent').value = '';
             document.getElementById('adLink').value = '';
             loadAdminData('ads');
         } else {
-            showNotification('خطا: ' + data.error);
+            showToast('خطا: ' + data.error, 'error');
         }
-    } catch (e) { showNotification('خطا: ' + e.message); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function toggleAd(adId, active) {
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/ads/toggle', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ adId, active })
         });
         const data = await res.json();
         if (data.success) loadAdminData('ads');
-    } catch (e) { showNotification('خطا: ' + e.message); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function deleteAd(adId) {
     if (!confirm('این تبلیغ حذف بشه؟')) return;
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/ads/delete', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ adId })
         });
         const data = await res.json();
         if (data.success) loadAdminData('ads');
-    } catch (e) { showNotification('خطا: ' + e.message); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 async function sendBroadcast() {
     const title = document.getElementById('broadcastTitle').value.trim();
     const message = document.getElementById('broadcastMessage').value.trim();
-    if (!message) { showNotification('متن پیام رو بنویس!'); return; }
+    if (!message) { showToast('متن پیام رو بنویس!', 'warning'); return; }
 
     try {
+        const token = localStorage.getItem('yareman_token');
         const res = await fetch('/api/admin/broadcast', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+                'userId': 'admin_milad'
+            },
             body: JSON.stringify({ title: title || 'اعلان سیستمی', message })
         });
         const data = await res.json();
         if (data.success) {
-            showNotification(`✅ ${data.message}`);
+            showToast(`✅ ${data.message}`, 'success');
             document.getElementById('broadcastTitle').value = '';
             document.getElementById('broadcastMessage').value = '';
         }
-    } catch (e) { showNotification('خطا: ' + e.message); }
+    } catch (e) { showToast('خطا', 'error'); }
 }
 
 // ============================================
-// گزارش (پست/کاربر/کامنت) - مودال مشترک
+// آپدیت Boost Badge
 // ============================================
-function openReportModal(targetType, targetId) {
-    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
-    document.getElementById('reportModal')?.remove();
-
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.id = 'reportModal';
-    modal.style.zIndex = '400';
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width:340px;">
-            <h2>🚩 گزارش</h2>
-            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">دلیل گزارشت رو بنویس</p>
-            <textarea id="reportReasonInput" class="name-input" style="min-height:80px;resize:vertical;width:100%;" placeholder="مثلاً: محتوای نامناسب، اسپم، آزار..." maxlength="500"></textarea>
-            <div style="display:flex;gap:8px;margin-top:10px;">
-                <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('reportModal').remove()">انصراف</button>
-                <button class="btn-danger" style="flex:1;" onclick="submitReport('${targetType}','${targetId}')">ارسال گزارش</button>
-            </div>
-        </div>`;
-    document.body.appendChild(modal);
-}
-
-async function submitReport(targetType, targetId) {
-    const reason = document.getElementById('reportReasonInput')?.value.trim();
-    if (!reason) { showNotification('دلیل گزارش رو بنویس'); return; }
-    try {
-        const res = await fetch('/api/report', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reporterId: currentUser.id, targetId, targetType, reason })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showNotification('✅ گزارش شما ثبت شد، ممنون از همکاریت');
-            document.getElementById('reportModal')?.remove();
-        } else {
-            showNotification('خطا: ' + data.error);
-        }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
-}
-
-function pfOpenReport() {
-    if (!pfCurrentPostId) return;
-    openReportModal('post', pfCurrentPostId);
-}
-
-// ============================================
-// منوی سه‌نقطه‌ی چت - گزارش و مسدود کردن کاربر
-// ============================================
-function toggleChatMenu() {
-    const dropdown = document.getElementById('chatThreadMenu');
-    const wasOpen = dropdown?.classList.contains('open');
-    document.querySelectorAll('.post-menu-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (dropdown && !wasOpen) dropdown.classList.add('open');
-}
-
-function reportChatUser() {
-    if (!currentChatUser) return;
-    document.getElementById('chatThreadMenu')?.classList.remove('open');
-    openReportModal('user', currentChatUser.id);
-}
-
-function updateChatBlockBtn(blocked) {
-    const btn = document.getElementById('chatBlockBtn');
-    if (!btn) return;
-    btn.innerHTML = blocked ? '<i class="fas fa-unlock"></i> رفع مسدودیت' : '<i class="fas fa-ban"></i> مسدود کردن';
-    btn.dataset.blocked = blocked ? '1' : '0';
-}
-
-async function toggleBlockChatUser() {
-    if (!currentChatUser) return;
-    document.getElementById('chatThreadMenu')?.classList.remove('open');
-    const btn = document.getElementById('chatBlockBtn');
-    const isBlocked = btn?.dataset.blocked === '1';
-
-    if (!isBlocked && !confirm(`${currentChatUser.name} مسدود بشه؟ دیگه نمی‌تونید برای هم پیام بفرستید.`)) return;
-
-    try {
-        const res = await fetch(isBlocked ? '/api/user/unblock' : '/api/user/block', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ blockerId: currentUser.id, blockedId: currentChatUser.id })
-        });
-        const data = await res.json();
-        if (data.success) {
-            updateChatBlockBtn(!isBlocked);
-            showNotification(isBlocked ? '🔓 رفع مسدودیت شد' : '🚫 کاربر مسدود شد');
-        }
-    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+function updateBoostBadge(level) {
+    const badge = document.getElementById('boostBadge');
+    if (!badge) return;
+    const labels = { 
+        normal: 'عادی', 
+        high: '🔥 داغ', 
+        viral: '🚀 وایرال', 
+        superstar: '⭐ ستاره',
+        legend: '👑 افسانه'
+    };
+    badge.textContent = labels[level] || 'عادی';
+    badge.className = 'boost-badge boost-' + level;
 }
 
 // ============================================
@@ -1681,10 +1900,17 @@ async function toggleBlockChatUser() {
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
     
-    // Auto-refresh chat list
+    // به‌روزرسانی دوره‌ای
     setInterval(() => {
         if (document.getElementById('chatPage').classList.contains('active')) {
             loadChatList();
         }
     }, 30000);
+
+    // پیش‌بارگذاری اکسپلور
+    setTimeout(() => {
+        if (document.getElementById('explorePage').classList.contains('active')) {
+            loadExplore();
+        }
+    }, 1000);
 });
