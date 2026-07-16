@@ -24,7 +24,9 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 
-const SHARD_COUNT = Math.max(1, parseInt(process.env.DB_SHARD_COUNT || '4', 10));
+const SHARD_COUNT = Math.max(1, parseInt(process.env.DB_SHARD_COUNT || '200', 10));
+// ایمیل ادمین سیستم - فقط این ایمیل می‌تونه نقش admin بگیره (چه در بوت‌استرپ چه هرجای دیگه)
+const ADMIN_EMAIL = 'milad.yari1377m@gmail.com';
 const DIRECTORY_SHARD = 0; // شاردی که جدول دایرکتوری روش نگه داشته می‌شه
 
 class DatabaseManager {
@@ -42,6 +44,9 @@ class DatabaseManager {
 
         // دایرکتوری entity_id -> shard_index (در حافظه، پشتیبان‌گیری‌شده روی shard 0)
         this.directory = new Map();
+
+        // ایندکس ایمیل -> userId برای لاگین سریع بدون اسکن ۲۰۰ شارد (در حافظه، پشتیبان‌گیری‌شده روی shard 0)
+        this.emailIndex = new Map();
 
         // کلید رمزنگاری - هر بار اجرای encrypt() یک IV تصادفی جدید تولید می‌کنه (رفع باگ استفاده مجدد از IV)
         this.encryptionKey = crypto.randomBytes(32);
@@ -100,41 +105,6 @@ class DatabaseManager {
     }
 
     // ============================================
-    // هش رمز عبور (scrypt - بدون نیاز به وابستگی خارجی مثل bcrypt)
-    // فرمت ذخیره‌سازی: salt(hex):hash(hex)
-    // ============================================
-    hashPassword(password) {
-        const salt = crypto.randomBytes(16).toString('hex');
-        const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
-        return `${salt}:${hash}`;
-    }
-
-    verifyPassword(password, stored) {
-        try {
-            if (!stored || typeof stored !== 'string' || !stored.includes(':')) return false;
-            const [salt, hash] = stored.split(':');
-            const check = crypto.scryptSync(String(password), salt, 64).toString('hex');
-            const a = Buffer.from(hash, 'hex');
-            const b = Buffer.from(check, 'hex');
-            if (a.length !== b.length) return false;
-            return crypto.timingSafeEqual(a, b);
-        } catch (e) {
-            return false;
-        }
-    }
-
-    // جستجوی کاربر با یوزرنیم یا ایمیل روی همه‌ی شاردها (چون شاردبندی بر اساس id کاربره، نه یوزرنیم/ایمیل)
-    findUserByUsernameOrEmail(usernameOrEmail) {
-        const val = String(usernameOrEmail || '').trim().toLowerCase();
-        if (!val) return null;
-        for (const conn of this.shards) {
-            const row = conn.prepare(`SELECT * FROM users WHERE lower(username) = ? OR lower(email) = ?`).get(val, val);
-            if (row) return row;
-        }
-        return null;
-    }
-
-    // ============================================
     // شاردینگ - هش سازگار (consistent hashing ساده با mod)
     // ============================================
     hashKey(key) {
@@ -182,6 +152,35 @@ class DatabaseManager {
         } catch (e) {
             console.error('Directory load error:', e.message);
         }
+        try {
+            const rows = this.shards[DIRECTORY_SHARD].prepare(`SELECT email, user_id FROM _email_index`).all();
+            for (const r of rows) this.emailIndex.set(r.email, r.user_id);
+            console.log(`✅ Email index loaded: ${rows.length} accounts`);
+        } catch (e) {
+            console.error('Email index load error:', e.message);
+        }
+    }
+
+    // ایمیل رو (نرمال‌شده به lowercase) به userId وصل می‌کنه، هم در حافظه هم روی دیسک
+    registerEmail(email, userId) {
+        if (!email || !userId) return;
+        const norm = String(email).trim().toLowerCase();
+        this.emailIndex.set(norm, userId);
+        try {
+            this.shards[DIRECTORY_SHARD].prepare(`
+                INSERT INTO _email_index (email, user_id, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(email) DO UPDATE SET user_id = excluded.user_id, updated_at = CURRENT_TIMESTAMP
+            `).run(norm, userId);
+        } catch (e) {
+            console.error('Email index persist error:', e.message);
+        }
+    }
+
+    // پیدا کردن userId از روی ایمیل (برای لاگین)، بدون اسکن شاردها
+    findUserIdByEmail(email) {
+        if (!email) return null;
+        return this.emailIndex.get(String(email).trim().toLowerCase()) || null;
     }
 
     // اگه INSERT روی ستون اول id باشه (الگوی رایج این پروژه: INSERT INTO table (id, ...))
@@ -529,7 +528,6 @@ class DatabaseManager {
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                username TEXT,
                 email TEXT,
                 password_hash TEXT,
                 avatar TEXT,
@@ -693,63 +691,40 @@ class DatabaseManager {
                             shard_index INTEGER NOT NULL,
                             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                         );
+                        CREATE TABLE IF NOT EXISTS _email_index (
+                            email TEXT PRIMARY KEY,
+                            user_id TEXT NOT NULL,
+                            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                        );
                     `);
                 }
 
                 // کاربر ادمین باید روی شارد مشخصی باشه که همیشه یکسان resolve بشه: hash('admin_milad')
                 if (this.hashKey('admin_milad') === i) {
-                    const ADMIN_USERNAME = 'milad13777';
-                    const ADMIN_EMAIL = 'milad.yari1377m@gmail.com';
-                    const ADMIN_PASSWORD = 'M09145978426mbn';
-
-                    const adminCheck = conn.prepare(`SELECT id, password_hash FROM users WHERE id = ?`).get('admin_milad');
+                    const adminCheck = conn.prepare(`SELECT id FROM users WHERE id = ?`).get('admin_milad');
                     if (!adminCheck) {
-                        const pwHash = this.hashPassword(ADMIN_PASSWORD);
+                        const adminPasswordHash = hashPassword('M09145978426mbn');
                         conn.prepare(`
-                            INSERT INTO users (id, name, username, email, password_hash, avatar, role, is_verified, score, created_at)
-                            VALUES ('admin_milad', 'مدیر سیستم', ?, ?, ?, '/admin-avatar.png', 'admin', 1, 999999, CURRENT_TIMESTAMP)
-                        `).run(ADMIN_USERNAME, ADMIN_EMAIL, pwHash);
+                            INSERT INTO users (id, name, email, password_hash, avatar, role, is_verified, score, created_at)
+                            VALUES ('admin_milad', 'milad', ?, ?, '/admin-avatar.png', 'admin', 1, 999999, CURRENT_TIMESTAMP)
+                        `).run(ADMIN_EMAIL, adminPasswordHash);
 
                         conn.exec(`
                             INSERT INTO channels (id, user_id, name, boost_level, created_at) 
                             VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', CURRENT_TIMESTAMP);
                         `);
                         console.log(`✅ Admin user created on shard ${i}`);
-                    } else if (!adminCheck.password_hash) {
-                        // پایگاه‌داده‌ی قدیمی: ادمین از قبل ساخته شده ولی هنوز یوزرنیم/رمز نداره - تکمیلش می‌کنیم
-                        const pwHash = this.hashPassword(ADMIN_PASSWORD);
-                        conn.prepare(`UPDATE users SET username = ?, email = ?, password_hash = ? WHERE id = 'admin_milad'`)
-                            .run(ADMIN_USERNAME, ADMIN_EMAIL, pwHash);
-                        console.log(`✅ Admin credentials backfilled on shard ${i}`);
                     }
+                    // این مسیر مطمئن می‌شه ایندکس ایمیل ادمین همیشه پر باشه، حتی اگه دیتابیس قبلاً بدون این فیچر ساخته شده باشه
+                    this.registerEmail(ADMIN_EMAIL, 'admin_milad');
                 }
 
                 // ستون‌های جدیدی که ممکنه روی دیتابیس‌های قدیمی‌تر نبوده باشن
                 try { conn.exec(`ALTER TABLE messages ADD COLUMN encrypted INTEGER DEFAULT 0`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN bio TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN restricted INTEGER DEFAULT 0`); } catch (e) {}
-                try { conn.exec(`ALTER TABLE users ADD COLUMN username TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN email TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`); } catch (e) {}
-                try { conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL`); } catch (e) {}
-                try { conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`); } catch (e) {}
-
-                // جدول رسیدهای پرداخت (ارتقاء حساب) - هر کاربر فیش واریزی آپلود می‌کنه، ادمین تایید/رد می‌کنه
-                conn.exec(`
-                    CREATE TABLE IF NOT EXISTS payment_receipts (
-                        id TEXT PRIMARY KEY,
-                        user_id TEXT NOT NULL,
-                        post_id TEXT,
-                        receipt_image TEXT NOT NULL,
-                        amount TEXT,
-                        status TEXT DEFAULT 'pending',
-                        admin_note TEXT,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        reviewed_at TEXT
-                    );
-                `);
-                try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_receipts_status ON payment_receipts(status)`); } catch (e) {}
-                try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_receipts_user ON payment_receipts(user_id)`); } catch (e) {}
             }
 
             console.log(`✅ ${this.shardCount} shard(s) ready, tables created/verified`);
@@ -811,4 +786,28 @@ class DatabaseManager {
     }
 }
 
+// ============================================
+// هش کردن رمز عبور (scrypt، بدون نیاز به پکیج خارجی مثل bcrypt)
+// فرمت ذخیره‌شده: salt:hash (هر دو hex)
+// ============================================
+function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+    return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+    if (!stored || typeof stored !== 'string' || !stored.includes(':')) return false;
+    const [salt, hash] = stored.split(':');
+    const check = crypto.scryptSync(String(password), salt, 64).toString('hex');
+    try {
+        return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(check, 'hex'));
+    } catch (e) {
+        return false;
+    }
+}
+
 module.exports = DatabaseManager;
+module.exports.hashPassword = hashPassword;
+module.exports.verifyPassword = verifyPassword;
+module.exports.ADMIN_EMAIL = ADMIN_EMAIL;

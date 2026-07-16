@@ -11,6 +11,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const DatabaseManager = require('./database');
+const { hashPassword, verifyPassword, ADMIN_EMAIL } = require('./database');
 const IntelligentAssistant = require('./assistant_logic');
 
 // ============================================
@@ -28,54 +29,6 @@ const io = socketIO(server, {
     maxHttpBufferSize: 1e8 // 100MB
 });
 const db = new DatabaseManager();
-
-// ============================================
-// توکن ورود (ثبت‌نام/لاگین واقعی با ایمیل و رمز)
-// چون سرور با cluster روی چند worker اجرا می‌شه، سکرت امضای توکن رو یک بار
-// روی دیسک ذخیره می‌کنیم تا همه‌ی worker ها همون سکرت رو بخونن و توکن هرکدوم
-// توسط بقیه هم قابل تایید باشه.
-// ============================================
-const sessionSecretPath = path.join(__dirname, '.session_secret');
-let SESSION_SECRET;
-try {
-    if (fs.existsSync(sessionSecretPath)) {
-        SESSION_SECRET = fs.readFileSync(sessionSecretPath, 'utf8').trim();
-    }
-    if (!SESSION_SECRET) {
-        SESSION_SECRET = crypto.randomBytes(48).toString('hex');
-        fs.writeFileSync(sessionSecretPath, SESSION_SECRET, { mode: 0o600 });
-    }
-} catch (e) {
-    console.error('⚠️ خطا در بارگذاری سکرت نشست، از یک سکرت موقت استفاده می‌شه:', e.message);
-    SESSION_SECRET = crypto.randomBytes(48).toString('hex');
-}
-
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // ۳۰ روز
-
-function signToken(userId) {
-    const expires = Date.now() + TOKEN_TTL_MS;
-    const payload = `${userId}.${expires}`;
-    const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-    return Buffer.from(`${payload}.${sig}`).toString('base64url');
-}
-
-function verifyToken(token) {
-    try {
-        const decoded = Buffer.from(String(token), 'base64url').toString('utf8');
-        const parts = decoded.split('.');
-        if (parts.length !== 3) return null;
-        const [userId, expires, sig] = parts;
-        const payload = `${userId}.${expires}`;
-        const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-        const a = Buffer.from(sig, 'hex');
-        const b = Buffer.from(expectedSig, 'hex');
-        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-        if (Date.now() > Number(expires)) return null;
-        return userId;
-    } catch (e) {
-        return null;
-    }
-}
 
 // ============================================
 // امنیت و بهینه‌سازی
@@ -181,147 +134,89 @@ app.get('/health', (req, res) => {
 // بررسی ادمین
 // ============================================
 function isAdmin(req, res, next) {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.headers['x-auth-token'] || '');
-    const userId = verifyToken(token);
-    if (!userId) {
-        return res.status(401).json({ error: 'ورود الزامی است' });
+    const userId = req.headers.userid || req.body.userId;
+    if (userId === 'admin_milad') {
+        return next();
     }
-    // نقش رو از دیتابیس می‌خونیم، نه از چیزی که کلاینت فرستاده - چون کلاینت می‌تونه هدر رو جعل کنه
-    db.query(userId, `SELECT role FROM users WHERE id = $1`, [userId]).then(r => {
-        if (r.rows[0] && r.rows[0].role === 'admin') {
-            req.currentUserId = userId;
-            return next();
-        }
-        res.status(403).json({ error: 'دسترسی غیرمجاز' });
-    }).catch(() => res.status(500).json({ error: 'خطای داخلی' }));
+    res.status(403).json({ error: 'دسترسی غیرمجاز' });
 }
 
 // ============================================
-// API ثبت‌نام
+// API ثبت‌نام (ایمیل + رمز عبور اجباری)
 // ============================================
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 app.post('/api/user/register', async (req, res) => {
     try {
-        const { name, avatar } = req.body;
+        const { name, email, password, avatar } = req.body;
         if (!name || !name.trim()) {
             return res.status(400).json({ success: false, error: 'نام الزامی است' });
         }
-        
-        let id;
-        const nameLower = name.trim().toLowerCase();
-        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin') {
-            id = 'admin_milad';
-        } else {
-            id = 'user_' + crypto.randomBytes(8).toString('hex');
+        if (!email || !EMAIL_REGEX.test(String(email).trim())) {
+            return res.status(400).json({ success: false, error: 'ایمیل معتبر نیست' });
         }
-        
+        if (!password || String(password).length < 6) {
+            return res.status(400).json({ success: false, error: 'رمز عبور باید حداقل ۶ کاراکتر باشد' });
+        }
+
+        const emailNorm = String(email).trim().toLowerCase();
+
+        // نقش ادمین فقط و فقط با ایمیل هاردکد‌شده‌ی سرور تعیین می‌شه، نه با نام کاربری.
+        // حساب ادمین از قبل موقع بوت سرور ساخته شده، پس اینجا فقط جلوی ثبت‌نام تکراری با همون ایمیل رو می‌گیریم.
+        if (emailNorm === ADMIN_EMAIL) {
+            return res.status(400).json({ success: false, error: 'این ایمیل قبلاً ثبت شده. لطفاً وارد شوید.' });
+        }
+
+        const existingId = db.findUserIdByEmail(emailNorm);
+        if (existingId) {
+            return res.status(400).json({ success: false, error: 'این ایمیل قبلاً ثبت شده. لطفاً وارد شوید.' });
+        }
+
+        const id = 'user_' + crypto.randomBytes(8).toString('hex');
         const channelId = 'channel_' + id;
+        const passwordHash = hashPassword(String(password));
 
-        const check = await db.query(id, `SELECT id FROM users WHERE id = $1`, [id]);
-        if (check.rows.length === 0) {
-            await db.query(id, `
-                INSERT INTO users (id, name, avatar, role, is_verified, score, created_at) 
-                VALUES ($1, $2, $3, $4, 1, $5, CURRENT_TIMESTAMP)
-            `, [id, name.trim(), avatar || null, id === 'admin_milad' ? 'admin' : 'user', id === 'admin_milad' ? 999999 : 0]);
-            
-            await db.query(id, `
-                INSERT INTO channels (id, user_id, name, boost_level, created_at) 
-                VALUES ($1, $2, $3, 'normal', CURRENT_TIMESTAMP)
-            `, [channelId, id, name.trim() + ' - کانال']);
-        }
+        await db.query(id, `
+            INSERT INTO users (id, name, email, password_hash, avatar, role, is_verified, score, created_at) 
+            VALUES ($1, $2, $3, $4, $5, 'user', 0, 0, CURRENT_TIMESTAMP)
+        `, [id, name.trim(), emailNorm, passwordHash, avatar || null]);
 
-        const u = await db.query(id, `SELECT id, name, avatar, score, role FROM users WHERE id = $1`, [id]);
+        await db.query(id, `
+            INSERT INTO channels (id, user_id, name, boost_level, created_at) 
+            VALUES ($1, $2, $3, 'normal', CURRENT_TIMESTAMP)
+        `, [channelId, id, name.trim() + ' - کانال']);
+
+        db.registerEmail(emailNorm, id);
+
+        const u = await db.query(id, `SELECT id, name, avatar, score, role, is_verified FROM users WHERE id = $1`, [id]);
         res.json({ success: true, user: u.rows[0] });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// محدودیت نرخ جداگانه برای لاگین/ثبت‌نام - جلوی حدس زدن رمز رو می‌گیره
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    message: { success: false, error: 'تعداد تلاش‌ها بیش از حد مجاز است، کمی صبر کن' }
-});
-
 // ============================================
-// API ثبت‌نام واقعی (یوزرنیم + ایمیل + رمز عبور)
+// API ورود (ایمیل + رمز عبور)
 // ============================================
-app.post('/api/auth/register', authLimiter, async (req, res) => {
+app.post('/api/user/login', async (req, res) => {
     try {
-        const { username, email, password, name } = req.body || {};
-        const uname = String(username || '').trim();
-        const mail = String(email || '').trim().toLowerCase();
-        const pass = String(password || '');
-        const displayName = String(name || uname).trim();
-
-        if (!uname || uname.length < 3) {
-            return res.status(400).json({ success: false, error: 'نام کاربری باید حداقل ۳ کاراکتر باشد' });
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'ایمیل و رمز عبور الزامی است' });
         }
-        if (!/^[a-zA-Z0-9_.]+$/.test(uname)) {
-            return res.status(400).json({ success: false, error: 'نام کاربری فقط می‌تواند شامل حروف انگلیسی، عدد، نقطه و آندرلاین باشد' });
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
-            return res.status(400).json({ success: false, error: 'ایمیل معتبر نیست' });
-        }
-        if (pass.length < 8) {
-            return res.status(400).json({ success: false, error: 'رمز عبور باید حداقل ۸ کاراکتر باشد' });
+        const emailNorm = String(email).trim().toLowerCase();
+        const id = db.findUserIdByEmail(emailNorm);
+        if (!id) {
+            return res.status(401).json({ success: false, error: 'ایمیل یا رمز عبور اشتباه است' });
         }
 
-        const existing = db.findUserByUsernameOrEmail(uname) || db.findUserByUsernameOrEmail(mail);
-        if (existing) {
-            return res.status(409).json({ success: false, error: 'این نام کاربری یا ایمیل قبلاً ثبت شده است' });
+        const u = await db.query(id, `SELECT id, name, avatar, score, role, is_verified, password_hash FROM users WHERE id = $1`, [id]);
+        if (u.rows.length === 0 || !verifyPassword(String(password), u.rows[0].password_hash)) {
+            return res.status(401).json({ success: false, error: 'ایمیل یا رمز عبور اشتباه است' });
         }
 
-        const id = 'user_' + crypto.randomBytes(8).toString('hex');
-        const channelId = 'channel_' + id;
-        const passwordHash = db.hashPassword(pass);
-
-        await db.query(id, `
-            INSERT INTO users (id, name, username, email, password_hash, role, is_verified, score, created_at)
-            VALUES ($1, $2, $3, $4, $5, 'user', 0, 0, CURRENT_TIMESTAMP)
-        `, [id, displayName, uname, mail, passwordHash]);
-
-        await db.query(id, `
-            INSERT INTO channels (id, user_id, name, boost_level, created_at)
-            VALUES ($1, $2, $3, 'normal', CURRENT_TIMESTAMP)
-        `, [channelId, id, displayName + ' - کانال']);
-
-        const token = signToken(id);
-        const u = await db.query(id, `SELECT id, name, username, email, avatar, score, role FROM users WHERE id = $1`, [id]);
-        res.json({ success: true, token, user: u.rows[0] });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// ============================================
-// API ورود (لاگین با یوزرنیم/ایمیل + رمز عبور)
-// ============================================
-app.post('/api/auth/login', authLimiter, async (req, res) => {
-    try {
-        const { identifier, password } = req.body || {};
-        if (!identifier || !password) {
-            return res.status(400).json({ success: false, error: 'نام کاربری/ایمیل و رمز عبور الزامی است' });
-        }
-
-        const row = db.findUserByUsernameOrEmail(identifier);
-        if (!row || !row.password_hash || !db.verifyPassword(password, row.password_hash)) {
-            return res.status(401).json({ success: false, error: 'نام کاربری/ایمیل یا رمز عبور اشتباه است' });
-        }
-        if (row.restricted) {
-            return res.status(403).json({ success: false, error: 'حساب کاربری شما محدود شده است' });
-        }
-
-        const token = signToken(row.id);
-        res.json({
-            success: true,
-            token,
-            user: {
-                id: row.id, name: row.name, username: row.username,
-                email: row.email, avatar: row.avatar, score: row.score, role: row.role
-            }
-        });
+        const { password_hash, ...user } = u.rows[0];
+        res.json({ success: true, user });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
