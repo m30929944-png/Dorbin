@@ -1,12 +1,8 @@
-// database.js - نسخه نهایی با ۱۵۰ شارد و ۵۰ کارگر
 const Database = require('better-sqlite3');
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 
-// ============================================
-// تنظیمات شاردینگ - ۱۵۰ شارد برای بار متوازن
-// ============================================
 const SHARD_COUNT = Math.max(1, parseInt(process.env.DB_SHARD_COUNT || '150', 10));
 const DIRECTORY_SHARD = 0;
 
@@ -21,6 +17,7 @@ class DatabaseManager {
         this.cacheMaxEntries = 5000;
         this.directory = new Map();
         this.encryptionKey = crypto.randomBytes(32);
+        this._warnedNoKey = false;
 
         this.shards = [];
         for (let i = 0; i < this.shardCount; i++) {
@@ -34,7 +31,6 @@ class DatabaseManager {
             this.shards.push(conn);
         }
 
-        this._warnedNoKey = false;
         this.initTables();
         this._loadDirectoryFromDisk();
     }
@@ -91,7 +87,7 @@ class DatabaseManager {
                 VALUES (?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(entity_id) DO UPDATE SET shard_index = excluded.shard_index, updated_at = CURRENT_TIMESTAMP
             `).run(id, shardIndex);
-        } catch (e) { console.error('Directory persist error:', e.message); }
+        } catch (e) {}
     }
 
     _loadDirectoryFromDisk() {
@@ -99,7 +95,7 @@ class DatabaseManager {
             const rows = this.shards[DIRECTORY_SHARD].prepare(`SELECT entity_id, shard_index FROM _shard_directory`).all();
             for (const r of rows) this.directory.set(r.entity_id, r.shard_index);
             console.log(`✅ Directory loaded: ${rows.length} entity mappings`);
-        } catch (e) { console.error('Directory load error:', e.message); }
+        } catch (e) {}
     }
 
     _maybeRegisterFromInsert(sql, params, shardIndex) {
@@ -364,25 +360,31 @@ class DatabaseManager {
 
     toggleLike(postId, userId) {
         const shardIndex = this.resolveShardIndex(postId);
+        if (shardIndex === null) return { success: false, error: 'پست یافت نشد' };
         const conn = this.shards[shardIndex];
         let liked, likes;
-        const run = conn.transaction(() => {
-            const existing = conn.prepare(`SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?`).get(postId, userId);
-            if (existing) {
-                conn.prepare(`DELETE FROM post_likes WHERE post_id = ? AND user_id = ?`).run(postId, userId);
-                conn.prepare(`UPDATE posts SET likes = MAX(likes - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
-                liked = false;
-            } else {
-                conn.prepare(`INSERT INTO post_likes (post_id, user_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run(postId, userId);
-                conn.prepare(`UPDATE posts SET likes = likes + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
-                liked = true;
-            }
-            const p = conn.prepare(`SELECT likes FROM posts WHERE id = ?`).get(postId);
-            likes = p?.likes || 0;
-        });
-        run();
-        this._invalidateByTables(['posts', 'post_likes']);
-        return { success: true, liked, likes };
+        try {
+            const run = conn.transaction(() => {
+                const existing = conn.prepare(`SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?`).get(postId, userId);
+                if (existing) {
+                    conn.prepare(`DELETE FROM post_likes WHERE post_id = ? AND user_id = ?`).run(postId, userId);
+                    conn.prepare(`UPDATE posts SET likes = MAX(likes - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
+                    liked = false;
+                } else {
+                    conn.prepare(`INSERT INTO post_likes (post_id, user_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`).run(postId, userId);
+                    conn.prepare(`UPDATE posts SET likes = likes + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(postId);
+                    liked = true;
+                }
+                const p = conn.prepare(`SELECT likes FROM posts WHERE id = ?`).get(postId);
+                likes = p?.likes || 0;
+            });
+            run();
+            this._invalidateByTables(['posts', 'post_likes']);
+            return { success: true, liked, likes };
+        } catch (error) {
+            console.error('toggleLike error:', error);
+            return { success: false, error: error.message };
+        }
     }
 
     async initTables() {
@@ -491,7 +493,8 @@ class DatabaseManager {
                 if (i === DIRECTORY_SHARD) {
                     conn.exec(`CREATE TABLE IF NOT EXISTS _shard_directory (entity_id TEXT PRIMARY KEY, shard_index INTEGER NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);`);
                 }
-                if (this.hashKey('admin_milad') === i) {
+                // ادمین رو روی شارد ۰ میسازیم
+                if (i === 0) {
                     const adminCheck = conn.prepare(`SELECT id FROM users WHERE id = ?`).get('admin_milad');
                     if (!adminCheck) {
                         conn.exec(`
@@ -501,11 +504,18 @@ class DatabaseManager {
                             VALUES ('channel_admin', 'admin_milad', 'کانال مدیریت', 'superstar', CURRENT_TIMESTAMP);
                         `);
                         console.log(`✅ Admin user created on shard ${i}`);
+                    } else {
+                        // اطمینان از اینکه ادمین درست تنظیم شده
+                        conn.exec(`
+                            UPDATE users SET email = 'milad.yari1377m@gmail.com', password_hash = 'M09145978426mbn', role = 'admin', is_verified = 1, score = 999999 WHERE id = 'admin_milad';
+                        `);
                     }
                 }
                 try { conn.exec(`ALTER TABLE users ADD COLUMN email TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN restricted INTEGER DEFAULT 0`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE users ADD COLUMN bio TEXT`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE messages ADD COLUMN encrypted INTEGER DEFAULT 0`); } catch (e) {}
             }
             console.log(`✅ ${this.shardCount} shard(s) ready, tables created/verified`);
         } catch (error) {
@@ -515,9 +525,44 @@ class DatabaseManager {
     }
 
     transaction(key, fn) { const conn = this.getDb(key); return conn.transaction(fn); }
-    backup() { const paths = []; for (let i = 0; i < this.shards.length; i++) { try { const backupPath = path.join(this.shardsDir, `backup_shard${i}_${Date.now()}.sqlite`); const backup = new Database(backupPath); this.shards[i].backup(backup); backup.close(); paths.push(backupPath); } catch (error) { console.error(`Backup error (shard ${i}):`, error); } } return paths; }
+    
+    backup() {
+        const paths = [];
+        for (let i = 0; i < this.shards.length; i++) {
+            try {
+                const backupPath = path.join(this.shardsDir, `backup_shard${i}_${Date.now()}.sqlite`);
+                const backup = new Database(backupPath);
+                this.shards[i].backup(backup);
+                backup.close();
+                paths.push(backupPath);
+            } catch (error) {
+                console.error(`Backup error (shard ${i}):`, error);
+            }
+        }
+        return paths;
+    }
+    
     vacuum() { for (const conn of this.shards) conn.exec('VACUUM'); }
-    getStats() { const stats = { shardCount: this.shardCount, perShard: [] }; for (let i = 0; i < this.shards.length; i++) { const conn = this.shards[i]; const shardStats = {}; try { const tables = conn.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_shard%'`).all(); for (const table of tables) { const count = conn.prepare(`SELECT COUNT(*) as count FROM ${table.name}`).get(); shardStats[table.name] = count.count; } } catch (error) { console.error(`Stats error (shard ${i}):`, error); } stats.perShard.push(shardStats); } return stats; }
+    
+    getStats() {
+        const stats = { shardCount: this.shardCount, perShard: [] };
+        for (let i = 0; i < this.shards.length; i++) {
+            const conn = this.shards[i];
+            const shardStats = {};
+            try {
+                const tables = conn.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_shard%'`).all();
+                for (const table of tables) {
+                    const count = conn.prepare(`SELECT COUNT(*) as count FROM ${table.name}`).get();
+                    shardStats[table.name] = count.count;
+                }
+            } catch (error) {
+                console.error(`Stats error (shard ${i}):`, error);
+            }
+            stats.perShard.push(shardStats);
+        }
+        return stats;
+    }
+    
     close() { for (const conn of this.shards) conn.close(); }
 }
 

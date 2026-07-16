@@ -13,9 +13,6 @@ const path = require('path');
 const DatabaseManager = require('./database');
 const IntelligentAssistant = require('./assistant_logic');
 
-// ============================================
-// تنظیمات سرور
-// ============================================
 const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -27,9 +24,6 @@ const io = socketIO(server, {
 });
 const db = new DatabaseManager();
 
-// ============================================
-// امنیت و بهینه‌سازی
-// ============================================
 app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false
@@ -46,14 +40,8 @@ app.use('/api/', limiter);
 
 app.use(bodyParser.json({ limit: '3mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '3mb' }));
-app.use(express.static(__dirname, {
-    maxAge: '1d',
-    etag: true
-}));
+app.use(express.static(__dirname, { maxAge: '1d', etag: true }));
 
-// ============================================
-// آپلود فایل
-// ============================================
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -65,10 +53,7 @@ const upload = multer({
             cb(null, `${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`);
         }
     }),
-    limits: {
-        fileSize: parseInt(process.env.MAX_UPLOAD_MB || '300', 10) * 1024 * 1024,
-        files: 1
-    },
+    limits: { fileSize: parseInt(process.env.MAX_UPLOAD_MB || '300', 10) * 1024 * 1024, files: 1 },
     fileFilter: (req, file, cb) => {
         const allowed = /^(image\/(jpeg|png|gif|webp)|video\/(mp4|webm|quicktime|ogg))$/;
         if (allowed.test(file.mimetype)) return cb(null, true);
@@ -79,7 +64,7 @@ const upload = multer({
 const uploadLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 30,
-    message: { success: false, error: 'تعداد آپلودها بیش از حد مجاز است، کمی صبر کن' }
+    message: { success: false, error: 'تعداد آپلودها بیش از حد مجاز است' }
 });
 
 app.use('/uploads', express.static(uploadsDir, { maxAge: '7d', etag: true }));
@@ -94,34 +79,18 @@ app.post('/api/upload', uploadLimiter, (req, res) => {
         } else if (err) {
             return res.status(400).json({ success: false, error: err.message || 'خطا در آپلود فایل' });
         }
-
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'فایلی ارسال نشده' });
         }
-
         const mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
-        res.json({
-            success: true,
-            url: `/uploads/${req.file.filename}`,
-            mediaType,
-            size: req.file.size
-        });
+        res.json({ success: true, url: `/uploads/${req.file.filename}`, mediaType, size: req.file.size });
     });
 });
 
 app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        pid: process.pid,
-        uptime: process.uptime(),
-        memory: process.memoryUsage().rss,
-        shards: db.shardCount
-    });
+    res.json({ status: 'ok', pid: process.pid, uptime: process.uptime(), memory: process.memoryUsage().rss, shards: db.shardCount });
 });
 
-// ============================================
-// بررسی ادمین
-// ============================================
 function isAdmin(req, res, next) {
     const userId = req.headers.userid || req.body.userId;
     if (userId === 'admin_milad') {
@@ -131,7 +100,7 @@ function isAdmin(req, res, next) {
 }
 
 // ============================================
-// API ثبت‌نام
+// ثبت‌نام
 // ============================================
 app.post('/api/user/register', async (req, res) => {
     try {
@@ -142,7 +111,7 @@ app.post('/api/user/register', async (req, res) => {
         
         let id;
         const nameLower = name.trim().toLowerCase();
-        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin') {
+        if (nameLower === 'milad' || nameLower === 'مدیر سیستم' || nameLower === 'admin' || nameLower === 'milad13777') {
             id = 'admin_milad';
         } else {
             id = 'user_' + crypto.randomBytes(8).toString('hex');
@@ -191,6 +160,7 @@ app.get('/api/user/:id', async (req, res) => {
 app.post('/api/user/avatar', async (req, res) => {
     try {
         const { userId, avatar } = req.body;
+        if (!userId || !avatar) return res.status(400).json({ success: false, error: 'اطلاعات ناقص' });
         await db.query(userId, `UPDATE users SET avatar = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [avatar, userId]);
         res.json({ success: true });
     } catch (error) {
@@ -209,7 +179,7 @@ app.post('/api/user/bio', async (req, res) => {
 });
 
 // ============================================
-// پروفایل عمومی با کش
+// پروفایل با کش
 // ============================================
 const profileCache = new Map();
 const PROFILE_CACHE_TTL = 30000;
@@ -235,8 +205,10 @@ app.get('/api/profile/:userId', async (req, res) => {
         const channel = ch.rows[0];
 
         const posts = await db.query(userId, `
-            SELECT p.*, c.name as channel_name
-            FROM posts p JOIN channels c ON p.channel_id = c.id
+            SELECT p.*, c.name as channel_name, u.name as user_name
+            FROM posts p 
+            JOIN channels c ON p.channel_id = c.id
+            JOIN users u ON c.user_id = u.id
             WHERE c.user_id = $1 AND p.is_published = 1
             ORDER BY p.created_at DESC LIMIT 30
         `, [userId]);
@@ -251,7 +223,6 @@ app.get('/api/profile/:userId', async (req, res) => {
 
         const data = { user: u.rows[0], channel, posts: posts.rows, isFollowing };
         profileCache.set(cacheKey, { data, timestamp: Date.now() });
-        
         res.json(data);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -259,7 +230,7 @@ app.get('/api/profile/:userId', async (req, res) => {
 });
 
 // ============================================
-// فالو / آنفالو با تراکنش
+// فالو
 // ============================================
 app.post('/api/follow', async (req, res) => {
     try {
@@ -267,14 +238,12 @@ app.post('/api/follow', async (req, res) => {
         if (!followerId || !followingId) {
             return res.status(400).json({ success: false, error: 'اطلاعات ناقص است' });
         }
-
         const result = db.followUser(followerId, followingId);
         if (result.success && !result.alreadyFollowing) {
             const assistant = new IntelligentAssistant(followerId, db);
             await assistant.updateUserActivity('follow');
             profileCache.clear();
         }
-
         res.json(result);
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -293,7 +262,7 @@ app.post('/api/unfollow', async (req, res) => {
 });
 
 // ============================================
-// پست‌ها با پشتیبانی ویدیو
+// پست‌ها
 // ============================================
 app.post('/api/post/create', async (req, res) => {
     try {
@@ -308,7 +277,7 @@ app.post('/api/post/create', async (req, res) => {
             return res.status(403).json({ success: false, error: 'حساب شما مسدود شده است' });
         }
         if (u?.restricted) {
-            return res.status(403).json({ success: false, error: 'حساب شما محدود شده و امکان انتشار پست ندارید' });
+            return res.status(403).json({ success: false, error: 'حساب شما محدود شده است' });
         }
 
         const channel = await db.query(userId, `SELECT id FROM channels WHERE user_id = $1`, [userId]);
@@ -350,7 +319,7 @@ app.post('/api/post/:postId/view', async (req, res) => {
 });
 
 // ============================================
-// لایک و کامنت
+// لایک
 // ============================================
 app.post('/api/post/:postId/like', async (req, res) => {
     try {
@@ -359,6 +328,9 @@ app.post('/api/post/:postId/like', async (req, res) => {
         if (!userId) return res.status(400).json({ success: false, error: 'کاربر نامعتبر' });
 
         const result = db.toggleLike(postId, userId);
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
 
         if (result.liked) {
             const assistant = new IntelligentAssistant(userId, db);
@@ -373,6 +345,9 @@ app.post('/api/post/:postId/like', async (req, res) => {
     }
 });
 
+// ============================================
+// کامنت
+// ============================================
 app.post('/api/post/:postId/comment', async (req, res) => {
     try {
         const { postId } = req.params;
@@ -415,22 +390,19 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 });
 
 // ============================================
-// دستیار هوشمند
+// دستیار
 // ============================================
 app.post('/api/assistant/train', async (req, res) => {
     try {
         const { userId, question, answer } = req.body;
         const id = crypto.randomUUID();
-
         await db.query(userId, `
             INSERT INTO assistant_training (id, user_id, type, question, answer, created_at)
             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
         `, [id, userId, 'qa', question, answer]);
-
         const assistant = new IntelligentAssistant(userId, db);
         await assistant.updateUserActivity('train');
         const boost = await assistant.boostVisibility();
-
         res.json({ success: true, message: 'آموزش با موفقیت ثبت شد', boost });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -441,16 +413,13 @@ app.post('/api/assistant/keyword', async (req, res) => {
     try {
         const { userId, keyword, response } = req.body;
         const id = crypto.randomUUID();
-
         await db.query(userId, `
             INSERT INTO assistant_training (id, user_id, type, keyword, response, created_at)
             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
         `, [id, userId, 'keyword', keyword, response]);
-
         const assistant = new IntelligentAssistant(userId, db);
         await assistant.updateUserActivity('train');
         const boost = await assistant.boostVisibility();
-
         res.json({ success: true, message: 'کلمه کلیدی با موفقیت ثبت شد', boost });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -460,15 +429,12 @@ app.post('/api/assistant/keyword', async (req, res) => {
 app.post('/api/assistant/schedule', async (req, res) => {
     try {
         const { userId, posts } = req.body;
-        
         const channel = await db.query(userId, `SELECT id FROM channels WHERE user_id = $1`, [userId]);
         if (channel.rows.length === 0) {
             return res.status(404).json({ success: false, error: 'کانالی یافت نشد' });
         }
-
         const assistant = new IntelligentAssistant(userId, db);
         const scheduled = await assistant.schedulePosts(posts);
-
         res.json({ success: true, message: `${posts.length} پست با موفقیت زمان‌بندی شد`, posts: scheduled });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -478,27 +444,22 @@ app.post('/api/assistant/schedule', async (req, res) => {
 app.get('/api/assistant/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-
         const qa = await db.query(userId, `
             SELECT question, answer FROM assistant_training 
             WHERE user_id = $1 AND type = 'qa' ORDER BY created_at DESC
         `, [userId]);
-
         const keywords = await db.query(userId, `
             SELECT keyword, response FROM assistant_training 
             WHERE user_id = $1 AND type = 'keyword' ORDER BY created_at DESC
         `, [userId]);
-
         const posts = await db.query(userId, `
             SELECT p.*, c.name as channel_name 
             FROM posts p JOIN channels c ON p.channel_id = c.id
             WHERE c.user_id = $1 AND p.is_published = 0
             ORDER BY p.scheduled_time ASC
         `, [userId]);
-
         const assistant = new IntelligentAssistant(userId, db);
         const stats = await assistant.getStats();
-
         res.json({ qa: qa.rows, keywords: keywords.rows, posts: posts.rows, stats });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -509,10 +470,8 @@ app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
     try {
         const { targetUserId } = req.params;
         const { message } = req.body;
-
         const assistant = new IntelligentAssistant(targetUserId, db);
         const reply = await assistant.autoReply(message);
-
         res.json({ reply: reply || 'دستیار هنوز برای این موضوع آموزش ندیده 🤖' });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -520,7 +479,7 @@ app.post('/api/assistant/chat/:targetUserId', async (req, res) => {
 });
 
 // ============================================
-// کانال و اکسپلور با کش
+// اکسپلور
 // ============================================
 const exploreCache = new Map();
 const EXPLORE_CACHE_TTL = 15000;
@@ -589,8 +548,10 @@ app.get('/api/channel/:userId/posts', async (req, res) => {
     try {
         const { userId } = req.params;
         const result = await db.query(userId, `
-            SELECT p.*, c.name as channel_name
-            FROM posts p JOIN channels c ON p.channel_id = c.id
+            SELECT p.*, c.name as channel_name, u.name as user_name
+            FROM posts p 
+            JOIN channels c ON p.channel_id = c.id
+            JOIN users u ON c.user_id = u.id
             WHERE c.user_id = $1 AND p.is_published = 1
             ORDER BY p.created_at DESC LIMIT 50
         `, [userId]);
@@ -604,7 +565,6 @@ app.get('/api/search', async (req, res) => {
     try {
         const { q } = req.query;
         if (!q || q.length < 2) return res.json([]);
-        
         const result = await db.query(null, `
             SELECT id, name, avatar, 'user' as type FROM users 
             WHERE name LIKE $1 AND id != 'admin_milad'
@@ -620,13 +580,12 @@ app.get('/api/search', async (req, res) => {
 });
 
 // ============================================
-// چت خصوصی با تاریخچه کامل
+// چت
 // ============================================
 app.post('/api/chat/save', async (req, res) => {
     try {
         const { from, to, message } = req.body;
         const id = crypto.randomUUID();
-        
         await db.query(from, `
             INSERT INTO messages (id, from_user, to_user, message, created_at) 
             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
@@ -702,7 +661,7 @@ app.post('/api/chat/read', async (req, res) => {
 });
 
 // ============================================
-// استوری‌ها
+// استوری
 // ============================================
 app.post('/api/stories/add', async (req, res) => {
     try {
@@ -737,7 +696,7 @@ app.get('/api/stories/:userId', async (req, res) => {
 });
 
 // ============================================
-// پرداخت‌ها (ارتقاع)
+// پرداخت
 // ============================================
 app.post('/api/payment/submit', async (req, res) => {
     try {
@@ -748,14 +707,6 @@ app.post('/api/payment/submit', async (req, res) => {
             INSERT INTO payments (id, user_id, receipt_url, status, created_at)
             VALUES ($1, $2, $3, 'pending', CURRENT_TIMESTAMP)
         `, [id, userId, receiptUrl]);
-        
-        // اعلان به ادمین
-        const adminNotif = db.getDb('admin_milad');
-        adminNotif.prepare(`
-            INSERT INTO system_notifications (id, user_id, title, message, type, created_at)
-            VALUES (?, 'admin_milad', '💳 درخواست پرداخت جدید', ?, 'payment', CURRENT_TIMESTAMP)
-        `).run(crypto.randomUUID(), `کاربر ${userId} درخواست ارتقاع حساب داده است.`);
-        
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -779,20 +730,7 @@ app.get('/api/admin/payments', isAdmin, async (req, res) => {
 app.post('/api/admin/payment/approve', isAdmin, async (req, res) => {
     try {
         const { paymentId } = req.body;
-        await db.query(null, `
-            UPDATE payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = $1
-        `, [paymentId]);
-        
-        const payment = await db.query(null, `SELECT user_id FROM payments WHERE id = $1`, [paymentId]);
-        if (payment.rows.length) {
-            const userId = payment.rows[0].user_id;
-            const notifDb = db.getDb(userId);
-            notifDb.prepare(`
-                INSERT INTO system_notifications (id, user_id, title, message, type, created_at)
-                VALUES (?, ?, '✅ ارتقاع حساب تایید شد', 'حساب شما با موفقیت ارتقاع یافت. ممنون از همراهی شما!', 'payment', CURRENT_TIMESTAMP)
-            `).run(crypto.randomUUID(), userId);
-            io.to(`user_${userId}`).emit('broadcast', { title: '✅ ارتقاع حساب', message: 'حساب شما با موفقیت ارتقاع یافت!' });
-        }
+        await db.query(null, `UPDATE payments SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [paymentId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -802,20 +740,7 @@ app.post('/api/admin/payment/approve', isAdmin, async (req, res) => {
 app.post('/api/admin/payment/reject', isAdmin, async (req, res) => {
     try {
         const { paymentId } = req.body;
-        await db.query(null, `
-            UPDATE payments SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = $1
-        `, [paymentId]);
-        
-        const payment = await db.query(null, `SELECT user_id FROM payments WHERE id = $1`, [paymentId]);
-        if (payment.rows.length) {
-            const userId = payment.rows[0].user_id;
-            const notifDb = db.getDb(userId);
-            notifDb.prepare(`
-                INSERT INTO system_notifications (id, user_id, title, message, type, created_at)
-                VALUES (?, ?, '❌ درخواست ارتقاع رد شد', 'متأسفانه درخواست ارتقاع حساب شما رد شد. لطفاً با پشتیبانی تماس بگیرید.', 'payment', CURRENT_TIMESTAMP)
-            `).run(crypto.randomUUID(), userId);
-            io.to(`user_${userId}`).emit('broadcast', { title: '❌ درخواست ارتقاع', message: 'درخواست ارتقاع حساب شما رد شد.' });
-        }
+        await db.query(null, `UPDATE payments SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [paymentId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -823,7 +748,7 @@ app.post('/api/admin/payment/reject', isAdmin, async (req, res) => {
 });
 
 // ============================================
-// پنل مدیریت کامل
+// پنل مدیریت
 // ============================================
 app.get('/api/admin/users', isAdmin, async (req, res) => {
     try {
@@ -843,7 +768,6 @@ app.post('/api/admin/user/:action', isAdmin, async (req, res) => {
     try {
         const { action } = req.params;
         const { userId } = req.body;
-        
         const actions = {
             verify: `UPDATE users SET is_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
             unverify: `UPDATE users SET is_verified = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
@@ -852,7 +776,6 @@ app.post('/api/admin/user/:action', isAdmin, async (req, res) => {
             restrict: `UPDATE users SET restricted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
             unrestrict: `UPDATE users SET restricted = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1`
         };
-        
         if (!actions[action]) return res.status(400).json({ error: 'عملیات نامعتبر' });
         await db.query(null, actions[action], [userId]);
         res.json({ success: true });
@@ -908,12 +831,10 @@ app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
         if (!message || !message.trim()) {
             return res.status(400).json({ error: 'متن پیام الزامی است' });
         }
-
         let totalSent = 0;
         for (const conn of db.getAllShards()) {
             const users = conn.prepare(`SELECT id FROM users`).all();
             if (!users.length) continue;
-
             const insert = conn.prepare(`
                 INSERT INTO system_notifications (id, user_id, title, message, type, created_at) 
                 VALUES (?, ?, ?, ?, 'broadcast', CURRENT_TIMESTAMP)
@@ -924,13 +845,11 @@ app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
                 }
             });
             transaction();
-
             for (const user of users) {
                 io.to(`user_${user.id}`).emit('broadcast', { title: title || 'اعلان سیستمی', message });
             }
             totalSent += users.length;
         }
-
         res.json({ success: true, message: `پیام به ${totalSent} کاربر ارسال شد` });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -977,13 +896,11 @@ app.post('/api/report', async (req, res) => {
         if (!['user', 'post', 'comment'].includes(targetType)) {
             return res.status(400).json({ success: false, error: 'نوع گزارش نامعتبر است' });
         }
-
         const id = crypto.randomUUID();
         await db.query(null, `
             INSERT INTO reports (id, reporter_id, target_id, target_type, reason, status, created_at)
             VALUES ($1, $2, $3, $4, $5, 'pending', CURRENT_TIMESTAMP)
         `, [id, reporterId, targetId, targetType, reason.trim().substring(0, 500)]);
-
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -1010,9 +927,7 @@ app.post('/api/admin/report/:action', isAdmin, async (req, res) => {
             return res.status(400).json({ error: 'عملیات نامعتبر' });
         }
         const status = action === 'resolve' ? 'resolved' : 'dismissed';
-        await db.query(null, `
-            UPDATE reports SET status = $1, resolved_at = CURRENT_TIMESTAMP WHERE id = $2
-        `, [status, reportId]);
+        await db.query(null, `UPDATE reports SET status = $1, resolved_at = CURRENT_TIMESTAMP WHERE id = $2`, [status, reportId]);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -1020,7 +935,7 @@ app.post('/api/admin/report/:action', isAdmin, async (req, res) => {
 });
 
 // ============================================
-// مسدود کردن کاربر در چت خصوصی
+// مسدود کردن
 // ============================================
 app.post('/api/user/block', async (req, res) => {
     try {
@@ -1051,7 +966,7 @@ app.get('/api/user/:userId/is-blocked/:targetId', async (req, res) => {
 });
 
 // ============================================
-// تبلیغات داخل کانال‌ها
+// تبلیغات
 // ============================================
 app.get('/api/ads/active', async (req, res) => {
     try {
@@ -1075,13 +990,11 @@ app.post('/api/admin/ads/create', isAdmin, async (req, res) => {
     try {
         const { title, content, mediaUrl, mediaType, linkUrl } = req.body;
         if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'عنوان تبلیغ الزامی است' });
-
         const id = crypto.randomUUID();
         await db.query(null, `
             INSERT INTO ads (id, title, content, media_url, media_type, link_url, is_active, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP)
         `, [id, title.trim(), content || '', mediaUrl || null, mediaType || 'none', linkUrl || null]);
-
         res.json({ success: true, adId: id });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -1109,7 +1022,7 @@ app.post('/api/admin/ads/delete', isAdmin, async (req, res) => {
 });
 
 // ============================================
-// ۴۰۴ و مدیریت خطای سراسری
+// 404
 // ============================================
 app.use('/api/', (req, res) => {
     res.status(404).json({ success: false, error: 'مسیر یافت نشد' });
@@ -1137,7 +1050,6 @@ io.on('connection', (socket) => {
 
     socket.on('private_message', async (data) => {
         const { from, to, message, timestamp } = data || {};
-
         if (!from || !to || typeof message !== 'string' || !message.trim()) {
             return io.to(`user_${from}`).emit('message_sent', { success: false, error: 'پیام نامعتبر است', timestamp });
         }
@@ -1183,7 +1095,7 @@ io.on('connection', (socket) => {
 });
 
 // ============================================
-// راه‌اندازی سرور
+// راه‌اندازی
 // ============================================
 const PORT = process.env.PORT || 3000;
 
@@ -1227,12 +1139,11 @@ async function startServer() {
     try {
         await db.initTables();
         console.log('✅ Database ready');
-        console.log('✅ Tables created/verified');
 
         server.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT} (pid ${process.pid})`);
             console.log(`📍 http://localhost:${PORT}`);
-            console.log(`📊 Mode: ${process.env.NODE_ENV || 'development'} | Shards: ${db.shardCount}`);
+            console.log(`📊 Shards: ${db.shardCount}`);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

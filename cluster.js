@@ -1,7 +1,5 @@
-// cluster.js - نسخه نهایی با ۵۰ کارگر
 const cluster = require('cluster');
 const os = require('os');
-const path = require('path');
 
 const numCPUs = os.cpus().length;
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -10,9 +8,6 @@ if (cluster.isMaster) {
     console.log(`🚀 Master process ${process.pid} is running`);
     console.log(`📊 Available CPUs: ${numCPUs}`);
 
-    // ============================================
-    // ۵۰ کارگر برای پشتیبانی از بار سنگین
-    // ============================================
     const workerCount = isDevelopment ? 1 : Math.min(numCPUs * 2, 50);
     console.log(`👷 Starting ${workerCount} worker(s)`);
 

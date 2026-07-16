@@ -1,5 +1,9 @@
-// script.js - نسخه نهایی با تمام قابلیت‌ها
-const socket = io({ transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 20, reconnectionDelay: 1000 });
+const socket = io({
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 20,
+    reconnectionDelay: 1000
+});
 
 let currentUser = null;
 let currentChatUser = null;
@@ -9,7 +13,7 @@ let pendingMediaUrl = null;
 let pendingMediaType = null;
 let mediaUploadXhr = null;
 let isAdmin = false;
-let chatMode = 'assistant'; // 'user' | 'assistant'
+let chatMode = 'assistant';
 let explorePostIndex = {};
 let pfCurrentPostId = null;
 let allStories = [];
@@ -18,6 +22,9 @@ let exploreLoading = false;
 let exploreHasMore = true;
 let exploreItems = [];
 
+// ============================================
+// تم
+// ============================================
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     const icon = document.getElementById('themeIcon');
@@ -36,9 +43,19 @@ function toggleTheme() {
     applyTheme(saved);
 })();
 
-function defaultAvatar(seed) { return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed || 'user')}`; }
+// ============================================
+// توابع کمکی
+// ============================================
+function defaultAvatar(seed) {
+    return `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(seed || 'user')}`;
+}
 
-function escapeHtml(str) { if (!str) return ''; const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+function escapeHtml(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
 
 function timeAgo(dateStr) {
     if (!dateStr) return '';
@@ -55,12 +72,18 @@ function showNotification(text, type = 'info') {
     n.className = 'notification';
     n.innerHTML = text;
     document.body.appendChild(n);
-    setTimeout(() => { n.style.opacity = '0'; n.style.transform = 'translate(-50%, -20px)'; setTimeout(() => n.remove(), 300); }, 3000);
+    setTimeout(() => {
+        n.style.opacity = '0';
+        n.style.transform = 'translate(-50%, -20px)';
+        setTimeout(() => n.remove(), 300);
+    }, 3000);
 }
 
-function closeModal() { const m = document.querySelector('.modal'); if (m) m.remove(); }
-
-function formatNumber(num) { if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'; if (num >= 1000) return (num / 1000).toFixed(1) + 'K'; return num; }
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num || 0;
+}
 
 // ============================================
 // ورود / ثبت‌نام
@@ -72,7 +95,10 @@ async function initApp() {
             const res = await fetch(`/api/user/${savedId}`);
             if (res.ok) {
                 currentUser = await res.json();
-                if (currentUser.id === 'admin_milad') { isAdmin = true; document.getElementById('adminBtn').classList.add('show'); }
+                if (currentUser.id === 'admin_milad') {
+                    isAdmin = true;
+                    document.getElementById('adminBtn').classList.add('show');
+                }
                 afterLogin();
                 return;
             }
@@ -88,7 +114,7 @@ function showRegisterModal() {
     modal.innerHTML = `
         <div class="modal-content">
             <h2>👋 خوش اومدی!</h2>
-            <p style="color:var(--text-2);font-size:13px;margin-bottom:12px;">ثبت‌نام در یارِ من</p>
+            <p style="color:var(--text-2);font-size:12px;margin-bottom:10px;">ثبت‌نام در یارِ من</p>
             <div class="avatar-upload">
                 <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
                 <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
@@ -96,12 +122,13 @@ function showRegisterModal() {
             <input type="text" id="regNameInput" class="name-input" placeholder="نام کاربری" maxlength="30">
             <input type="text" id="regEmailInput" class="name-input" placeholder="ایمیل (اختیاری)">
             <input type="password" id="regPasswordInput" class="name-input" placeholder="رمز عبور (حداقل ۶ کاراکتر)">
-            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+            <button class="btn-primary" style="width:100%;padding:10px;font-size:13px;" onclick="registerUser()">
                 <i class="fas fa-rocket"></i> ثبت‌نام
             </button>
-            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">با ثبت‌نام، قوانین و حریم خصوصی را می‌پذیرید</p>
+            <p style="font-size:9px;color:var(--text-3);margin-top:6px;">با ثبت‌نام، قوانین را می‌پذیرید</p>
         </div>`;
     document.body.appendChild(modal);
+
     document.getElementById('regAvatarInput').addEventListener('change', function(e) {
         const reader = new FileReader();
         reader.onload = (e) => { document.getElementById('regAvatarPreview').src = e.target.result; };
@@ -118,7 +145,8 @@ async function registerUser() {
     const avatar = document.getElementById('regAvatarPreview').src;
     try {
         const res = await fetch('/api/user/register', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, avatar, email, password })
         });
         const data = await res.json();
@@ -126,7 +154,10 @@ async function registerUser() {
             currentUser = data.user;
             localStorage.setItem('yareman_user_id', currentUser.id);
             document.getElementById('registerModal').remove();
-            if (currentUser.id === 'admin_milad') { isAdmin = true; document.getElementById('adminBtn').classList.add('show'); }
+            if (currentUser.id === 'admin_milad') {
+                isAdmin = true;
+                document.getElementById('adminBtn').classList.add('show');
+            }
             afterLogin();
             showNotification('✨ خوش آمدی ' + currentUser.name);
         } else {
@@ -143,7 +174,10 @@ function afterLogin() {
     setupNav();
     loadPageData('channel');
     loadStories();
-    socket.on('broadcast', (data) => { showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`); });
+
+    socket.on('broadcast', (data) => {
+        showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
+    });
 }
 
 function setupNav() {
@@ -170,7 +204,7 @@ async function loadPageData(page) {
 }
 
 // ============================================
-// استوری‌ها
+// استوری
 // ============================================
 async function loadStories() {
     try {
@@ -186,14 +220,17 @@ function renderStories() {
     if (!row) return;
     let html = `
         <div class="story-ring" onclick="addStory()">
-            <div class="ring add"><img src="${currentUser.avatar || defaultAvatar(currentUser.name)}"><i class="fas fa-plus" style="position:absolute;bottom:4px;right:4px;background:var(--primary);border-radius:50%;padding:2px;font-size:10px;"></i></div>
-            <span>استوری جدید</span>
+            <div class="ring add">
+                <img src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
+                <i class="fas fa-plus"></i>
+            </div>
+            <span>استوری</span>
         </div>`;
     allStories.forEach(s => {
         html += `
             <div class="story-ring" onclick="viewStory('${s.id}')">
                 <div class="ring"><img src="${s.user_avatar || defaultAvatar(s.user_name)}"></div>
-                <span>${escapeHtml(s.user_name)}</span>
+                <span>${escapeHtml(s.user_name || '')}</span>
             </div>`;
     });
     row.innerHTML = html;
@@ -213,7 +250,8 @@ async function addStory() {
             const data = await res.json();
             if (data.success) {
                 await fetch('/api/stories/add', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: currentUser.id, mediaUrl: data.url, mediaType: data.mediaType })
                 });
                 showNotification('✅ استوری اضافه شد');
@@ -231,7 +269,7 @@ function viewStory(storyId) {
     const content = document.getElementById('storyContent');
     const userEl = document.getElementById('storyUser');
     viewer.classList.add('open');
-    userEl.textContent = story.user_name;
+    userEl.textContent = story.user_name || '';
     if (story.media_type === 'video') {
         content.innerHTML = `<video src="${story.media_url}" controls autoplay class="story-content"></video>`;
     } else {
@@ -247,13 +285,20 @@ function closeStory() {
 // ============================================
 // پست‌ها
 // ============================================
-document.getElementById('postImageInput').addEventListener('change', function(e) { handleMediaFile(e.target.files[0], 'image'); });
-document.getElementById('postVideoInput').addEventListener('change', function(e) { handleMediaFile(e.target.files[0], 'video'); });
+document.getElementById('postImageInput').addEventListener('change', function(e) {
+    handleMediaFile(e.target.files[0], 'image');
+});
+document.getElementById('postVideoInput').addEventListener('change', function(e) {
+    handleMediaFile(e.target.files[0], 'video');
+});
 
 function handleMediaFile(file, type) {
     if (!file) return;
     const maxMb = type === 'video' ? 300 : 20;
-    if (file.size > maxMb * 1024 * 1024) { showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`); return; }
+    if (file.size > maxMb * 1024 * 1024) {
+        showNotification(`حجم فایل نباید بیشتر از ${maxMb} مگابایت باشه`);
+        return;
+    }
     uploadMediaFile(file, type);
 }
 
@@ -262,15 +307,18 @@ function uploadMediaFile(file, type) {
     const content = document.getElementById('mediaPreviewContent');
     if (!container || !content) return;
     container.style.display = 'block';
-    pendingMediaUrl = null; pendingMediaType = null;
+    pendingMediaUrl = null;
+    pendingMediaType = null;
     content.innerHTML = `
         <div class="media-upload-progress">
             <i class="fas fa-spinner fa-spin"></i>
             <div class="progress-bar-track"><div class="progress-bar-fill" id="mediaProgressFill" style="width:0%"></div></div>
             <span id="mediaProgressText">در حال آپلود... ۰٪</span>
         </div>`;
-    const formData = new FormData(); formData.append('file', file);
-    const xhr = new XMLHttpRequest(); mediaUploadXhr = xhr;
+    const formData = new FormData();
+    formData.append('file', file);
+    const xhr = new XMLHttpRequest();
+    mediaUploadXhr = xhr;
     xhr.open('POST', '/api/upload');
     xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
@@ -285,11 +333,19 @@ function uploadMediaFile(file, type) {
         let data = null;
         try { data = JSON.parse(xhr.responseText); } catch (e) {}
         if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
-            pendingMediaUrl = data.url; pendingMediaType = data.mediaType;
+            pendingMediaUrl = data.url;
+            pendingMediaType = data.mediaType;
             showMediaPreview(data.url, data.mediaType);
-        } else { showNotification('❌ ' + (data?.error || 'آپلود ناموفق بود')); removeMedia(); }
+        } else {
+            showNotification('❌ ' + (data?.error || 'آپلود ناموفق بود'));
+            removeMedia();
+        }
     };
-    xhr.onerror = () => { mediaUploadXhr = null; showNotification('❌ خطا در ارتباط با سرور'); removeMedia(); };
+    xhr.onerror = () => {
+        mediaUploadXhr = null;
+        showNotification('❌ خطا در ارتباط با سرور');
+        removeMedia();
+    };
     xhr.send(formData);
 }
 
@@ -298,13 +354,17 @@ function showMediaPreview(url, type) {
     const content = document.getElementById('mediaPreviewContent');
     if (!container || !content) return;
     container.style.display = 'block';
-    if (type === 'video') { content.innerHTML = `<video src="${url}" controls></video>`; }
-    else { content.innerHTML = `<img src="${url}">`; }
+    if (type === 'video') {
+        content.innerHTML = `<video src="${url}" controls></video>`;
+    } else {
+        content.innerHTML = `<img src="${url}">`;
+    }
 }
 
 function removeMedia() {
     if (mediaUploadXhr) { mediaUploadXhr.abort(); mediaUploadXhr = null; }
-    pendingMediaUrl = null; pendingMediaType = null;
+    pendingMediaUrl = null;
+    pendingMediaType = null;
     const container = document.getElementById('mediaPreview');
     const content = document.getElementById('mediaPreviewContent');
     if (container) container.style.display = 'none';
@@ -319,8 +379,14 @@ async function createPost() {
     if (mediaUploadXhr) { showNotification('⏳ صبر کن آپلود مدیا تموم بشه'); return; }
     try {
         const res = await fetch('/api/post/create', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, content, mediaUrl: pendingMediaUrl, mediaType: pendingMediaType || 'none' })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: currentUser.id,
+                content,
+                mediaUrl: pendingMediaUrl,
+                mediaType: pendingMediaType || 'none'
+            })
         });
         const data = await res.json();
         if (data.success) {
@@ -328,7 +394,9 @@ async function createPost() {
             removeMedia();
             showNotification('✅ پست منتشر شد');
             await loadChannelPosts();
-        } else { showNotification('خطا: ' + data.error); }
+        } else {
+            showNotification('خطا: ' + data.error);
+        }
     } catch (e) { showNotification('خطا در ارتباط با سرور'); }
 }
 
@@ -375,7 +443,7 @@ function renderPostCard(post, author) {
                 <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
             </button>
             <button disabled><i class="far fa-eye"></i> ${formatNumber(post.views || 0)}</button>
-            <button onclick="showPaymentInfo()" style="font-size:11px;color:var(--text-3);"><i class="fas fa-arrow-up"></i></button>
+            <button onclick="showPaymentInfo()" style="font-size:10px;color:var(--text-3);"><i class="fas fa-arrow-up"></i></button>
         </div>
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
@@ -384,7 +452,8 @@ function renderPostCard(post, author) {
 async function toggleLike(postId, btn) {
     try {
         const res = await fetch(`/api/post/${postId}/like`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id })
         });
         const data = await res.json();
@@ -426,7 +495,8 @@ async function submitComment(postId) {
     if (!text) return;
     try {
         const res = await fetch(`/api/post/${postId}/comment`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, text })
         });
         const data = await res.json();
@@ -438,6 +508,8 @@ async function submitComment(postId) {
             item.className = 'comment-item';
             item.innerHTML = `<img src="${data.comment.avatar || defaultAvatar(data.comment.name)}" loading="lazy"><div><b>${escapeHtml(data.comment.name)}</b><span class="comment-text">${escapeHtml(data.comment.text)}</span></div>`;
             box.insertBefore(item, form);
+            const countEl = box.parentElement.querySelector('.comment-count');
+            if (countEl) countEl.textContent = formatNumber(parseInt(countEl.textContent.replace(/,/g, '')) + 1);
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -468,11 +540,17 @@ async function trainAssistant() {
     if (!question || !answer) { showNotification('سوال و جواب رو کامل کن!'); return; }
     try {
         const res = await fetch('/api/assistant/train', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, question, answer })
         });
         const data = await res.json();
-        if (data.success) { showNotification('✅ دستیار یاد گرفت'); document.getElementById('questionInput').value = ''; document.getElementById('answerInput').value = ''; await loadAssistantData(); }
+        if (data.success) {
+            showNotification('✅ دستیار یاد گرفت');
+            document.getElementById('questionInput').value = '';
+            document.getElementById('answerInput').value = '';
+            await loadAssistantData();
+        }
     } catch (e) { showNotification('خطا'); }
 }
 
@@ -482,16 +560,22 @@ async function trainKeyword() {
     if (!keyword || !response) { showNotification('کلمه کلیدی و پاسخ رو کامل کن!'); return; }
     try {
         const res = await fetch('/api/assistant/keyword', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, keyword, response })
         });
         const data = await res.json();
-        if (data.success) { showNotification('✅ کلمه کلیدی ثبت شد'); document.getElementById('keywordInput').value = ''; document.getElementById('keywordResponseInput').value = ''; await loadAssistantData(); }
+        if (data.success) {
+            showNotification('✅ کلمه کلیدی ثبت شد');
+            document.getElementById('keywordInput').value = '';
+            document.getElementById('keywordResponseInput').value = '';
+            await loadAssistantData();
+        }
     } catch (e) { showNotification('خطا'); }
 }
 
 // ============================================
-// اکسپلور - اسکرول بی‌نهایت
+// اکسپلور
 // ============================================
 async function loadExplore(reset = true) {
     if (reset) { explorePage = 1; exploreItems = []; exploreHasMore = true; }
@@ -537,7 +621,7 @@ function renderExploreItems() {
     container.innerHTML = html;
 }
 
-// اسکرول بی‌نهایت برای اکسپلور
+// اسکرول بی‌نهایت
 document.getElementById('explorePage').addEventListener('scroll', function() {
     if (this.scrollTop + this.clientHeight >= this.scrollHeight - 200) {
         loadExplore(false);
@@ -563,16 +647,14 @@ function openPostFullscreen(postId) {
         post.media_type === 'video' ? `<video src="${post.media_url}" controls autoplay preload="metadata"></video>` : `<img src="${post.media_url}">`
     ) : '';
 
-    const likeBtn = document.getElementById('pfLikeBtn');
-    likeBtn.classList.remove('liked');
-    likeBtn.querySelector('i').className = 'far fa-heart';
+    document.getElementById('pfLikeBtn').classList.remove('liked');
+    document.getElementById('pfLikeBtn').querySelector('i').className = 'far fa-heart';
     document.getElementById('pfLikeCount').textContent = formatNumber(post.likes || 0);
     document.getElementById('pfCommentCount').textContent = formatNumber(post.comments || 0);
 
-    const commentsBox = document.getElementById('pfCommentsBox');
-    commentsBox.innerHTML = '';
-    commentsBox.classList.remove('open');
-    delete commentsBox.dataset.loaded;
+    document.getElementById('pfCommentsBox').innerHTML = '';
+    document.getElementById('pfCommentsBox').classList.remove('open');
+    delete document.getElementById('pfCommentsBox').dataset.loaded;
 
     document.getElementById('postFullOverlay').classList.add('open');
 }
@@ -596,7 +678,8 @@ async function pfToggleLike() {
     const countEl = document.getElementById('pfLikeCount');
     try {
         const res = await fetch(`/api/post/${pfCurrentPostId}/like`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id })
         });
         const data = await res.json();
@@ -604,8 +687,6 @@ async function pfToggleLike() {
             btn.classList.toggle('liked', data.liked);
             btn.querySelector('i').className = data.liked ? 'fas fa-heart' : 'far fa-heart';
             countEl.textContent = formatNumber(data.likes);
-            const entry = explorePostIndex[pfCurrentPostId];
-            if (entry) entry.post.likes = data.likes;
         }
     } catch (e) { showNotification('خطا'); }
 }
@@ -640,7 +721,8 @@ async function pfSubmitComment() {
     if (!text) return;
     try {
         const res = await fetch(`/api/post/${pfCurrentPostId}/comment`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, text })
         });
         const data = await res.json();
@@ -663,8 +745,12 @@ async function pfShare() {
     const shareUrl = `${location.origin}${location.pathname}?post=${pfCurrentPostId}`;
     const shareText = entry ? `${entry.user.name}: ${(entry.post.content || '').substring(0, 100)}` : 'یه پست جالب';
     try {
-        if (navigator.share) { await navigator.share({ title: 'یارِ من', text: shareText, url: shareUrl }); }
-        else { await navigator.clipboard.writeText(shareUrl); showNotification('🔗 لینک پست کپی شد'); }
+        if (navigator.share) {
+            await navigator.share({ title: 'یارِ من', text: shareText, url: shareUrl });
+        } else {
+            await navigator.clipboard.writeText(shareUrl);
+            showNotification('🔗 لینک پست کپی شد');
+        }
     } catch (e) {}
 }
 
@@ -678,7 +764,7 @@ function pfMessage() {
 }
 
 // ============================================
-// ارتقاع کاربر
+// ارتقاع
 // ============================================
 function showPaymentInfo() {
     document.getElementById('paymentModal').style.display = 'flex';
@@ -694,13 +780,14 @@ async function submitPayment() {
         const data = await res.json();
         if (data.success) {
             await fetch('/api/payment/submit', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId: currentUser.id, receiptUrl: data.url })
             });
             showNotification('✅ فیش شما ارسال شد، در کمتر از ۲۴ ساعت تایید می‌شود');
             document.getElementById('paymentModal').style.display = 'none';
             document.getElementById('paymentReceipt').value = '';
-        } else { showNotification('خطا در آپلود فیش'); }
+        }
     } catch (e) { showNotification('خطا در ارتباط با سرور'); }
 }
 
@@ -731,14 +818,17 @@ async function openProfile(userId) {
     } catch (e) { showNotification('خطا در بارگذاری پروفایل'); }
 }
 
-function backFromProfile() { document.querySelector('[data-page="explore"]').click(); }
+function backFromProfile() {
+    document.querySelector('[data-page="explore"]').click();
+}
 
 async function toggleFollowView() {
     if (!viewingProfileId) return;
     const endpoint = viewingProfileFollowing ? '/api/unfollow' : '/api/follow';
     try {
         const res = await fetch(endpoint, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ followerId: currentUser.id, followingId: viewingProfileId })
         });
         const data = await res.json();
@@ -759,14 +849,14 @@ function openChatFromProfile() {
 }
 
 // ============================================
-// چت خصوصی با کلید انتخاب دستیار/کاربر
+// چت
 // ============================================
 function setChatMode(mode) {
     chatMode = mode;
-    document.getElementById('chatModeUser').style.background = mode === 'user' ? 'var(--primary)' : 'transparent';
-    document.getElementById('chatModeUser').style.color = mode === 'user' ? '#fff' : 'var(--text-2)';
-    document.getElementById('chatModeAssistant').style.background = mode === 'assistant' ? 'var(--primary)' : 'transparent';
-    document.getElementById('chatModeAssistant').style.color = mode === 'assistant' ? '#fff' : 'var(--text-2)';
+    const userBtn = document.getElementById('chatModeUser');
+    const assistantBtn = document.getElementById('chatModeAssistant');
+    if (userBtn) userBtn.className = mode === 'user' ? 'active' : '';
+    if (assistantBtn) assistantBtn.className = mode === 'assistant' ? 'active' : '';
 }
 
 async function loadChatList() {
@@ -788,7 +878,10 @@ async function loadChatList() {
         `).join('');
         const totalUnread = chats.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
         const badge = document.getElementById('chatBadge');
-        if (badge) { badge.style.display = totalUnread > 0 ? 'block' : 'none'; badge.textContent = totalUnread > 99 ? '99+' : totalUnread; }
+        if (badge) {
+            badge.style.display = totalUnread > 0 ? 'block' : 'none';
+            badge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+        }
     } catch (e) { console.error(e); }
 }
 
@@ -836,10 +929,10 @@ async function sendMessage() {
     if (!message || !currentChatUser) return;
 
     if (chatMode === 'assistant') {
-        // ارسال به دستیار کاربر مقابل
         try {
             const res = await fetch(`/api/assistant/chat/${currentChatUser.id}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message })
             });
             const data = await res.json();
@@ -850,8 +943,12 @@ async function sendMessage() {
         return;
     }
 
-    // حالت کاربر - ارسال پیام معمولی
-    socket.emit('private_message', { from: currentUser.id, to: currentChatUser.id, message, timestamp: Date.now() });
+    socket.emit('private_message', {
+        from: currentUser.id,
+        to: currentChatUser.id,
+        message,
+        timestamp: Date.now()
+    });
     displayMessage(message, 'sent');
     input.value = '';
 }
@@ -893,18 +990,17 @@ function showSearchResults(results) {
     if (!container) {
         container = document.createElement('div');
         container.id = 'searchResults';
-        container.style.cssText = `position:absolute;top:100%;left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:4px;max-height:300px;overflow-y:auto;z-index:50;display:none;`;
+        container.style.cssText = `position:absolute;top:100%;left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:4px;max-height:250px;overflow-y:auto;z-index:50;display:none;`;
         document.querySelector('.search-box').appendChild(container);
     }
     if (!results.length) { container.style.display = 'none'; return; }
     container.style.display = 'block';
     container.innerHTML = results.map(r => `
-        <div style="padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:var(--transition);"
-             onclick="openProfile('${r.id}')" 
-             onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background=''">
+        <div style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);"
+             onclick="openProfile('${r.id}')">
             <i class="fas fa-${r.type === 'user' ? 'user' : 'bullhorn'}"></i>
             <span>${escapeHtml(r.name)}</span>
-            <span style="font-size:10px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
+            <span style="font-size:9px;color:var(--text-3);">${r.type === 'user' ? 'کاربر' : 'کانال'}</span>
         </div>
     `).join('');
 }
@@ -937,7 +1033,7 @@ async function loadAdminData(type) {
             const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
             const stats = await res.json();
             document.getElementById('adminStatsContent').innerHTML = `
-                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:6px;">
                     <div class="stat-chip"><b>${formatNumber(stats.users)}</b><span>کاربران</span></div>
                     <div class="stat-chip"><b>${formatNumber(stats.posts)}</b><span>پست‌ها</span></div>
                     <div class="stat-chip"><b>${formatNumber(stats.channels)}</b><span>کانال‌ها</span></div>
@@ -953,13 +1049,12 @@ async function loadAdminData(type) {
             document.getElementById('adminUsersList').innerHTML = users.map(u => `
                 <div class="admin-user-item">
                     <span class="name">${escapeHtml(u.name)}${u.is_verified ? ' ✔️' : ''}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${u.role === 'banned' ? '⛔ مسدود' : (u.restricted ? '🔒 محدود' : (u.role || 'user'))}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${formatNumber(u.followers_count || 0)} فالوور</span>
+                    <span style="font-size:9px;color:var(--text-3);">${u.role === 'banned' ? '⛔ مسدود' : (u.restricted ? '🔒 محدود' : (u.role || 'user'))}</span>
                     <div class="actions">
                         ${u.role !== 'admin' ? `
-                            ${u.is_verified ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unverify')">✗ حذف تیک</button>` : `<button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓ تیک آبی</button>`}
-                            ${u.restricted ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unrestrict')">🔓 رفع محدودیت</button>` : `<button class="btn-secondary" onclick="adminAction('user','${u.id}','restrict')">🔒 محدود کردن</button>`}
-                            ${u.role === 'banned' ? `<button class="btn-success" onclick="adminAction('user','${u.id}','unban')">✅ رفع مسدودی</button>` : `<button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔ مسدود کردن</button>`}
+                            ${u.is_verified ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unverify')">✗</button>` : `<button class="btn-success" onclick="adminAction('user','${u.id}','verify')">✓</button>`}
+                            ${u.restricted ? `<button class="btn-secondary" onclick="adminAction('user','${u.id}','unrestrict')">🔓</button>` : `<button class="btn-secondary" onclick="adminAction('user','${u.id}','restrict')">🔒</button>`}
+                            ${u.role === 'banned' ? `<button class="btn-success" onclick="adminAction('user','${u.id}','unban')">✅</button>` : `<button class="btn-danger" onclick="adminAction('user','${u.id}','ban')">⛔</button>`}
                         ` : ''}
                     </div>
                 </div>
@@ -969,9 +1064,8 @@ async function loadAdminData(type) {
             const posts = await res.json();
             document.getElementById('adminPostsList').innerHTML = posts.map(p => `
                 <div class="admin-post-item">
-                    <span>${escapeHtml((p.content || '').substring(0, 40))}...</span>
-                    <span style="font-size:10px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                    <span>${escapeHtml((p.content || '').substring(0, 30))}...</span>
+                    <span style="font-size:9px;color:var(--text-3);">${escapeHtml(p.user_name)}</span>
                     <button class="btn-danger" onclick="adminAction('post','${p.id}','delete')">🗑️</button>
                 </div>
             `).join('');
@@ -981,53 +1075,52 @@ async function loadAdminData(type) {
             document.getElementById('adminChannelsList').innerHTML = channels.map(c => `
                 <div class="admin-user-item">
                     <span>${escapeHtml(c.name)}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
-                    <span style="font-size:10px;color:var(--text-3);">${c.boost_level}</span>
+                    <span style="font-size:9px;color:var(--text-3);">${formatNumber(c.followers_count)} فالوور</span>
+                    <span style="font-size:9px;color:var(--text-3);">${c.boost_level}</span>
                 </div>
             `).join('');
         } else if (type === 'reports') {
             const res = await fetch('/api/admin/reports?status=pending', { headers: { 'userId': 'admin_milad' } });
             const reports = await res.json();
-            const labels = { user: '👤 کاربر', post: '📝 پست', comment: '💬 کامنت' };
+            const labels = { user: '👤', post: '📝', comment: '💬' };
             document.getElementById('adminReportsList').innerHTML = reports.length ? reports.map(r => `
                 <div class="admin-post-item">
-                    <span>${labels[r.target_type] || r.target_type} — ${escapeHtml(r.reason)}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${timeAgo(r.created_at)}</span>
+                    <span>${labels[r.target_type] || ''} ${escapeHtml((r.reason || '').substring(0, 20))}</span>
+                    <span style="font-size:9px;color:var(--text-3);">${timeAgo(r.created_at)}</span>
                     <div class="actions">
-                        <button class="btn-success" onclick="resolveReport('${r.id}')">✅ بررسی شد</button>
-                        <button class="btn-secondary" onclick="dismissReport('${r.id}')">رد کردن</button>
+                        <button class="btn-success" onclick="resolveReport('${r.id}')">✅</button>
+                        <button class="btn-secondary" onclick="dismissReport('${r.id}')">✗</button>
                     </div>
                 </div>
-            `).join('') : `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
+            `).join('') : `<p style="font-size:11px;color:var(--text-3);text-align:center;padding:16px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
         } else if (type === 'ads') {
             const res = await fetch('/api/admin/ads', { headers: { 'userId': 'admin_milad' } });
             const ads = await res.json();
             document.getElementById('adminAdsList').innerHTML = ads.map(a => `
                 <div class="admin-post-item">
                     <span>${escapeHtml(a.title)}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${a.is_active ? '🟢 فعال' : '⚪ غیرفعال'}</span>
+                    <span style="font-size:9px;color:var(--text-3);">${a.is_active ? '🟢' : '⚪'}</span>
                     <div class="actions">
-                        <button class="btn-secondary" onclick="toggleAd('${a.id}', ${a.is_active ? 0 : 1})">${a.is_active ? 'غیرفعال کردن' : 'فعال کردن'}</button>
+                        <button class="btn-secondary" onclick="toggleAd('${a.id}', ${a.is_active ? 0 : 1})">${a.is_active ? 'غیرفعال' : 'فعال'}</button>
                         <button class="btn-danger" onclick="deleteAd('${a.id}')">🗑️</button>
                     </div>
                 </div>
-            `).join('') || `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">هنوز تبلیغی ساخته نشده</p>`;
+            `).join('') || `<p style="font-size:11px;color:var(--text-3);text-align:center;padding:16px;">هنوز تبلیغی ساخته نشده</p>`;
         } else if (type === 'payments') {
             const res = await fetch('/api/admin/payments', { headers: { 'userId': 'admin_milad' } });
             const payments = await res.json();
             document.getElementById('adminPaymentsList').innerHTML = payments.map(p => `
                 <div class="admin-post-item">
-                    <span>${escapeHtml(p.user_name)}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${p.status === 'pending' ? '⏳ در انتظار' : (p.status === 'approved' ? '✅ تایید شده' : '❌ رد شده')}</span>
-                    <span style="font-size:10px;color:var(--text-3);">${timeAgo(p.created_at)}</span>
+                    <span>${escapeHtml(p.user_name || '')}</span>
+                    <span style="font-size:9px;color:var(--text-3);">${p.status === 'pending' ? '⏳' : (p.status === 'approved' ? '✅' : '❌')}</span>
                     ${p.status === 'pending' ? `
                         <div class="actions">
-                            <button class="btn-success" onclick="approvePayment('${p.id}')">✅ تایید</button>
-                            <button class="btn-danger" onclick="rejectPayment('${p.id}')">❌ رد</button>
+                            <button class="btn-success" onclick="approvePayment('${p.id}')">✅</button>
+                            <button class="btn-danger" onclick="rejectPayment('${p.id}')">❌</button>
                         </div>
                     ` : ''}
                 </div>
-            `).join('') || `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">هیچ درخواست پرداختی وجود ندارد</p>`;
+            `).join('') || `<p style="font-size:11px;color:var(--text-3);text-align:center;padding:16px;">هیچ درخواست پرداختی وجود ندارد</p>`;
         }
     } catch (e) { console.error(e); }
 }
@@ -1036,18 +1129,23 @@ async function adminAction(type, id, action) {
     if (!confirm(`آیا از انجام این عملیات مطمئن هستید؟`)) return;
     try {
         const res = await fetch(`/api/admin/${type}/${action}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ userId: type === 'user' ? id : undefined, postId: type === 'post' ? id : undefined })
         });
         const data = await res.json();
-        if (data.success) { showNotification('✅ عملیات با موفقیت انجام شد'); loadAdminData(document.querySelector('.admin-tab.active')?.dataset.tab || 'stats'); }
+        if (data.success) {
+            showNotification('✅ عملیات با موفقیت انجام شد');
+            loadAdminData(document.querySelector('.admin-tab.active')?.dataset.tab || 'stats');
+        }
     } catch (e) { showNotification('خطا: ' + e.message); }
 }
 
 async function resolveReport(reportId) {
     try {
         const res = await fetch('/api/admin/report/resolve', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
@@ -1058,7 +1156,8 @@ async function resolveReport(reportId) {
 async function dismissReport(reportId) {
     try {
         const res = await fetch('/api/admin/report/dismiss', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
@@ -1073,18 +1172,26 @@ async function createAd() {
     if (!title) { showNotification('عنوان تبلیغ رو بنویس!'); return; }
     try {
         const res = await fetch('/api/admin/ads/create', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ title, content, linkUrl })
         });
         const data = await res.json();
-        if (data.success) { showNotification('✅ تبلیغ ساخته شد'); document.getElementById('adTitle').value = ''; document.getElementById('adContent').value = ''; document.getElementById('adLink').value = ''; loadAdminData('ads'); }
+        if (data.success) {
+            showNotification('✅ تبلیغ ساخته شد');
+            document.getElementById('adTitle').value = '';
+            document.getElementById('adContent').value = '';
+            document.getElementById('adLink').value = '';
+            loadAdminData('ads');
+        }
     } catch (e) { showNotification('خطا: ' + e.message); }
 }
 
 async function toggleAd(adId, active) {
     try {
         const res = await fetch('/api/admin/ads/toggle', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ adId, active })
         });
         if (res.ok) loadAdminData('ads');
@@ -1095,7 +1202,8 @@ async function deleteAd(adId) {
     if (!confirm('این تبلیغ حذف بشه؟')) return;
     try {
         const res = await fetch('/api/admin/ads/delete', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ adId })
         });
         if (res.ok) loadAdminData('ads');
@@ -1108,18 +1216,24 @@ async function sendBroadcast() {
     if (!message) { showNotification('متن پیام رو بنویس!'); return; }
     try {
         const res = await fetch('/api/admin/broadcast', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ title: title || 'اعلان سیستمی', message })
         });
         const data = await res.json();
-        if (data.success) { showNotification(`✅ ${data.message}`); document.getElementById('broadcastTitle').value = ''; document.getElementById('broadcastMessage').value = ''; }
+        if (data.success) {
+            showNotification(`✅ ${data.message}`);
+            document.getElementById('broadcastTitle').value = '';
+            document.getElementById('broadcastMessage').value = '';
+        }
     } catch (e) { showNotification('خطا: ' + e.message); }
 }
 
 async function approvePayment(paymentId) {
     try {
         const res = await fetch('/api/admin/payment/approve', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ paymentId })
         });
         if (res.ok) { showNotification('✅ پرداخت تایید شد'); loadAdminData('payments'); }
@@ -1129,7 +1243,8 @@ async function approvePayment(paymentId) {
 async function rejectPayment(paymentId) {
     try {
         const res = await fetch('/api/admin/payment/reject', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
             body: JSON.stringify({ paymentId })
         });
         if (res.ok) { showNotification('❌ پرداخت رد شد'); loadAdminData('payments'); }
@@ -1137,9 +1252,13 @@ async function rejectPayment(paymentId) {
 }
 
 // ============================================
-// شروع برنامه
+// شروع
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
-    setInterval(() => { if (document.getElementById('chatPage').classList.contains('active')) loadChatList(); }, 30000);
+    setInterval(() => {
+        if (document.getElementById('chatPage').classList.contains('active')) {
+            loadChatList();
+        }
+    }, 30000);
 });
