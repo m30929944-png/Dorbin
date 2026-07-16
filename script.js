@@ -116,150 +116,160 @@ function formatNumber(num) {
     return num;
 }
 
+// هدرهای احراز هویت برای مسیرهای ادمین - توکن واقعی، نه یک هدر ساختگی قابل جعل
+function authHeaders(extra = {}) {
+    const token = localStorage.getItem('yareman_token') || '';
+    return { ...extra, 'Authorization': 'Bearer ' + token };
+}
+
 // ============================================
 // ورود / ثبت‌نام
 // ============================================
 async function initApp() {
     const savedId = localStorage.getItem('yareman_user_id');
-    if (savedId) {
+    const savedToken = localStorage.getItem('yareman_token');
+    if (savedId && savedToken) {
         try {
             const res = await fetch(`/api/user/${savedId}`);
             if (res.ok) {
                 currentUser = await res.json();
-                applyAdminVisibility();
+                if (currentUser.role === 'admin') {
+                    isAdmin = true;
+                    document.getElementById('adminBtn').classList.add('show');
+                }
                 afterLogin();
                 return;
             }
         } catch (e) {}
     }
-    showRegisterModal();
+    showAuthModal('login');
 }
 
-// دکمه مدیریت فقط برای کاربری که role اون از سمت سرور 'admin' برگشته نمایش داده می‌شه
-// (role در دیتابیس فقط برای ایمیل هاردکد‌شده‌ی ادمین موقع بوت سرور ست می‌شه، نه با نام کاربری)
-function applyAdminVisibility() {
-    if (currentUser && currentUser.role === 'admin') {
-        isAdmin = true;
-        document.getElementById('adminBtn').classList.add('show');
-    } else {
-        isAdmin = false;
-        document.getElementById('adminBtn').classList.remove('show');
-    }
-}
+function showAuthModal(mode) {
+    const isLogin = mode !== 'register';
+    const existing = document.getElementById('authModal');
+    if (existing) existing.remove();
 
-function showRegisterModal() {
     const modal = document.createElement('div');
     modal.className = 'modal';
-    modal.id = 'registerModal';
+    modal.id = 'authModal';
     modal.innerHTML = `
         <div class="modal-content">
-            <h2>👋 خوش اومدی!</h2>
+            <h2>${isLogin ? '👋 خوش برگشتی!' : '✨ ساخت حساب کاربری'}</h2>
             <div class="auth-tabs">
-                <div class="auth-tab active" id="authTabRegister" onclick="switchAuthTab('register')">ثبت‌نام</div>
-                <div class="auth-tab" id="authTabLogin" onclick="switchAuthTab('login')">ورود</div>
+                <button type="button" class="auth-tab ${isLogin ? 'active' : ''}" onclick="showAuthModal('login')">ورود</button>
+                <button type="button" class="auth-tab ${!isLogin ? 'active' : ''}" onclick="showAuthModal('register')">ثبت‌نام</button>
             </div>
-            <p class="auth-error" id="authError"></p>
-
-            <div id="authPaneRegister">
-                <div class="avatar-upload">
-                    <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
-                    <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
-                </div>
-                <input type="text" id="regNameInput" class="name-input" placeholder="اسمت چیه؟" maxlength="30">
-                <input type="email" id="regEmailInput" class="name-input" placeholder="ایمیل">
-                <input type="password" id="regPasswordInput" class="name-input" placeholder="رمز عبور (حداقل ۶ کاراکتر)">
-                <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
-                    <i class="fas fa-rocket"></i> ثبت‌نام و ورود
-                </button>
-                <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
-                    با ثبت‌نام، قوانین و حریم خصوصی را می‌پذیرید
-                </p>
+            ${!isLogin ? `
+            <div class="avatar-upload">
+                <img id="regAvatarPreview" src="${defaultAvatar('guest')}">
+                <label><i class="fas fa-camera"></i><input type="file" id="regAvatarInput" accept="image/*"></label>
             </div>
-
-            <div id="authPaneLogin" style="display:none;">
-                <input type="email" id="loginEmailInput" class="name-input" placeholder="ایمیل">
-                <input type="password" id="loginPasswordInput" class="name-input" placeholder="رمز عبور">
-                <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="loginUser()">
-                    <i class="fas fa-right-to-bracket"></i> ورود
-                </button>
-            </div>
+            <input type="text" id="regNameInput" class="name-input" placeholder="نام نمایشی" maxlength="30">
+            <input type="text" id="regUsernameInput" class="name-input" placeholder="نام کاربری (فقط انگلیسی)" maxlength="30" autocapitalize="off">
+            <input type="email" id="regEmailInput" class="name-input" placeholder="ایمیل" maxlength="80">
+            <input type="password" id="regPasswordInput" class="name-input" placeholder="رمز عبور (حداقل ۸ کاراکتر)" maxlength="100">
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="registerUser()">
+                <i class="fas fa-rocket"></i> ساخت حساب و ورود
+            </button>
+            ` : `
+            <input type="text" id="loginIdentifierInput" class="name-input" placeholder="نام کاربری یا ایمیل" maxlength="80">
+            <input type="password" id="loginPasswordInput" class="name-input" placeholder="رمز عبور" maxlength="100">
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;" onclick="loginUser()">
+                <i class="fas fa-right-to-bracket"></i> ورود
+            </button>
+            `}
+            <p style="font-size:10px;color:var(--text-3);margin-top:8px;">
+                با ادامه دادن، قوانین و حریم خصوصی را می‌پذیرید
+            </p>
         </div>`;
     document.body.appendChild(modal);
 
-    document.getElementById('regAvatarInput').addEventListener('change', function(e) {
-        readFileAsBase64(e.target.files[0], (b64) => {
-            document.getElementById('regAvatarPreview').src = b64;
+    if (!isLogin) {
+        document.getElementById('regAvatarInput').addEventListener('change', function (e) {
+            readFileAsBase64(e.target.files[0], (b64) => {
+                document.getElementById('regAvatarPreview').src = b64;
+            });
         });
-    });
-}
-
-function switchAuthTab(tab) {
-    const isRegister = tab === 'register';
-    document.getElementById('authTabRegister').classList.toggle('active', isRegister);
-    document.getElementById('authTabLogin').classList.toggle('active', !isRegister);
-    document.getElementById('authPaneRegister').style.display = isRegister ? 'block' : 'none';
-    document.getElementById('authPaneLogin').style.display = isRegister ? 'none' : 'block';
-    const err = document.getElementById('authError');
-    err.classList.remove('show');
-    err.textContent = '';
-}
-
-function showAuthError(msg) {
-    const err = document.getElementById('authError');
-    err.textContent = msg;
-    err.classList.add('show');
+    }
 }
 
 async function registerUser() {
     const name = document.getElementById('regNameInput').value.trim();
+    const username = document.getElementById('regUsernameInput').value.trim();
     const email = document.getElementById('regEmailInput').value.trim();
     const password = document.getElementById('regPasswordInput').value;
-    if (!name) { showAuthError('اسمت رو بنویس!'); return; }
-    if (!email) { showAuthError('ایمیلت رو بنویس!'); return; }
-    if (!password || password.length < 6) { showAuthError('رمز عبور باید حداقل ۶ کاراکتر باشه'); return; }
     const avatar = document.getElementById('regAvatarPreview').src;
 
+    if (!name || !username || !email || !password) { showNotification('همه فیلدها را پر کن'); return; }
+
     try {
-        const res = await fetch('/api/user/register', {
+        const res = await fetch('/api/auth/register', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email, password, avatar })
+            body: JSON.stringify({ name, username, email, password })
         });
         const data = await res.json();
         if (data.success) {
             currentUser = data.user;
             localStorage.setItem('yareman_user_id', currentUser.id);
-            document.getElementById('registerModal').remove();
-            applyAdminVisibility();
+            localStorage.setItem('yareman_token', data.token);
+
+            // آواتار انتخابی رو جداگانه ذخیره می‌کنیم (ثبت‌نام فقط اطلاعات هویتی رو می‌گیره)
+            if (avatar && !avatar.includes('dicebear')) {
+                try {
+                    await fetch('/api/user/avatar', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId: currentUser.id, avatar })
+                    });
+                    currentUser.avatar = avatar;
+                } catch (e) {}
+            }
+
+            document.getElementById('authModal').remove();
+            if (currentUser.role === 'admin') {
+                isAdmin = true;
+                document.getElementById('adminBtn').classList.add('show');
+            }
             afterLogin();
             showNotification('✨ خوش آمدی ' + currentUser.name);
         } else {
-            showAuthError(data.error || 'خطا در ثبت‌نام');
+            showNotification('خطا: ' + data.error);
         }
-    } catch (e) { showAuthError('خطا در ارتباط با سرور'); }
+    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
 }
 
 async function loginUser() {
-    const email = document.getElementById('loginEmailInput').value.trim();
+    const identifier = document.getElementById('loginIdentifierInput').value.trim();
     const password = document.getElementById('loginPasswordInput').value;
-    if (!email || !password) { showAuthError('ایمیل و رمز عبور رو وارد کن'); return; }
+    if (!identifier || !password) { showNotification('نام کاربری/ایمیل و رمز عبور را وارد کن'); return; }
 
     try {
-        const res = await fetch('/api/user/login', {
+        const res = await fetch('/api/auth/login', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ identifier, password })
         });
         const data = await res.json();
         if (data.success) {
             currentUser = data.user;
             localStorage.setItem('yareman_user_id', currentUser.id);
-            document.getElementById('registerModal').remove();
-            applyAdminVisibility();
+            localStorage.setItem('yareman_token', data.token);
+            document.getElementById('authModal').remove();
+            if (currentUser.role === 'admin') {
+                isAdmin = true;
+                document.getElementById('adminBtn').classList.add('show');
+            }
             afterLogin();
             showNotification('✨ خوش آمدی ' + currentUser.name);
         } else {
-            showAuthError(data.error || 'ایمیل یا رمز عبور اشتباه است');
+            showNotification('خطا: ' + data.error);
         }
-    } catch (e) { showAuthError('خطا در ارتباط با سرور'); }
+    } catch (e) { showNotification('خطا در ارتباط با سرور'); }
+}
+
+function logoutUser() {
+    localStorage.removeItem('yareman_user_id');
+    localStorage.removeItem('yareman_token');
+    location.reload();
 }
 
 function afterLogin() {
@@ -337,6 +347,9 @@ async function showProfileModal() {
                     <i class="fas fa-robot"></i> مدیریت دستیار
                 </button>
                 <button class="btn-ghost" onclick="closeModal()">بستن</button>
+                <button class="btn-danger" onclick="logoutUser()">
+                    <i class="fas fa-right-from-bracket"></i> خروج از حساب
+                </button>
             </div>
         </div>`;
     document.body.appendChild(modal);
@@ -847,7 +860,6 @@ async function schedulePosts() {
 // اکسپلور - گرید سه‌تایی مثل اینستاگرام
 // ============================================
 let explorePostIndex = {}; // postId -> { post, user }
-let pfCurrentPostId = null;
 
 async function loadExplore() {
     try {
@@ -909,82 +921,189 @@ async function loadExplore() {
 }
 
 // ============================================
-// نمایش تمام‌صفحه پست
+// نمایش تمام‌صفحه پست - اسکرول عمودی بی‌نهایت (مثل ریلز اینستاگرام)
 // ============================================
+let pfFeedList = [];        // ترتیب شناسه‌ی پست‌ها برای این جلسه‌ی مشاهده
+let pfNextIndex = 0;        // شمارنده‌ی کل اسلایدهای append‌شده (برای چرخش لیست وقتی به انتها رسیدیم)
+let pfObserver = null;
+let pfActiveSlideEl = null;
+let pfLoadingMore = false;
+let pfUserIndex = {};       // userId -> user (برای پیام/پروفایل از داخل اسلاید)
+
+function pfSlideHtml(postId, slideKey) {
+    const entry = explorePostIndex[postId];
+    if (!entry) return '';
+    const { post, user } = entry;
+    pfUserIndex[user.user_id] = user;
+    const isMe = user.user_id === currentUser.id;
+
+    const mediaHtml = post.media_url
+        ? (post.media_type === 'video'
+            ? `<video src="${post.media_url}" loop playsinline muted preload="metadata"></video>`
+            : `<img src="${post.media_url}" loading="lazy">`)
+        : `<p>${escapeHtml((post.content || '').substring(0, 300))}</p>`;
+
+    return `
+        <div class="pf-slide" data-post-id="${postId}" data-slide-key="${slideKey}">
+            <div class="pf-media${post.media_url ? '' : ' no-media'}">${mediaHtml}</div>
+            <div class="pf-topbar">
+                <button class="pf-icon-btn" onclick="closePostFullscreen()"><i class="fas fa-arrow-right"></i></button>
+                <button class="pf-icon-btn" onclick="pfOpenReport('${postId}')"><i class="fas fa-flag"></i></button>
+            </div>
+            ${post.media_type === 'video' ? `<button class="pf-icon-btn pf-mute-btn" onclick="pfToggleMute(this)"><i class="fas fa-volume-mute"></i></button>` : ''}
+            <div class="pf-bottom">
+                <div class="pf-user-row" onclick="pfOpenProfile('${user.user_id}')">
+                    <img class="pf-avatar" src="${user.avatar || defaultAvatar(user.name)}">
+                    <span class="pf-username">${escapeHtml(user.name)}</span>
+                    <span class="pf-time">${timeAgo(post.created_at)}</span>
+                    ${!isMe ? `<button class="btn-plastic btn-plastic--pistachio pf-follow-btn" onclick="event.stopPropagation();quickFollow('${user.user_id}', this)">فالو</button>` : ''}
+                </div>
+                ${post.content ? `<p class="pf-caption">${escapeHtml(post.content)}</p>` : ''}
+                <div class="pf-actions-bar">
+                    <button class="pf-action-btn" onclick="toggleLike('${postId}', this)">
+                        <i class="far fa-heart"></i><span class="like-count">${formatNumber(post.likes || 0)}</span>
+                    </button>
+                    <button class="pf-action-btn" onclick="pfToggleComments('${postId}', '${slideKey}')">
+                        <i class="far fa-comment"></i><span>${formatNumber(post.comments || 0)}</span>
+                    </button>
+                    <button class="pf-action-btn" onclick="sharePost('${postId}')">
+                        <i class="fas fa-share-alt"></i>
+                    </button>
+                    ${!isMe ? `<button class="pf-action-btn" onclick="pfMessage('${user.user_id}')"><i class="far fa-envelope"></i></button>` : ''}
+                </div>
+            </div>
+            <div class="pf-comments-box comments-box" id="pf-comments-${slideKey}"></div>
+        </div>
+    `;
+}
+
+function pfAppendSlides(count) {
+    if (!pfFeedList.length) return;
+    const feedEl = document.getElementById('pfFeed');
+    const frag = document.createDocumentFragment();
+    for (let n = 0; n < count; n++) {
+        const postId = pfFeedList[pfNextIndex % pfFeedList.length];
+        const slideKey = 's' + pfNextIndex;
+        pfNextIndex++;
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = pfSlideHtml(postId, slideKey);
+        const slideEl = wrapper.firstElementChild;
+        if (slideEl) {
+            frag.appendChild(slideEl);
+            if (pfObserver) pfObserver.observe(slideEl);
+        }
+    }
+    feedEl.appendChild(frag);
+}
+
+// وقتی به نزدیکی انتهای فید رسیدیم، اسلایدهای بعدی از قبل append می‌شن (پیش‌بارگذاری،
+// نه دانلود دستی کاربر) - چون media با preload="metadata"/loading="lazy" فقط وقتی لازم بشه واکشی می‌شه.
+function pfHandleScroll() {
+    if (pfLoadingMore) return;
+    const feedEl = document.getElementById('pfFeed');
+    const nearEnd = feedEl.scrollTop + feedEl.clientHeight > feedEl.scrollHeight - window.innerHeight * 2;
+    if (nearEnd) {
+        pfLoadingMore = true;
+        pfAppendSlides(3);
+        pfLoadingMore = false;
+    }
+}
+
+function pfSetActiveSlide(slideEl) {
+    if (!slideEl || slideEl === pfActiveSlideEl) return;
+    if (pfActiveSlideEl) {
+        const prevVideo = pfActiveSlideEl.querySelector('video');
+        if (prevVideo) prevVideo.pause();
+    }
+    pfActiveSlideEl = slideEl;
+    const video = slideEl.querySelector('video');
+    if (video) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+    }
+}
+
 function openPostFullscreen(postId) {
     const entry = explorePostIndex[postId];
     if (!entry) return;
-    const { post, user } = entry;
-    pfCurrentPostId = postId;
 
-    document.getElementById('pfAvatar').src = user.avatar || defaultAvatar(user.name);
-    document.getElementById('pfName').textContent = user.name;
-    document.getElementById('pfTime').textContent = timeAgo(post.created_at);
-    document.getElementById('pfCaption').textContent = post.content || '';
+    // فید از همون ترتیب اکسپلور ساخته می‌شه و از پستی که کاربر لمس کرده شروع می‌شه
+    const allIds = Object.keys(explorePostIndex);
+    const startIdx = allIds.indexOf(postId);
+    pfFeedList = allIds.slice(startIdx).concat(allIds.slice(0, startIdx));
+    pfNextIndex = 0;
 
-    const mediaEl = document.getElementById('pfMedia');
-    mediaEl.innerHTML = post.media_url ? (
-        post.media_type === 'video' ?
-            `<video src="${post.media_url}" controls preload="metadata"></video>` :
-            `<img src="${post.media_url}">`
-    ) : '';
-
-    const likeBtn = document.getElementById('pfLikeBtn');
-    likeBtn.classList.remove('liked');
-    likeBtn.querySelector('i').className = 'far fa-heart';
-    document.getElementById('pfLikeCount').textContent = formatNumber(post.likes || 0);
-    document.getElementById('pfCommentCount').textContent = formatNumber(post.comments || 0);
-
-    const followBtn = document.getElementById('pfFollowBtn');
-    const isMe = user.user_id === currentUser.id;
-    followBtn.style.display = isMe ? 'none' : '';
-    followBtn.textContent = 'فالو';
-    followBtn.classList.remove('following');
-
-    const commentsBox = document.getElementById('pfCommentsBox');
-    commentsBox.innerHTML = '';
-    commentsBox.classList.remove('open');
-    delete commentsBox.dataset.loaded;
+    const feedEl = document.getElementById('pfFeed');
+    feedEl.innerHTML = '';
+    feedEl.scrollTop = 0;
+    pfActiveSlideEl = null;
 
     document.getElementById('postFullOverlay').classList.add('open');
+
+    if (pfObserver) pfObserver.disconnect();
+    pfObserver = new IntersectionObserver((entries) => {
+        entries.forEach(en => {
+            if (en.isIntersecting && en.intersectionRatio > 0.6) {
+                pfSetActiveSlide(en.target);
+            } else {
+                const video = en.target.querySelector('video');
+                if (video) video.pause();
+            }
+        });
+    }, { root: feedEl, threshold: [0, 0.6, 1] });
+
+    pfAppendSlides(6);
+    feedEl.onscroll = pfHandleScroll;
+
+    const firstSlide = feedEl.querySelector('.pf-slide');
+    if (firstSlide) pfSetActiveSlide(firstSlide);
 }
 
 function closePostFullscreen() {
     document.getElementById('postFullOverlay').classList.remove('open');
-    document.getElementById('pfMedia').innerHTML = '';
-    pfCurrentPostId = null;
+    const feedEl = document.getElementById('pfFeed');
+    feedEl.querySelectorAll('video').forEach(v => v.pause());
+    if (pfObserver) { pfObserver.disconnect(); pfObserver = null; }
+    feedEl.onscroll = null;
+    feedEl.innerHTML = '';
+    pfFeedList = [];
+    pfNextIndex = 0;
+    pfActiveSlideEl = null;
 }
 
-function pfOpenProfile() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
+function pfToggleMute(btn) {
+    const slide = btn.closest('.pf-slide');
+    const video = slide?.querySelector('video');
+    if (!video) return;
+    video.muted = !video.muted;
+    btn.querySelector('i').className = video.muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
+}
+
+function pfOpenProfile(userId) {
     closePostFullscreen();
-    openProfile(entry.user.user_id);
+    openProfile(userId);
 }
 
-async function pfQuickFollow() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
-    await quickFollow(entry.user.user_id, document.getElementById('pfFollowBtn'));
+function pfMessage(userId) {
+    if (userId === currentUser.id) { showNotification('این پست خودتونه 🙂'); return; }
+    const user = pfUserIndex[userId] || {};
+    closePostFullscreen();
+    document.querySelector('[data-page="chat"]').click();
+    openChat(userId, user.name || 'کاربر', user.avatar || defaultAvatar(user.name || 'u'));
 }
 
-async function pfToggleLike() {
-    if (!pfCurrentPostId) return;
-    await toggleLike(pfCurrentPostId, document.getElementById('pfLikeBtn'));
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (entry) {
-        entry.post.likes = parseInt((document.getElementById('pfLikeCount').textContent || '0').replace(/,/g, '')) || entry.post.likes;
-    }
+function pfOpenReport(postId) {
+    openReportModal('post', postId);
 }
 
-async function pfToggleComments() {
-    if (!pfCurrentPostId) return;
-    const box = document.getElementById('pfCommentsBox');
+async function pfToggleComments(postId, slideKey) {
+    const box = document.getElementById(`pf-comments-${slideKey}`);
+    if (!box) return;
     box.classList.toggle('open');
     if (box.classList.contains('open') && !box.dataset.loaded) {
         box.dataset.loaded = '1';
         try {
-            const res = await fetch(`/api/post/${pfCurrentPostId}/comments`);
+            const res = await fetch(`/api/post/${postId}/comments`);
             const comments = await res.json();
             box.innerHTML = (comments.map(c => `
                 <div class="comment-item">
@@ -996,27 +1115,27 @@ async function pfToggleComments() {
                 </div>
             `).join('') || '') + `
                 <div class="comment-form">
-                    <input type="text" id="pfCommentInput" placeholder="کامنت بنویس...">
-                    <button class="btn-plastic btn-plastic--pistachio" onclick="pfSubmitComment()">ارسال</button>
+                    <input type="text" id="pf-comment-input-${slideKey}" placeholder="کامنت بنویس...">
+                    <button class="btn-plastic btn-plastic--pistachio" onclick="pfSubmitComment('${postId}', '${slideKey}')">ارسال</button>
                 </div>`;
         } catch (e) { showNotification('خطا'); }
     }
 }
 
-async function pfSubmitComment() {
-    const input = document.getElementById('pfCommentInput');
-    if (!input || !pfCurrentPostId) return;
+async function pfSubmitComment(postId, slideKey) {
+    const input = document.getElementById(`pf-comment-input-${slideKey}`);
+    if (!input) return;
     const text = input.value.trim();
     if (!text) return;
     try {
-        const res = await fetch(`/api/post/${pfCurrentPostId}/comment`, {
+        const res = await fetch(`/api/post/${postId}/comment`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: currentUser.id, text })
         });
         const data = await res.json();
         if (data.success) {
             input.value = '';
-            const box = document.getElementById('pfCommentsBox');
+            const box = document.getElementById(`pf-comments-${slideKey}`);
             const form = box.querySelector('.comment-form');
             const item = document.createElement('div');
             item.className = 'comment-item';
@@ -1028,17 +1147,14 @@ async function pfSubmitComment() {
                 </div>`;
             if (form) box.insertBefore(item, form); else box.appendChild(item);
 
-            const countEl = document.getElementById('pfCommentCount');
-            countEl.textContent = formatNumber((parseInt(countEl.textContent.replace(/,/g, '')) || 0) + 1);
+            const slide = document.querySelector(`.pf-slide[data-slide-key="${slideKey}"]`);
+            const countEl = slide?.querySelectorAll('.pf-actions-bar span')[1];
+            if (countEl) countEl.textContent = formatNumber((parseInt(countEl.textContent.replace(/,/g, '')) || 0) + 1);
 
-            const entry = explorePostIndex[pfCurrentPostId];
+            const entry = explorePostIndex[postId];
             if (entry) entry.post.comments = (entry.post.comments || 0) + 1;
         }
     } catch (e) { showNotification('خطا در ارسال کامنت'); }
-}
-
-async function pfShare() {
-    await sharePost(pfCurrentPostId);
 }
 
 async function sharePost(postId) {
@@ -1055,18 +1171,6 @@ async function sharePost(postId) {
     } catch (e) {
         // کاربر اشتراک‌گذاری را لغو کرده - نیازی به پیام خطا نیست
     }
-}
-
-function pfMessage() {
-    const entry = explorePostIndex[pfCurrentPostId];
-    if (!entry) return;
-    if (entry.user.user_id === currentUser.id) {
-        showNotification('این پست خودتونه 🙂');
-        return;
-    }
-    closePostFullscreen();
-    document.querySelector('[data-page="chat"]').click();
-    openChat(entry.user.user_id, entry.user.name, entry.user.avatar || defaultAvatar(entry.user.name));
 }
 
 async function quickFollow(userId, btn) {
@@ -1426,7 +1530,7 @@ function switchAdminTab(tab) {
 async function loadAdminData(type) {
     try {
         if (type === 'stats') {
-            const res = await fetch('/api/admin/stats', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/stats', { headers: authHeaders() });
             const stats = await res.json();
             const container = document.getElementById('adminStatsContent');
             if (container) {
@@ -1443,7 +1547,7 @@ async function loadAdminData(type) {
                 `;
             }
         } else if (type === 'users') {
-            const res = await fetch('/api/admin/users', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/users', { headers: authHeaders() });
             const users = await res.json();
             const container = document.getElementById('adminUsersList');
             if (container) {
@@ -1469,7 +1573,7 @@ async function loadAdminData(type) {
                 `).join('');
             }
         } else if (type === 'posts') {
-            const res = await fetch('/api/admin/posts', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/posts', { headers: authHeaders() });
             const posts = await res.json();
             const container = document.getElementById('adminPostsList');
             if (container) {
@@ -1483,7 +1587,7 @@ async function loadAdminData(type) {
                 `).join('');
             }
         } else if (type === 'channels') {
-            const res = await fetch('/api/admin/channels', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/channels', { headers: authHeaders() });
             const channels = await res.json();
             const container = document.getElementById('adminChannelsList');
             if (container) {
@@ -1497,7 +1601,7 @@ async function loadAdminData(type) {
                 `).join('');
             }
         } else if (type === 'reports') {
-            const res = await fetch('/api/admin/reports?status=pending', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/reports?status=pending', { headers: authHeaders() });
             const reports = await res.json();
             const container = document.getElementById('adminReportsList');
             if (container) {
@@ -1515,7 +1619,7 @@ async function loadAdminData(type) {
                 `).join('') : `<p style="font-size:12px;color:var(--text-3);text-align:center;padding:20px;">گزارش در انتظاری وجود ندارد 🎉</p>`;
             }
         } else if (type === 'ads') {
-            const res = await fetch('/api/admin/ads', { headers: { 'userId': 'admin_milad' } });
+            const res = await fetch('/api/admin/ads', { headers: authHeaders() });
             const ads = await res.json();
             const container = document.getElementById('adminAdsList');
             if (container) {
@@ -1539,7 +1643,7 @@ async function adminAction(type, id, action) {
     try {
         const res = await fetch(`/api/admin/${type}/${action}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ 
                 userId: type === 'user' ? id : undefined,
                 postId: type === 'post' ? id : undefined
@@ -1558,7 +1662,7 @@ async function resolveReport(reportId) {
     try {
         const res = await fetch('/api/admin/report/resolve', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
@@ -1570,7 +1674,7 @@ async function dismissReport(reportId) {
     try {
         const res = await fetch('/api/admin/report/dismiss', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ reportId })
         });
         const data = await res.json();
@@ -1587,7 +1691,7 @@ async function createAd() {
     try {
         const res = await fetch('/api/admin/ads/create', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ title, content, linkUrl })
         });
         const data = await res.json();
@@ -1607,7 +1711,7 @@ async function toggleAd(adId, active) {
     try {
         const res = await fetch('/api/admin/ads/toggle', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ adId, active })
         });
         const data = await res.json();
@@ -1620,7 +1724,7 @@ async function deleteAd(adId) {
     try {
         const res = await fetch('/api/admin/ads/delete', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ adId })
         });
         const data = await res.json();
@@ -1636,7 +1740,7 @@ async function sendBroadcast() {
     try {
         const res = await fetch('/api/admin/broadcast', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'userId': 'admin_milad' },
+            headers: authHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ title: title || 'اعلان سیستمی', message })
         });
         const data = await res.json();
@@ -1688,11 +1792,6 @@ async function submitReport(targetType, targetId) {
             showNotification('خطا: ' + data.error);
         }
     } catch (e) { showNotification('خطا در ارتباط با سرور'); }
-}
-
-function pfOpenReport() {
-    if (!pfCurrentPostId) return;
-    openReportModal('post', pfCurrentPostId);
 }
 
 // ============================================
