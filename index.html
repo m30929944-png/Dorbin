@@ -812,6 +812,13 @@ main {
 .post-stats button.liked i {
   animation: likePulse 0.3s ease;
 }
+.upgrade-post-btn {
+  margin-inline-start: auto;
+  color: #d4a017 !important;
+}
+.upgrade-post-btn:hover {
+  background: rgba(212, 160, 23, 0.12) !important;
+}
 @keyframes likePulse {
   0% { transform: scale(1); }
   50% { transform: scale(1.4); }
@@ -1178,6 +1185,41 @@ main {
   white-space: nowrap;
 }
 
+/* کلید انتخاب مقصد پیام در چت خصوصی: خودِ کاربر یا دستیار هوشمندش */
+.chat-mode-switch {
+  display: flex;
+  gap: 3px;
+  margin: 10px 14px 0;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+.chat-mode-switch .mode-opt {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 0;
+  border-radius: 999px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: var(--transition);
+}
+.chat-mode-switch .mode-opt.active {
+  background: var(--primary);
+  color: #fff;
+}
+.chat-mode-switch .mode-opt[data-mode="assistant"].active {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+}
+
 .chat-thread-messages {
   flex: 1;
   overflow-y: auto;
@@ -1205,6 +1247,14 @@ main {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
+}
+.message.bot-reply {
+  border: 1px dashed #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 8%, var(--bg-card));
+}
+.message.bot-reply i {
+  color: #8b5cf6;
+  margin-left: 4px;
 }
 .message .time {
   font-size: 9px;
@@ -1257,7 +1307,7 @@ main {
 .explore-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+  gap: 2px;
   margin: 0 -14px;
 }
 
@@ -1265,7 +1315,7 @@ main {
   position: relative;
   aspect-ratio: 3 / 4;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   background: var(--bg-card);
 }
@@ -1390,99 +1440,188 @@ main {
   position: fixed;
   inset: 0;
   z-index: 300;
-  background: rgba(4, 5, 14, 0.92);
-  backdrop-filter: blur(10px);
+  background: #000;
   display: none;
-  align-items: flex-end;
-  justify-content: center;
 }
 .post-full-overlay.open {
-  display: flex;
-  animation: fadeIn 0.25s ease;
+  display: block;
+  animation: fadeIn 0.2s ease;
 }
-.post-full-sheet {
-  background: var(--bg-card);
+.pf-feed {
+  height: 100dvh;
   width: 100%;
-  max-width: 720px;
-  max-height: 94vh;
-  overflow-y: auto;
-  border-radius: 24px 24px 0 0;
-  animation: slideUp 0.3s ease;
-  padding-bottom: 18px;
-  border: 1px solid var(--border);
-  border-bottom: none;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.post-full-head {
+.pf-feed::-webkit-scrollbar { display: none; }
+
+.pf-slide {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  background: #000;
+  overflow: hidden;
+}
+.pf-media {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 14px 12px;
-  position: sticky;
-  top: 0;
-  background: var(--bg-card);
-  z-index: 2;
-  border-bottom: 1px solid var(--border);
+  justify-content: center;
+  background: #000;
 }
-.post-full-head img {
-  width: 42px;
-  height: 42px;
+.pf-media img, .pf-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.pf-media.no-media {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #2a1e3d, #1a1030);
+}
+.pf-media.no-media p {
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.9;
+  text-align: center;
+}
+
+.pf-topbar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(14px, env(safe-area-inset-top)) 14px 30px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.6), transparent);
+  pointer-events: none;
+}
+.pf-topbar > * { pointer-events: auto; }
+.pf-icon-btn {
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  border: 2px solid var(--primary);
+  background: rgba(20,20,20,.5);
+  backdrop-filter: blur(4px);
+  border: none;
+  color: #fff;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+}
+.pf-mute-btn {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+
+.pf-bottom {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  z-index: 3;
+  padding: 40px 14px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(0,0,0,.85) 10%, rgba(0,0,0,.35) 55%, transparent);
+}
+.pf-user-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 9px;
+  cursor: pointer;
+}
+.pf-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #fff;
   flex-shrink: 0;
 }
-.pf-info {
-  flex: 1;
-  min-width: 0;
-  cursor: pointer;
-}
-.pf-info h4 {
-  font-size: 14px;
+.pf-username {
+  color: #fff;
   font-weight: 700;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pf-time {
+  color: rgba(255,255,255,.65);
   font-size: 11px;
-  color: var(--text-3);
-}
-.pf-close {
-  background: none;
-  border: none;
-  color: var(--text-2);
-  font-size: 20px;
-  padding: 6px;
   flex-shrink: 0;
 }
-.post-full-media {
-  width: 100%;
-  max-height: 62vh;
-  background: #000;
+.pf-follow-btn {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+.pf-caption {
+  color: #f1f1f1;
+  font-size: 13.5px;
+  line-height: 1.85;
+  margin-bottom: 12px;
+  max-height: 4.6em;
+  overflow-y: auto;
+}
+
+.pf-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pf-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: rgba(255,255,255,.12);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.pf-action-btn:active { transform: scale(.92); }
+.pf-action-btn.liked { background: rgba(255, 61, 87, .9); }
+.pf-action-btn.liked i { color: #fff; }
+.pf-action-btn.following { background: rgba(255,255,255,.28); }
+
+.pf-comments-box {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  max-height: 60%;
+  background: var(--bg-card);
+  border-radius: 20px 20px 0 0;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  transform: translateY(100%);
+  transition: transform .25s ease;
+  z-index: 4;
+  overflow-y: auto;
+}
+.pf-comments-box.open { transform: translateY(0); }
+
+.pf-loading-more {
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.post-full-media img,
-.post-full-media video {
-  width: 100%;
-  max-height: 62vh;
-  object-fit: contain;
-  display: block;
-}
-.post-full-caption {
-  padding: 12px 16px 4px;
-  font-size: 14px;
-  line-height: 1.8;
-}
-.post-full-actions {
-  display: flex;
-  gap: 10px;
-  padding: 14px 16px 6px;
-  flex-wrap: wrap;
-}
-.post-full-comments {
-  padding: 4px 16px 16px;
+  color: rgba(255,255,255,.6);
+  font-size: 13px;
 }
 
 /* ============================================
@@ -1548,7 +1687,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 400;
   backdrop-filter: blur(12px);
   padding: 16px;
   animation: fadeIn 0.3s ease;
@@ -1638,9 +1777,10 @@ main {
 .name-input:focus {
   border-color: var(--primary);
 }
+
 .auth-tabs {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   margin-bottom: 14px;
   background: var(--bg-soft);
   border-radius: var(--radius-sm);
@@ -1648,27 +1788,83 @@ main {
 }
 .auth-tab {
   flex: 1;
-  text-align: center;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
   padding: 9px 0;
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius-sm) - 2px);
   font-size: 13px;
   cursor: pointer;
-  color: var(--text-2);
   transition: var(--transition);
-  user-select: none;
 }
 .auth-tab.active {
   background: var(--primary);
   color: #fff;
 }
-.auth-error {
-  color: #ff5a5a;
-  font-size: 12px;
-  margin: -4px 0 10px;
-  display: none;
-  text-align: center;
+
+.card-number-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #1e2233, #2a2f45);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  color: #fff;
 }
-.auth-error.show { display: block; }
+.card-number-box span {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  direction: ltr;
+}
+.card-number-box i {
+  color: var(--text-3);
+}
+
+.receipt-preview-box {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.receipt-preview-box i { font-size: 22px; }
+.receipt-preview-box img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  background: #000;
+}
+.receipt-upload-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.admin-payment-item { align-items: flex-start; }
+.receipt-thumb {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
 
 /* ============================================
    پنل مدیریت
@@ -2054,6 +2250,14 @@ main {
                 </div>
             </div>
         </div>
+        <div class="chat-mode-switch" id="chatModeSwitch">
+            <button type="button" class="mode-opt active" data-mode="user" onclick="setChatMode('user')">
+                <i class="fas fa-user"></i> خودش
+            </button>
+            <button type="button" class="mode-opt" data-mode="assistant" onclick="setChatMode('assistant')">
+                <i class="fas fa-robot"></i> دستیارش
+            </button>
+        </div>
         <div class="chat-thread-messages" id="chatMessages"></div>
         <div class="chat-thread-input">
             <input type="text" id="messageInput" placeholder="پیام..." onkeydown="if(event.key==='Enter'){sendMessage();}">
@@ -2067,37 +2271,9 @@ main {
         <div id="exploreContent" class="explore-grid"></div>
     </section>
 
-    <!-- نمایش تمام‌صفحه پست از اکسپلور -->
+    <!-- نمایش تمام‌صفحه پست از اکسپلور - اسکرول عمودی بی‌نهایت مثل ریلز اینستاگرام -->
     <div class="post-full-overlay" id="postFullOverlay">
-        <div class="post-full-sheet">
-            <div class="post-full-head">
-                <img id="pfAvatar" src="" onclick="pfOpenProfile()">
-                <div class="pf-info" onclick="pfOpenProfile()">
-                    <h4 id="pfName"></h4>
-                    <span class="pf-time" id="pfTime"></span>
-                </div>
-                <button class="btn-plastic btn-plastic--pistachio" id="pfFollowBtn" onclick="pfQuickFollow()">فالو</button>
-                <button class="pf-close" onclick="pfOpenReport()"><i class="fas fa-flag"></i></button>
-                <button class="pf-close" onclick="closePostFullscreen()"><i class="fas fa-times"></i></button>
-            </div>
-            <div class="post-full-media" id="pfMedia"></div>
-            <p class="post-full-caption" id="pfCaption"></p>
-            <div class="post-full-actions">
-                <button class="btn-plastic btn-plastic--red" id="pfLikeBtn" onclick="pfToggleLike()">
-                    <i class="far fa-heart"></i><span id="pfLikeCount" class="like-count">0</span>
-                </button>
-                <button class="btn-plastic btn-plastic--pistachio" onclick="pfToggleComments()">
-                    <i class="far fa-comment"></i><span id="pfCommentCount">0</span>
-                </button>
-                <button class="btn-plastic btn-plastic--white" onclick="pfShare()">
-                    <i class="fas fa-share-alt"></i>
-                </button>
-                <button class="btn-plastic btn-plastic--pistachio" onclick="pfMessage()">
-                    <i class="far fa-envelope"></i>
-                </button>
-            </div>
-            <div class="post-full-comments comments-box" id="pfCommentsBox"></div>
-        </div>
+        <div class="pf-feed" id="pfFeed"></div>
     </div>
 
     <!-- صفحه پروفایل عمومی -->
@@ -2141,6 +2317,7 @@ main {
                 <button class="admin-tab" data-tab="posts" onclick="switchAdminTab('posts')">📝 پست‌ها</button>
                 <button class="admin-tab" data-tab="channels" onclick="switchAdminTab('channels')">📢 کانال‌ها</button>
                 <button class="admin-tab" data-tab="reports" onclick="switchAdminTab('reports')">🚩 گزارش‌ها</button>
+                <button class="admin-tab" data-tab="payments" onclick="switchAdminTab('payments')">💳 پرداخت‌ها</button>
                 <button class="admin-tab" data-tab="ads" onclick="switchAdminTab('ads')">🎯 تبلیغات</button>
             </div>
             <div class="admin-content">
@@ -2165,6 +2342,9 @@ main {
                 </div>
                 <div id="adminReports" class="admin-tab-content">
                     <div id="adminReportsList"></div>
+                </div>
+                <div id="adminPayments" class="admin-tab-content">
+                    <div id="adminPaymentsList"></div>
                 </div>
                 <div id="adminAds" class="admin-tab-content">
                     <div class="broadcast-form">
