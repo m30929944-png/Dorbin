@@ -353,6 +353,7 @@ function afterLogin() {
     socket.emit('join', currentUser.id);
     setupNav();
     loadPageData('channel');
+    loadStories();
     
     socket.on('broadcast', (data) => {
         showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
@@ -1252,6 +1253,273 @@ async function sharePost(postId) {
     }
 }
 
+// ============================================
+// استوری - نوار بالای صفحه + ویوئر تمام‌صفحه + ساخت استوری
+// ============================================
+let storyFeed = [];          // خروجی /api/stories/feed - آرایه‌ای از گروه‌ها {user_id, name, avatar, stories:[]}
+let storyGroupIndex = 0;
+let storyIndexInGroup = 0;
+let storyTimer = null;
+let pendingStoryUrl = null;
+let pendingStoryType = null;
+
+async function loadStories() {
+    try {
+        const res = await fetch(`/api/stories/feed/${currentUser.id}`);
+        storyFeed = await res.json();
+        renderStoriesBar();
+    } catch (e) {}
+}
+
+function renderStoriesBar() {
+    const bar = document.getElementById('storiesBar');
+    if (!bar) return;
+    const myGroup = storyFeed.find(g => g.user_id === currentUser.id);
+    const others = storyFeed.filter(g => g.user_id !== currentUser.id);
+
+    let html = `
+        <div class="story-circle" onclick="${myGroup ? `openStoryViewer('${currentUser.id}')` : 'openCreateStoryModal()'}">
+            <div class="story-ring ${myGroup ? '' : 'seen'}">
+                <img src="${currentUser.avatar || defaultAvatar(currentUser.name)}">
+                <span class="story-add-badge" onclick="event.stopPropagation();openCreateStoryModal()"><i class="fas fa-plus"></i></span>
+            </div>
+            <span>استوری من</span>
+        </div>`;
+
+    html += others.map(g => `
+        <div class="story-circle" onclick="openStoryViewer('${g.user_id}')">
+            <div class="story-ring">
+                <img src="${g.avatar || defaultAvatar(g.name)}">
+            </div>
+            <span>${escapeHtml(g.name)}</span>
+        </div>
+    `).join('');
+
+    bar.innerHTML = html;
+}
+
+function openStoryViewer(userId) {
+    const idx = storyFeed.findIndex(g => g.user_id === userId);
+    if (idx === -1) return;
+    storyGroupIndex = idx;
+    storyIndexInGroup = 0;
+    document.getElementById('storyViewerOverlay').classList.add('open');
+    renderStorySlide();
+}
+
+function renderStorySlide() {
+    clearTimeout(storyTimer);
+    const group = storyFeed[storyGroupIndex];
+    if (!group) { closeStoryViewer(); return; }
+    const story = group.stories[storyIndexInGroup];
+    if (!story) { storyNextGroup(); return; }
+
+    document.getElementById('storyViewerAvatar').src = group.avatar || defaultAvatar(group.name);
+    document.getElementById('storyViewerName').textContent = group.name;
+    document.getElementById('storyViewerTime').textContent = timeAgo(story.created_at);
+
+    const mediaEl = document.getElementById('storyViewerMedia');
+    const captionHtml = story.caption ? `<p class="story-caption-overlay">${escapeHtml(story.caption)}</p>` : '';
+
+    if (story.media_type === 'text' || !story.media_url) {
+        mediaEl.className = 'story-viewer-media text-story';
+        mediaEl.style.background = story.bg_color || '#6c5ce7';
+        mediaEl.innerHTML = `<p style="color:${story.text_color || '#fff'}">${escapeHtml(story.caption || '')}</p>`;
+    } else if (story.media_type === 'video') {
+        mediaEl.className = 'story-viewer-media';
+        mediaEl.style.background = '';
+        mediaEl.innerHTML = `<video src="${story.media_url}" autoplay playsinline></video>${captionHtml}`;
+    } else {
+        mediaEl.className = 'story-viewer-media';
+        mediaEl.style.background = '';
+        mediaEl.innerHTML = `<img src="${story.media_url}">${captionHtml}`;
+    }
+
+    renderStoryProgress(group.stories.length, storyIndexInGroup);
+
+    const footer = document.getElementById('storyViewerFooter');
+    if (group.user_id === currentUser.id) {
+        footer.innerHTML = `<button class="story-viewers-btn" onclick="openStoryViewers('${story.id}')"><i class="fas fa-eye"></i> ${formatNumber(story.views_count || 0)} بازدید</button>`;
+    } else {
+        footer.innerHTML = '';
+        markStoryViewed(story.id, group.user_id);
+    }
+
+    const video = mediaEl.querySelector('video');
+    if (video) {
+        video.onended = () => storyNext();
+    } else {
+        storyTimer = setTimeout(() => storyNext(), 5000);
+    }
+}
+
+function renderStoryProgress(count, activeIdx) {
+    const row = document.getElementById('storyProgressRow');
+    if (!row) return;
+    row.innerHTML = Array.from({ length: count }).map((_, i) => `
+        <div class="story-progress-seg ${i < activeIdx ? 'done' : ''}">
+            <div class="story-progress-seg-fill" ${i === activeIdx ? 'style="animation: storyFill 5s linear forwards;"' : ''}></div>
+        </div>
+    `).join('');
+}
+
+function storyNext() {
+    const group = storyFeed[storyGroupIndex];
+    if (!group) return;
+    if (storyIndexInGroup < group.stories.length - 1) {
+        storyIndexInGroup++;
+        renderStorySlide();
+    } else {
+        storyNextGroup();
+    }
+}
+
+function storyNextGroup() {
+    if (storyGroupIndex < storyFeed.length - 1) {
+        storyGroupIndex++;
+        storyIndexInGroup = 0;
+        renderStorySlide();
+    } else {
+        closeStoryViewer();
+    }
+}
+
+function storyPrev() {
+    if (storyIndexInGroup > 0) {
+        storyIndexInGroup--;
+        renderStorySlide();
+    } else if (storyGroupIndex > 0) {
+        storyGroupIndex--;
+        storyIndexInGroup = storyFeed[storyGroupIndex].stories.length - 1;
+        renderStorySlide();
+    }
+}
+
+function closeStoryViewer() {
+    clearTimeout(storyTimer);
+    document.getElementById('storyViewerOverlay').classList.remove('open');
+    const video = document.querySelector('#storyViewerMedia video');
+    if (video) video.pause();
+}
+
+async function markStoryViewed(storyId, ownerId) {
+    try {
+        await fetch(`/api/stories/${storyId}/view`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ viewerId: currentUser.id, ownerId })
+        });
+    } catch (e) {}
+}
+
+async function openStoryViewers(storyId) {
+    clearTimeout(storyTimer);
+    const existing = document.getElementById('storyViewersModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'storyViewersModal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2><i class="fas fa-eye"></i> بازدیدکنندگان</h2>
+            <div id="storyViewersList" style="max-height:50vh;overflow-y:auto;">
+                <div class="loading"><i class="fas fa-spinner fa-spin"></i></div>
+            </div>
+            <button class="btn-ghost" style="width:100%;margin-top:10px;" onclick="closeStoryViewersModal()">بستن</button>
+        </div>`;
+    document.body.appendChild(modal);
+
+    try {
+        const res = await fetch(`/api/stories/${storyId}/viewers?ownerId=${currentUser.id}`);
+        const viewers = await res.json();
+        const list = document.getElementById('storyViewersList');
+        list.innerHTML = viewers.length ? viewers.map(v => `
+            <div class="comment-item">
+                <img src="${v.avatar || defaultAvatar(v.name)}" loading="lazy">
+                <div><b>${escapeHtml(v.name)}</b></div>
+            </div>
+        `).join('') : `<p style="text-align:center;color:var(--text-3);padding:16px;">هنوز کسی ندیده</p>`;
+    } catch (e) {}
+}
+
+function closeStoryViewersModal() {
+    document.getElementById('storyViewersModal')?.remove();
+    if (document.getElementById('storyViewerOverlay').classList.contains('open')) {
+        renderStorySlide();
+    }
+}
+
+function openCreateStoryModal() {
+    const existing = document.getElementById('createStoryModal');
+    if (existing) existing.remove();
+    pendingStoryUrl = null;
+    pendingStoryType = null;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'createStoryModal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>✨ استوری جدید</h2>
+            <label class="btn-secondary receipt-upload-label">
+                <i class="fas fa-camera"></i> انتخاب عکس یا ویدیو
+                <input type="file" id="storyMediaInput" accept="image/*,video/*" style="display:none;">
+            </label>
+            <div id="storyMediaPreviewBox" class="receipt-preview-box" style="display:none;"></div>
+            <input type="text" id="storyCaptionInput" class="name-input" placeholder="یه متن براش بنویس (اختیاری برای عکس/ویدیو، اجباری برای استوری متنی)" maxlength="300">
+            <button class="btn-primary" style="width:100%;padding:12px;font-size:14px;margin-top:8px;" onclick="submitStory()">
+                <i class="fas fa-paper-plane"></i> انتشار استوری
+            </button>
+        </div>`;
+    document.body.appendChild(modal);
+
+    document.getElementById('storyMediaInput').addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const box = document.getElementById('storyMediaPreviewBox');
+        box.style.display = 'block';
+        box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال آپلود...';
+        fetch('/api/upload', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    pendingStoryUrl = data.url;
+                    pendingStoryType = data.mediaType;
+                    box.innerHTML = data.mediaType === 'video'
+                        ? `<video src="${data.url}" muted style="max-height:160px;"></video>`
+                        : `<img src="${data.url}" style="max-height:160px;">`;
+                } else {
+                    showNotification('❌ ' + (data.error || 'آپلود ناموفق بود'));
+                    box.style.display = 'none';
+                }
+            })
+            .catch(() => { showNotification('❌ خطا در آپلود'); box.style.display = 'none'; });
+    });
+}
+
+async function submitStory() {
+    const caption = document.getElementById('storyCaptionInput').value.trim();
+    if (!pendingStoryUrl && !caption) { showNotification('یه عکس/ویدیو انتخاب کن یا متنی بنویس'); return; }
+
+    try {
+        const res = await fetch('/api/stories/create', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id, mediaUrl: pendingStoryUrl, mediaType: pendingStoryType, caption })
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('createStoryModal').remove();
+            pendingStoryUrl = null;
+            pendingStoryType = null;
+            showNotification('✨ استوری منتشر شد');
+            loadStories();
+        } else {
+            showNotification('خطا: ' + data.error);
+        }
+    } catch (e) { showNotification('خطا در انتشار استوری'); }
+}
+
 async function quickFollow(userId, btn) {
     if (userId === currentUser.id) {
         showNotification('نمی‌توانید خودتان را فالو کنید');
@@ -1301,9 +1569,15 @@ async function openProfile(userId) {
         document.getElementById('viewPosts').textContent = formatNumber(data.channel?.posts_count || 0);
         document.getElementById('viewScore').textContent = formatNumber(data.user.score || 0);
 
+        const hasStory = storyFeed.some(g => g.user_id === userId);
+        document.getElementById('viewAvatarRing')?.classList.toggle('has-story', hasStory);
+
         viewingProfileFollowing = data.isFollowing;
         const followBtn = document.getElementById('viewFollowBtn');
-        if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+        if (followBtn) {
+            followBtn.textContent = viewingProfileFollowing ? 'دنبال می‌کنید' : 'دنبال کردن';
+            followBtn.classList.toggle('following', viewingProfileFollowing);
+        }
 
         const container = document.getElementById('viewPostsContainer');
         if (container) {
@@ -1327,6 +1601,13 @@ function backFromProfile() {
     document.querySelector('[data-page="explore"]').click();
 }
 
+function viewProfileAvatarClick() {
+    if (!viewingProfileId) return;
+    if (storyFeed.some(g => g.user_id === viewingProfileId)) {
+        openStoryViewer(viewingProfileId);
+    }
+}
+
 async function toggleFollowView() {
     if (!viewingProfileId) return;
     const endpoint = viewingProfileFollowing ? '/api/unfollow' : '/api/follow';
@@ -1339,7 +1620,10 @@ async function toggleFollowView() {
         if (data.success) {
             viewingProfileFollowing = !viewingProfileFollowing;
             const followBtn = document.getElementById('viewFollowBtn');
-            if (followBtn) followBtn.textContent = viewingProfileFollowing ? 'فالو شده ✓' : 'فالو';
+            if (followBtn) {
+                followBtn.textContent = viewingProfileFollowing ? 'دنبال می‌کنید' : 'دنبال کردن';
+                followBtn.classList.toggle('following', viewingProfileFollowing);
+            }
             const count = document.getElementById('viewFollowers');
             if (count) count.textContent = formatNumber(parseInt(count.textContent.replace(/,/g, '')) + (viewingProfileFollowing ? 1 : -1));
             showNotification(viewingProfileFollowing ? '✅ فالو شد' : '❌ آنفالو شد');

@@ -452,6 +452,144 @@ app.post('/api/unfollow', async (req, res) => {
 // ============================================
 // پست‌ها با پشتیبانی ویدیو
 // ============================================
+// ============================================
+// استوری - عکس/ویدیو/متن ۲۴ ساعته + بازدیدکنندگان + هایلایت
+// ============================================
+app.post('/api/stories/create', async (req, res) => {
+    try {
+        const { userId, mediaUrl, mediaType, caption, bgColor, textColor } = req.body;
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'شناسه کاربر الزامی است' });
+        }
+        if (!mediaUrl && !(caption && caption.trim())) {
+            return res.status(400).json({ success: false, error: 'استوری باید عکس/ویدیو یا متن داشته باشد' });
+        }
+
+        const userRow = await db.query(userId, `SELECT role, restricted FROM users WHERE id = $1`, [userId]);
+        const u = userRow.rows[0];
+        if (!u) return res.status(404).json({ success: false, error: 'کاربر پیدا نشد' });
+        if (u.role === 'banned') return res.status(403).json({ success: false, error: 'حساب شما مسدود شده است' });
+        if (u.restricted) return res.status(403).json({ success: false, error: 'حساب شما محدود شده است' });
+
+        const storyId = crypto.randomUUID();
+        const type = mediaUrl ? (mediaType === 'video' ? 'video' : 'image') : 'text';
+
+        await db.query(userId, `
+            INSERT INTO stories (id, user_id, media_url, media_type, caption, bg_color, text_color, views_count, created_at, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 0, CURRENT_TIMESTAMP, datetime('now', '+24 hours'))
+        `, [storyId, userId, mediaUrl || null, type, (caption || '').trim().substring(0, 300) || null,
+            bgColor || '#6c5ce7', textColor || '#ffffff']);
+
+        res.json({ success: true, storyId });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// فید استوری: خودِ کاربر + هرکسی که فالو می‌کنه، گروه‌بندی‌شده بر اساس کاربر
+app.get('/api/stories/feed/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const followingRes = await db.query(userId, `SELECT following_id FROM follows WHERE follower_id = $1`, [userId]);
+        const authorIds = [userId, ...followingRes.rows.map(r => r.following_id)];
+
+        const groups = [];
+        for (const authorId of authorIds) {
+            try {
+                const r = await db.query(authorId, `
+                    SELECT s.*, u.name, u.avatar
+                    FROM stories s JOIN users u ON u.id = s.user_id
+                    WHERE s.user_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
+                    ORDER BY s.created_at ASC
+                `, [authorId]);
+                if (r.rows.length) {
+                    groups.push({
+                        user_id: authorId,
+                        name: r.rows[0].name,
+                        avatar: r.rows[0].avatar,
+                        stories: r.rows.map(({ name, avatar, ...s }) => s)
+                    });
+                }
+            } catch (e) {}
+        }
+
+        // خودِ کاربر همیشه اول فید باشه (مثل اینستاگرام)
+        groups.sort((a, b) => (a.user_id === userId ? -1 : b.user_id === userId ? 1 : 0));
+        res.json(groups);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/stories/:storyId/view', async (req, res) => {
+    try {
+        const { storyId } = req.params;
+        const { viewerId, ownerId } = req.body;
+        if (!viewerId || !ownerId) {
+            return res.status(400).json({ success: false, error: 'اطلاعات ناقص است' });
+        }
+        if (viewerId === ownerId) return res.json({ success: true }); // بازدید خودِ صاحب استوری شمرده نمی‌شه
+
+        const inserted = await db.query(ownerId, `
+            INSERT OR IGNORE INTO story_views (id, story_id, viewer_id, viewed_at)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        `, [crypto.randomUUID(), storyId, viewerId]);
+
+        if (inserted.rowCount > 0) {
+            await db.query(ownerId, `UPDATE stories SET views_count = views_count + 1 WHERE id = $1`, [storyId]);
+        }
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// فقط صاحب استوری می‌تونه لیست بازدیدکننده‌ها رو ببینه
+app.get('/api/stories/:storyId/viewers', async (req, res) => {
+    try {
+        const { storyId } = req.params;
+        const { ownerId } = req.query;
+        if (!ownerId) return res.status(400).json({ error: 'شناسه صاحب استوری الزامی است' });
+
+        const story = await db.query(ownerId, `SELECT user_id FROM stories WHERE id = $1`, [storyId]);
+        if (!story.rows[0] || story.rows[0].user_id !== ownerId) {
+            return res.status(403).json({ error: 'دسترسی غیرمجاز' });
+        }
+
+        const views = await db.query(ownerId, `
+            SELECT viewer_id, viewed_at FROM story_views WHERE story_id = $1 ORDER BY viewed_at DESC
+        `, [storyId]);
+
+        const viewers = [];
+        for (const v of views.rows) {
+            try {
+                const u = await db.query(v.viewer_id, `SELECT name, avatar FROM users WHERE id = $1`, [v.viewer_id]);
+                viewers.push({ user_id: v.viewer_id, name: u.rows[0]?.name || 'کاربر', avatar: u.rows[0]?.avatar, viewed_at: v.viewed_at });
+            } catch (e) {}
+        }
+        res.json(viewers);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/stories/:storyId', async (req, res) => {
+    try {
+        const { storyId } = req.params;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ success: false, error: 'شناسه کاربر الزامی است' });
+
+        const result = await db.query(userId, `DELETE FROM stories WHERE id = $1 AND user_id = $2`, [storyId, userId]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'استوری پیدا نشد یا مالک آن نیستید' });
+        }
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.post('/api/post/create', async (req, res) => {
     try {
         const { userId, content, mediaUrl, mediaType } = req.body;

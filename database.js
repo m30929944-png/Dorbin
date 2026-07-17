@@ -602,6 +602,30 @@ class DatabaseManager {
                 PRIMARY KEY (follower_id, following_id)
             );
 
+            -- استوری: مثل استوری اینستاگرام - عکس/ویدیو/متن، ۲۴ ساعته منقضی می‌شه، قابلیت هایلایت دائمی داره
+            CREATE TABLE IF NOT EXISTS stories (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                media_url TEXT,
+                media_type TEXT DEFAULT 'image' CHECK (media_type IN ('image', 'video', 'text')),
+                caption TEXT,
+                bg_color TEXT DEFAULT '#6c5ce7',
+                text_color TEXT DEFAULT '#ffffff',
+                views_count INTEGER DEFAULT 0,
+                is_highlight INTEGER DEFAULT 0,
+                highlight_title TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                expires_at TEXT NOT NULL
+            );
+
+            -- کی استوری رو دیده - برای «بازدیدکنندگان استوری» حرفه‌ای
+            CREATE TABLE IF NOT EXISTS story_views (
+                id TEXT PRIMARY KEY,
+                story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+                viewer_id TEXT NOT NULL,
+                viewed_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS post_likes (
                 post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
                 user_id TEXT NOT NULL,
@@ -750,6 +774,10 @@ class DatabaseManager {
                 `);
                 try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_receipts_status ON payment_receipts(status)`); } catch (e) {}
                 try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_receipts_user ON payment_receipts(user_id)`); } catch (e) {}
+                try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_stories_user_expiry ON stories(user_id, expires_at)`); } catch (e) {}
+                try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_stories_highlight ON stories(user_id, is_highlight)`); } catch (e) {}
+                try { conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_story_view_unique ON story_views(story_id, viewer_id)`); } catch (e) {}
+                try { conn.exec(`CREATE INDEX IF NOT EXISTS idx_story_views_story ON story_views(story_id)`); } catch (e) {}
             }
 
             console.log(`✅ ${this.shardCount} shard(s) ready, tables created/verified`);
