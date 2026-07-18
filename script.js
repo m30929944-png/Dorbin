@@ -311,11 +311,29 @@ function openUpgradeModal(postId) {
     document.body.appendChild(modal);
 
     document.getElementById('receiptInput').addEventListener('change', function (e) {
-        readFileAsBase64(e.target.files[0], (b64) => {
-            const box = document.getElementById('receiptPreviewBox');
-            box.innerHTML = `<img src="${b64}">`;
-            box.dataset.image = b64;
-        });
+        const file = e.target.files[0];
+        if (!file) return;
+        const box = document.getElementById('receiptPreviewBox');
+        box.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال آپلود رسید...';
+        delete box.dataset.url;
+
+        const formData = new FormData();
+        formData.append('file', file);
+        fetch('/api/upload', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    box.dataset.url = data.url;
+                    box.innerHTML = `<img src="${data.url}">`;
+                } else {
+                    showNotification('❌ ' + (data.error || 'آپلود رسید ناموفق بود'));
+                    box.innerHTML = `<i class="fas fa-receipt"></i><span>هنوز عکس رسیدی انتخاب نشده</span>`;
+                }
+            })
+            .catch(() => {
+                showNotification('❌ خطا در آپلود رسید');
+                box.innerHTML = `<i class="fas fa-receipt"></i><span>هنوز عکس رسیدی انتخاب نشده</span>`;
+            });
     });
 }
 
@@ -328,13 +346,13 @@ function copyCardNumber() {
 async function submitPaymentReceipt(postId) {
     const amount = document.getElementById('upgradeAmountInput').value.trim();
     const box = document.getElementById('receiptPreviewBox');
-    const image = box?.dataset.image;
-    if (!image) { showNotification('اول عکس رسید واریزی رو آپلود کن'); return; }
+    const receiptUrl = box?.dataset.url;
+    if (!receiptUrl) { showNotification('اول عکس رسید واریزی رو آپلود کن'); return; }
 
     try {
         const res = await fetch('/api/payment/submit', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id, postId, amount, receiptImage: image })
+            body: JSON.stringify({ userId: currentUser.id, postId, amount, receiptUrl })
         });
         const data = await res.json();
         if (data.success) {
@@ -354,9 +372,11 @@ function afterLogin() {
     setupNav();
     loadPageData('channel');
     loadStories();
+    loadActiveAds();
     
     socket.on('broadcast', (data) => {
         showNotification(`📢 ${data.title || 'اعلان'}: ${data.message}`);
+        showPinnedBroadcast(data.broadcastId, data.title, data.message);
     });
     
     socket.on('message_sent', (data) => {
@@ -364,6 +384,37 @@ function afterLogin() {
             showNotification('❌ ' + (data.error || 'پیام ارسال نشد'));
         }
     });
+}
+
+// ============================================
+// اعلان همگانی سنجاق‌شده - بالای اکسپلور، تا وقتی کاربر خودش نبنده می‌مونه
+// ============================================
+async function loadPinnedBroadcast() {
+    try {
+        const res = await fetch(`/api/notifications/latest-broadcast/${currentUser.id}`);
+        const b = await res.json();
+        if (b && b.broadcast_id) showPinnedBroadcast(b.broadcast_id, b.title, b.message);
+    } catch (e) {}
+}
+
+function showPinnedBroadcast(broadcastId, title, message) {
+    if (!broadcastId) return;
+    const dismissed = localStorage.getItem('dismissed_broadcast_id');
+    if (dismissed === broadcastId) return;
+
+    const box = document.getElementById('pinnedBroadcast');
+    if (!box) return;
+    box.dataset.broadcastId = broadcastId;
+    document.getElementById('pinnedBroadcastTitle').textContent = title || 'اعلان سیستمی';
+    document.getElementById('pinnedBroadcastMsg').textContent = message || '';
+    box.style.display = 'flex';
+}
+
+function dismissPinnedBroadcast() {
+    const box = document.getElementById('pinnedBroadcast');
+    if (!box) return;
+    if (box.dataset.broadcastId) localStorage.setItem('dismissed_broadcast_id', box.dataset.broadcastId);
+    box.style.display = 'none';
 }
 
 // ============================================
@@ -388,7 +439,7 @@ async function loadPageData(page) {
         case 'channel': await loadChannelPosts(); break;
         case 'assistant': await loadAssistantData(); break;
         case 'chat': await loadChatList(); break;
-        case 'explore': await loadExplore(); break;
+        case 'explore': await loadExplore(); loadPinnedBroadcast(); break;
     }
 }
 
@@ -581,22 +632,7 @@ async function loadChannelPosts() {
                 اولین پستت رو بنویس! ✍️
             </div>`;
         } else {
-            let html = '';
-            let ads = [];
-            try {
-                const adsRes = await fetch('/api/ads/active');
-                ads = await adsRes.json();
-            } catch (e) {}
-
-            posts.forEach((p, i) => {
-                html += renderPostCard(p, currentUser);
-                // هر ۴ پست یه تبلیغ (در صورت وجود تبلیغ فعال) تزریق می‌شه
-                if (ads.length && (i + 1) % 4 === 0) {
-                    const ad = ads[Math.floor(i / 4) % ads.length];
-                    html += renderAdCard(ad);
-                }
-            });
-            container.innerHTML = html;
+            container.innerHTML = posts.map(p => renderPostCard(p, currentUser)).join('');
         }
 
         const ures = await fetch(`/api/user/${currentUser.id}`);
@@ -620,9 +656,53 @@ function renderAdCard(ad) {
     </div>`;
 }
 
+let activeAdsCache = [];
+
+async function loadActiveAds() {
+    try {
+        const res = await fetch('/api/ads/active');
+        activeAdsCache = await res.json();
+    } catch (e) { activeAdsCache = []; }
+}
+
+function pickAdFor(seed) {
+    if (!activeAdsCache.length) return null;
+    const dismissedIds = JSON.parse(localStorage.getItem('dismissed_ad_ids') || '[]');
+    const pool = activeAdsCache.filter(a => !dismissedIds.includes(a.id));
+    if (!pool.length) return null;
+    // انتخاب پایدار بر اساس شناسه‌ی پست، تا با هر رندر دوباره، تبلیغ زیر همون پست عوض نشه
+    let hash = 0;
+    for (const ch of String(seed)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+    return pool[hash % pool.length];
+}
+
+function adFooterHtml(seed) {
+    const ad = pickAdFor(seed);
+    if (!ad) return '';
+    const linkEscaped = (ad.link_url || '').replace(/'/g, "\\'");
+    return `
+        <div class="post-ad-footer" data-ad-id="${ad.id}" onclick="openAdLink('${linkEscaped}')">
+            <span class="ad-tag">تبلیغ</span>
+            <span class="ad-footer-text">${escapeHtml(ad.title || '')}${ad.content ? ' — ' + escapeHtml(ad.content) : ''}</span>
+            <button class="ad-footer-close" onclick="event.stopPropagation();dismissAdFooter('${ad.id}', this)"><i class="fas fa-times"></i></button>
+        </div>`;
+}
+
+function openAdLink(url) {
+    if (url) window.open(url, '_blank', 'noopener');
+}
+
+function dismissAdFooter(adId, btn) {
+    const ids = JSON.parse(localStorage.getItem('dismissed_ad_ids') || '[]');
+    if (!ids.includes(adId)) ids.push(adId);
+    localStorage.setItem('dismissed_ad_ids', JSON.stringify(ids));
+    btn.closest('.post-ad-footer')?.remove();
+}
+
 function renderPostCard(post, author) {
     const name = author?.name || post.channel_name || 'کاربر';
     const avatar = author?.avatar || defaultAvatar(name);
+    const isMine = !post.user_id || post.user_id === currentUser.id;
     const mediaHtml = post.media_url ? `
         <div class="media-wrapper">
             ${post.media_type === 'video' ? 
@@ -639,11 +719,12 @@ function renderPostCard(post, author) {
             <div class="post-menu">
                 <button class="post-menu-btn" onclick="togglePostMenu('${post.id}')"><i class="fas fa-ellipsis-h"></i></button>
                 <div class="post-menu-dropdown" id="postMenu-${post.id}">
-                    <button onclick="openReportModal('post', '${post.id}')"><i class="fas fa-flag"></i> گزارش پست</button>
+                    ${isMine
+                        ? `<button class="danger-item" onclick="deletePost('${post.id}')"><i class="fas fa-trash"></i> حذف پست</button>`
+                        : `<button onclick="openReportModal('post', '${post.id}')"><i class="fas fa-flag"></i> گزارش پست</button>`}
                 </div>
             </div>
         </div>
-        <p class="content">${escapeHtml(post.content)}</p>
         ${mediaHtml}
         <div class="post-stats">
             <button onclick="toggleLike('${post.id}', this)" class="like-btn">
@@ -652,16 +733,38 @@ function renderPostCard(post, author) {
             <button onclick="toggleComments('${post.id}', this)">
                 <i class="far fa-comment"></i> <span class="comment-count">${formatNumber(post.comments || 0)}</span>
             </button>
+            <button onclick="sharePost('${post.id}')">
+                <i class="fas fa-share-alt"></i>
+            </button>
             <button disabled>
                 <i class="far fa-eye"></i> ${formatNumber(post.views || 0)}
             </button>
-            ${(!post.user_id || post.user_id === currentUser.id) ? `
+            ${isMine ? `
             <button class="upgrade-post-btn" onclick="openUpgradeModal('${post.id}')" title="ارتقای این پست">
                 <i class="fas fa-crown"></i> ارتقا
             </button>` : ''}
         </div>
+        ${post.content ? `<p class="content">${escapeHtml(post.content)}</p>` : ''}
+        ${adFooterHtml(post.id)}
         <div class="comments-box" id="comments-${post.id}"></div>
     </div>`;
+}
+
+async function deletePost(postId) {
+    if (!confirm('این پست حذف بشه؟ این کار قابل بازگشت نیست.')) return;
+    try {
+        const res = await fetch(`/api/post/${postId}/delete`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id })
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.querySelector(`.post-card[data-post-id="${postId}"]`)?.remove();
+            showNotification('🗑️ پست حذف شد');
+        } else {
+            showNotification('خطا: ' + data.error);
+        }
+    } catch (e) { showNotification('خطا در حذف پست'); }
 }
 
 function togglePostMenu(postId) {
@@ -959,7 +1062,7 @@ async function loadExplore() {
         explorePostIndex = {};
         const tiles = [];
 
-        items.forEach(user => {
+        items.filter(user => user.user_id !== currentUser.id).forEach(user => {
             const posts = user.recent_posts || [];
             if (!posts.length) return;
             posts.forEach(p => {
@@ -1038,6 +1141,7 @@ function pfSlideHtml(postId, slideKey) {
                     ${!isMe ? `<button class="btn-plastic btn-plastic--pistachio pf-follow-btn" onclick="event.stopPropagation();quickFollow('${user.user_id}', this)">فالو</button>` : ''}
                 </div>
                 ${post.content ? `<p class="pf-caption">${escapeHtml(post.content)}</p>` : ''}
+                ${adFooterHtml(postId)}
                 <div class="pf-actions-bar">
                     <button class="pf-action-btn" onclick="toggleLike('${postId}', this)">
                         <i class="far fa-heart"></i><span class="like-count">${formatNumber(post.likes || 0)}</span>
@@ -1058,11 +1162,13 @@ function pfSlideHtml(postId, slideKey) {
 }
 
 function pfAppendSlides(count) {
-    if (!pfFeedList.length) return;
     const feedEl = document.getElementById('pfFeed');
+    document.getElementById('pfEndMsg')?.remove();
+
     const frag = document.createDocumentFragment();
-    for (let n = 0; n < count; n++) {
-        const postId = pfFeedList[pfNextIndex % pfFeedList.length];
+    let added = 0;
+    while (added < count && pfNextIndex < pfFeedList.length) {
+        const postId = pfFeedList[pfNextIndex];
         const slideKey = 's' + pfNextIndex;
         pfNextIndex++;
         const wrapper = document.createElement('div');
@@ -1071,22 +1177,58 @@ function pfAppendSlides(count) {
         if (slideEl) {
             frag.appendChild(slideEl);
             if (pfObserver) pfObserver.observe(slideEl);
+            added++;
         }
     }
     feedEl.appendChild(frag);
+    return added;
 }
 
-// وقتی به نزدیکی انتهای فید رسیدیم، اسلایدهای بعدی از قبل append می‌شن (پیش‌بارگذاری،
-// نه دانلود دستی کاربر) - چون media با preload="metadata"/loading="lazy" فقط وقتی لازم بشه واکشی می‌شه.
-function pfHandleScroll() {
+// وقتی به نزدیکی انتهای فید رسیدیم، اسلایدهای بعدی (پست‌های واقعاً جدید، نه تکراری) از قبل
+// append می‌شن (پیش‌بارگذاری، نه دانلود دستی کاربر) - چون media با preload="metadata"/loading="lazy"
+// فقط وقتی لازم بشه واکشی می‌شه.
+async function pfHandleScroll() {
     if (pfLoadingMore) return;
     const feedEl = document.getElementById('pfFeed');
     const nearEnd = feedEl.scrollTop + feedEl.clientHeight > feedEl.scrollHeight - window.innerHeight * 2;
-    if (nearEnd) {
-        pfLoadingMore = true;
+    if (!nearEnd) return;
+
+    pfLoadingMore = true;
+    if (pfNextIndex < pfFeedList.length) {
         pfAppendSlides(3);
-        pfLoadingMore = false;
+    } else {
+        await pfTryLoadMorePosts();
     }
+    pfLoadingMore = false;
+}
+
+// وقتی همه‌ی پست‌های اکسپلور که تا الان داشتیم تموم شد، یه بار دیگه از سرور می‌پرسیم -
+// اگه پست جدیدی (که قبلاً تو همین جلسه نشون داده نشده) پیدا شد اضافه می‌شه، وگرنه دیگه تکرار نمی‌کنیم.
+async function pfTryLoadMorePosts() {
+    try {
+        const res = await fetch('/api/explore');
+        const items = await res.json();
+        const existingIds = new Set(pfFeedList);
+        const newIds = [];
+        items.filter(u => u.user_id !== currentUser.id).forEach(user => {
+            (user.recent_posts || []).forEach(p => {
+                if (!explorePostIndex[p.id]) explorePostIndex[p.id] = { post: p, user };
+                if (!existingIds.has(p.id)) { newIds.push(p.id); existingIds.add(p.id); }
+            });
+        });
+        if (newIds.length) {
+            pfFeedList = pfFeedList.concat(newIds);
+        }
+        const added = pfAppendSlides(3);
+        if (added === 0) {
+            const feedEl = document.getElementById('pfFeed');
+            const endMsg = document.createElement('div');
+            endMsg.className = 'pf-loading-more';
+            endMsg.id = 'pfEndMsg';
+            endMsg.textContent = 'همین‌قدر بود، پست دیگه‌ای نیست 🎬';
+            feedEl.appendChild(endMsg);
+        }
+    } catch (e) {}
 }
 
 function pfSetActiveSlide(slideEl) {
@@ -1739,11 +1881,19 @@ function renderMessages(messages) {
     if (!container) return;
     container.innerHTML = messages.map(m => `
         <div class="message ${m.from_user === currentUser.id ? 'sent' : 'received'}">
-            ${escapeHtml(m.message)}
+            ${mediaBubbleHtml(m.media_url, m.media_type)}
+            ${m.message ? escapeHtml(m.message) : ''}
             <span class="time">${new Date(m.created_at).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
     `).join('');
     container.scrollTop = container.scrollHeight;
+}
+
+function mediaBubbleHtml(url, type) {
+    if (!url) return '';
+    return type === 'video'
+        ? `<video src="${url}" controls preload="metadata"></video>`
+        : `<img src="${url}" loading="lazy" onclick="window.open('${url}','_blank')">`;
 }
 
 let chatTargetMode = 'user'; // 'user' یعنی پیام واقعی برای خودش، 'assistant' یعنی گفتگو با دستیار هوشمندش
@@ -1769,19 +1919,60 @@ function chatThreadOpenProfile() {
     openProfile(userId);
 }
 
+let pendingChatMediaUrl = null;
+let pendingChatMediaType = null;
+
+document.getElementById('chatMediaInput')?.addEventListener('change', function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const box = document.getElementById('chatMediaPreview');
+    const content = document.getElementById('chatMediaPreviewContent');
+    box.style.display = 'flex';
+    content.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال آپلود...';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/upload', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                pendingChatMediaUrl = data.url;
+                pendingChatMediaType = data.mediaType;
+                content.innerHTML = data.mediaType === 'video'
+                    ? `<video src="${data.url}" muted></video>`
+                    : `<img src="${data.url}">`;
+            } else {
+                showNotification('❌ ' + (data.error || 'آپلود ناموفق بود'));
+                box.style.display = 'none';
+            }
+        })
+        .catch(() => { showNotification('❌ خطا در آپلود'); box.style.display = 'none'; });
+});
+
+function cancelChatMedia() {
+    pendingChatMediaUrl = null;
+    pendingChatMediaType = null;
+    document.getElementById('chatMediaPreview').style.display = 'none';
+    document.getElementById('chatMediaInput').value = '';
+}
+
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     const message = input.value.trim();
-    if (!message || !currentChatUser) return;
+    const mediaUrl = pendingChatMediaUrl;
+    const mediaType = pendingChatMediaType;
+    if (!message && !mediaUrl) return;
+    if (!currentChatUser) return;
     input.value = '';
+    cancelChatMedia();
 
     if (chatTargetMode === 'assistant') {
-        displayMessage(message, 'sent');
+        displayMessage(message, 'sent', false, mediaUrl, mediaType);
         const typingEl = displayTypingIndicator();
         try {
             const res = await fetch(`/api/assistant/chat/${currentChatUser.id}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message })
+                body: JSON.stringify({ message: message || '(عکس/ویدیو)' })
             });
             const data = await res.json();
             typingEl.remove();
@@ -1797,9 +1988,11 @@ async function sendMessage() {
         from: currentUser.id,
         to: currentChatUser.id,
         message,
+        mediaUrl,
+        mediaType,
         timestamp: Date.now()
     });
-    displayMessage(message, 'sent');
+    displayMessage(message, 'sent', false, mediaUrl, mediaType);
 }
 
 function displayTypingIndicator() {
@@ -1812,12 +2005,12 @@ function displayTypingIndicator() {
     return div;
 }
 
-function displayMessage(text, type, isBot = false) {
+function displayMessage(text, type, isBot = false, mediaUrl = null, mediaType = null) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
     const div = document.createElement('div');
     div.className = `message ${type}${isBot ? ' bot-reply' : ''}`;
-    div.innerHTML = `${isBot ? '<i class="fas fa-robot"></i> ' : ''}${escapeHtml(text)}<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
+    div.innerHTML = `${isBot ? '<i class="fas fa-robot"></i> ' : ''}${mediaBubbleHtml(mediaUrl, mediaType)}${text ? escapeHtml(text) : ''}<span class="time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
@@ -1829,12 +2022,14 @@ socket.on('new_message', (data) => {
             from_user: data.from,
             to_user: currentUser.id,
             message: data.message,
+            media_url: data.mediaUrl || null,
+            media_type: data.mediaType || null,
             created_at: new Date().toISOString()
         });
     }
     
     if (currentChatUser && data.from === currentChatUser.id) {
-        displayMessage(data.message, 'received');
+        displayMessage(data.message, 'received', false, data.mediaUrl, data.mediaType);
     } else {
         showNotification(`📩 پیام جدید از ${data.from}`);
         loadChatList();

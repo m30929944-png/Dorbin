@@ -590,6 +590,8 @@ class DatabaseManager {
                 from_user TEXT NOT NULL,
                 to_user TEXT NOT NULL,
                 message TEXT NOT NULL,
+                media_url TEXT,
+                media_type TEXT,
                 is_read INTEGER DEFAULT 0,
                 encrypted INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -637,6 +639,8 @@ class DatabaseManager {
                 id TEXT PRIMARY KEY,
                 post_id TEXT REFERENCES posts(id) ON DELETE CASCADE,
                 user_id TEXT NOT NULL,
+                user_name TEXT,
+                user_avatar TEXT,
                 text TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -648,6 +652,7 @@ class DatabaseManager {
                 title TEXT NOT NULL,
                 message TEXT NOT NULL,
                 type TEXT DEFAULT 'general',
+                broadcast_id TEXT,
                 is_read INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
@@ -750,11 +755,16 @@ class DatabaseManager {
 
                 // ستون‌های جدیدی که ممکنه روی دیتابیس‌های قدیمی‌تر نبوده باشن
                 try { conn.exec(`ALTER TABLE messages ADD COLUMN encrypted INTEGER DEFAULT 0`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE messages ADD COLUMN media_url TEXT`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE messages ADD COLUMN media_type TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN bio TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN restricted INTEGER DEFAULT 0`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN username TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN email TEXT`); } catch (e) {}
                 try { conn.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE post_comments ADD COLUMN user_name TEXT`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE post_comments ADD COLUMN user_avatar TEXT`); } catch (e) {}
+                try { conn.exec(`ALTER TABLE system_notifications ADD COLUMN broadcast_id TEXT`); } catch (e) {}
                 try { conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL`); } catch (e) {}
                 try { conn.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`); } catch (e) {}
 

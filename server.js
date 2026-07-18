@@ -634,6 +634,30 @@ app.post('/api/post/create', async (req, res) => {
     }
 });
 
+// حذف پست توسط خودِ کاربر (فقط پست خودش، تایید مالکیت روی شارد خودش)
+app.post('/api/post/:postId/delete', async (req, res) => {
+    try {
+        const { postId } = req.params;
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ success: false, error: 'شناسه کاربر الزامی است' });
+
+        const channel = await db.query(userId, `SELECT id FROM channels WHERE user_id = $1`, [userId]);
+        if (!channel.rows[0]) return res.status(404).json({ success: false, error: 'کانالی یافت نشد' });
+
+        const result = await db.query(userId, `DELETE FROM posts WHERE id = $1 AND channel_id = $2`, [postId, channel.rows[0].id]);
+        if (result.rowCount === 0) {
+            return res.status(403).json({ success: false, error: 'این پست مال شما نیست یا قبلاً حذف شده' });
+        }
+        await db.query(userId, `UPDATE channels SET posts_count = MAX(posts_count - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE user_id = $1`, [userId]);
+
+        profileCache.clear();
+        exploreCache.clear();
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 app.post('/api/post/:postId/view', async (req, res) => {
     try {
         const { postId } = req.params;
@@ -676,20 +700,25 @@ app.post('/api/post/:postId/comment', async (req, res) => {
             return res.status(400).json({ success: false, error: 'متن کامنت الزامی است' });
         }
 
+        // نام/آواتار کاربر رو از شارد خودش می‌خونیم و همون لحظه روی کامنت اسنپ‌شات می‌کنیم،
+        // چون کامنت روی شارد پست ذخیره می‌شه (نه شارد کاربر) و JOIN بین شارد مختلف امکان‌پذیر نیست.
+        const u = await db.query(userId, `SELECT name, avatar FROM users WHERE id = $1`, [userId]);
+        const userName = u.rows[0]?.name || 'کاربر';
+        const userAvatar = u.rows[0]?.avatar || null;
+
         const id = crypto.randomUUID();
-        await db.query(userId, `
-            INSERT INTO post_comments (id, post_id, user_id, text, created_at) 
-            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-        `, [id, postId, userId, text.trim()]);
+        await db.query(postId, `
+            INSERT INTO post_comments (id, post_id, user_id, user_name, user_avatar, text, created_at) 
+            VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+        `, [id, postId, userId, userName, userAvatar, text.trim()]);
         await db.query(postId, `UPDATE posts SET comments = comments + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [postId]);
 
         const assistant = new IntelligentAssistant(userId, db);
         await assistant.updateUserActivity('comment');
 
-        const u = await db.query(userId, `SELECT name, avatar FROM users WHERE id = $1`, [userId]);
         profileCache.clear();
         exploreCache.clear();
-        res.json({ success: true, comment: { id, userId, text: text.trim(), name: u.rows[0]?.name, avatar: u.rows[0]?.avatar } });
+        res.json({ success: true, comment: { id, userId, text: text.trim(), name: userName, avatar: userAvatar } });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -699,9 +728,9 @@ app.get('/api/post/:postId/comments', async (req, res) => {
     try {
         const { postId } = req.params;
         const result = await db.query(postId, `
-            SELECT c.*, u.name, u.avatar FROM post_comments c
-            JOIN users u ON u.id = c.user_id
-            WHERE c.post_id = $1 ORDER BY c.created_at ASC
+            SELECT id, user_id, user_name AS name, user_avatar AS avatar, text, created_at
+            FROM post_comments
+            WHERE post_id = $1 ORDER BY created_at ASC
         `, [postId]);
         res.json(result.rows);
     } catch (error) {
@@ -944,35 +973,50 @@ app.get('/api/chat/history/:userId/:targetId', async (req, res) => {
 app.get('/api/chat/list/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const result = await db.query(userId, `
-            SELECT 
-                u.id,
-                u.name,
-                u.avatar,
-                (
-                    SELECT message FROM messages 
-                    WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
-                    ORDER BY created_at DESC LIMIT 1
-                ) as lastMessage,
-                (
-                    SELECT created_at FROM messages 
-                    WHERE (from_user = u.id AND to_user = $1) OR (from_user = $1 AND to_user = u.id)
-                    ORDER BY created_at DESC LIMIT 1
-                ) as lastTime,
-                (
-                    SELECT COUNT(*) FROM messages 
-                    WHERE from_user = u.id AND to_user = $1 AND is_read = 0
-                ) as unreadCount
-            FROM users u
-            WHERE u.id IN (
-                SELECT DISTINCT CASE WHEN from_user = $1 THEN to_user ELSE from_user END
-                FROM messages
-                WHERE from_user = $1 OR to_user = $1
-            )
-            AND u.id != $1
-            ORDER BY lastTime DESC
+
+        // پیام‌های این کاربر رو جمع می‌کنیم (این کوئری به‌درستی بین همه‌ی شاردها پخش می‌شه چون فقط
+        // روی جدول messages کار می‌کنه - مسیریابی ویژه‌ی messages این الگو رو تشخیص می‌ده)
+        const msgResult = await db.query(userId, `
+            SELECT from_user, to_user, message, created_at, is_read
+            FROM messages
+            WHERE from_user = $1 OR to_user = $1
         `, [userId]);
-        res.json(result.rows);
+
+        const lastMsgMap = new Map(); // partnerId -> { message, created_at }
+        const unreadMap = new Map();  // partnerId -> count
+
+        for (const m of msgResult.rows) {
+            const partnerId = m.from_user === userId ? m.to_user : m.from_user;
+            const cur = lastMsgMap.get(partnerId);
+            if (!cur || new Date(m.created_at) > new Date(cur.created_at)) {
+                lastMsgMap.set(partnerId, { message: m.message, created_at: m.created_at });
+            }
+            if (m.to_user === userId && !m.is_read) {
+                unreadMap.set(partnerId, (unreadMap.get(partnerId) || 0) + 1);
+            }
+        }
+
+        // هر طرف مکالمه رو از شارد خودش می‌خونیم (چون کاربر ممکنه روی شارد کاملاً متفاوتی نسبت به پیام باشه)
+        const chats = [];
+        for (const partnerId of lastMsgMap.keys()) {
+            try {
+                const u = await db.query(partnerId, `SELECT id, name, avatar FROM users WHERE id = $1`, [partnerId]);
+                if (u.rows[0]) {
+                    const info = lastMsgMap.get(partnerId);
+                    chats.push({
+                        id: partnerId,
+                        name: u.rows[0].name,
+                        avatar: u.rows[0].avatar,
+                        lastMessage: info.message,
+                        lastTime: info.created_at,
+                        unreadCount: unreadMap.get(partnerId) || 0
+                    });
+                }
+            } catch (e) {}
+        }
+
+        chats.sort((a, b) => new Date(b.lastTime) - new Date(a.lastTime));
+        res.json(chats);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -1071,6 +1115,20 @@ app.get('/api/admin/channels', isAdmin, async (req, res) => {
     }
 });
 
+app.get('/api/notifications/latest-broadcast/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const result = await db.query(userId, `
+            SELECT broadcast_id, title, message, created_at FROM system_notifications
+            WHERE user_id = $1 AND type = 'broadcast'
+            ORDER BY created_at DESC LIMIT 1
+        `, [userId]);
+        res.json(result.rows[0] || null);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
     try {
         const { message, title } = req.body;
@@ -1080,24 +1138,25 @@ app.post('/api/admin/broadcast', isAdmin, async (req, res) => {
 
         // چون کاربرها بین چند شارد پخشن، باید روی هر شارد جدا insert بزنیم
         // (استفاده از یه اتصال تنها اینجا باعث خطای FK و rollback کل تراکنش برای کاربرهای شاردهای دیگه می‌شد)
+        const broadcastId = crypto.randomUUID();
         let totalSent = 0;
         for (const conn of db.getAllShards()) {
             const users = conn.prepare(`SELECT id FROM users`).all();
             if (!users.length) continue;
 
             const insert = conn.prepare(`
-                INSERT INTO system_notifications (id, user_id, title, message, type, created_at) 
-                VALUES (?, ?, ?, ?, 'broadcast', CURRENT_TIMESTAMP)
+                INSERT INTO system_notifications (id, user_id, title, message, type, broadcast_id, created_at) 
+                VALUES (?, ?, ?, ?, 'broadcast', ?, CURRENT_TIMESTAMP)
             `);
             const transaction = conn.transaction(() => {
                 for (const user of users) {
-                    insert.run(crypto.randomUUID(), user.id, title || 'اعلان سیستمی', message);
+                    insert.run(crypto.randomUUID(), user.id, title || 'اعلان سیستمی', message, broadcastId);
                 }
             });
             transaction();
 
             for (const user of users) {
-                io.to(`user_${user.id}`).emit('broadcast', { title: title || 'اعلان سیستمی', message });
+                io.to(`user_${user.id}`).emit('broadcast', { broadcastId, title: title || 'اعلان سیستمی', message });
             }
             totalSent += users.length;
         }
@@ -1148,7 +1207,9 @@ app.post('/api/report', async (req, res) => {
         }
 
         const id = crypto.randomUUID();
-        await db.query(null, `
+        // با کلید ثابت می‌نویسیم (نه null) تا گزارش فقط روی یه شارد مشخص ذخیره بشه، نه اینکه
+        // روی هر ۱۵۰ شارد کپی تکراری بسازه (db.query(null,...) برای INSERT یعنی پخش روی همه‌ی شاردها)
+        await db.query('global_reports', `
             INSERT INTO reports (id, reporter_id, target_id, target_type, reason, status, created_at)
             VALUES ($1, $2, $3, $4, $5, 'pending', CURRENT_TIMESTAMP)
         `, [id, reporterId, targetId, targetType, reason.trim().substring(0, 500)]);
@@ -1193,22 +1254,20 @@ app.post('/api/admin/report/:action', isAdmin, async (req, res) => {
 // ============================================
 app.post('/api/payment/submit', async (req, res) => {
     try {
-        const { userId, postId, amount, receiptImage } = req.body;
-        if (!userId || !receiptImage) {
+        const { userId, postId, amount, receiptUrl } = req.body;
+        if (!userId || !receiptUrl) {
             return res.status(400).json({ success: false, error: 'اطلاعات فیش ناقص است' });
         }
-        if (typeof receiptImage !== 'string' || !receiptImage.startsWith('data:image/')) {
-            return res.status(400).json({ success: false, error: 'فرمت تصویر رسید نامعتبر است' });
-        }
-        if (receiptImage.length > 6 * 1024 * 1024) {
-            return res.status(400).json({ success: false, error: 'حجم تصویر رسید خیلی زیاده' });
+        if (typeof receiptUrl !== 'string' || !receiptUrl.startsWith('/uploads/')) {
+            return res.status(400).json({ success: false, error: 'فایل رسید نامعتبر است' });
         }
 
         const id = crypto.randomUUID();
-        await db.query(null, `
+        // همون دلیل بالا: کلید ثابت به‌جای null، تا فیش فقط یه بار ذخیره بشه نه ۱۵۰ بار
+        await db.query('global_payment_receipts', `
             INSERT INTO payment_receipts (id, user_id, post_id, receipt_image, amount, status, created_at)
             VALUES ($1, $2, $3, $4, $5, 'pending', CURRENT_TIMESTAMP)
-        `, [id, userId, postId || null, receiptImage, amount ? String(amount).substring(0, 40) : null]);
+        `, [id, userId, postId || null, receiptUrl, amount ? String(amount).substring(0, 40) : null]);
 
         res.json({ success: true });
     } catch (error) {
@@ -1332,7 +1391,8 @@ app.post('/api/admin/ads/create', isAdmin, async (req, res) => {
         if (!title || !title.trim()) return res.status(400).json({ success: false, error: 'عنوان تبلیغ الزامی است' });
 
         const id = crypto.randomUUID();
-        await db.query(null, `
+        // همون دلیل بالا: کلید ثابت به‌جای null، تا هر تبلیغ فقط یه بار ذخیره بشه نه ۱۵۰ بار تکراری
+        await db.query('global_ads', `
             INSERT INTO ads (id, title, content, media_url, media_type, link_url, is_active, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, 1, CURRENT_TIMESTAMP)
         `, [id, title.trim(), content || '', mediaUrl || null, mediaType || 'none', linkUrl || null]);
@@ -1391,12 +1451,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('private_message', async (data) => {
-        const { from, to, message, timestamp } = data || {};
+        const { from, to, message, mediaUrl, mediaType, timestamp } = data || {};
 
-        if (!from || !to || typeof message !== 'string' || !message.trim()) {
+        const hasMedia = typeof mediaUrl === 'string' && mediaUrl.startsWith('/uploads/');
+        const text = typeof message === 'string' ? message.trim() : '';
+
+        if (!from || !to || (!text && !hasMedia)) {
             return io.to(`user_${from}`).emit('message_sent', { success: false, error: 'پیام نامعتبر است', timestamp });
         }
-        if (message.length > 4000) {
+        if (text.length > 4000) {
             return io.to(`user_${from}`).emit('message_sent', { success: false, error: 'پیام خیلی طولانیه', timestamp });
         }
         if (db.isBlocked(from, to)) {
@@ -1412,15 +1475,16 @@ io.on('connection', (socket) => {
         }
         msgTimestamps.push(now);
 
-        const trimmed = message.trim();
+        const trimmed = text;
+        const safeMediaType = hasMedia ? (mediaType === 'video' ? 'video' : 'image') : null;
         try {
             const id = crypto.randomUUID();
             await db.query(from, `
-                INSERT INTO messages (id, from_user, to_user, message, created_at) 
-                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-            `, [id, from, to, trimmed]);
+                INSERT INTO messages (id, from_user, to_user, message, media_url, media_type, created_at) 
+                VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+            `, [id, from, to, trimmed, hasMedia ? mediaUrl : null, safeMediaType]);
 
-            io.to(`user_${to}`).emit('new_message', { from, message: trimmed, timestamp });
+            io.to(`user_${to}`).emit('new_message', { from, message: trimmed, mediaUrl: hasMedia ? mediaUrl : null, mediaType: safeMediaType, timestamp });
             io.to(`user_${from}`).emit('message_sent', { success: true, timestamp });
         } catch (e) {
             console.error('save message error', e);
